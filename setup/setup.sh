@@ -31,4 +31,4 @@ pip install fastapi uvicorn
 echo ""
 echo "=== Selesai! ==="
 echo "Untuk mengaktifkan virtual environment secara manual, jalankan:"
-echo "source project/api/venv/bin/activate"
+echo "source yoru-agent/api/venv/bin/activate"
