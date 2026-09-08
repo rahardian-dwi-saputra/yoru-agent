@@ -1,0 +1,55 @@
+id: K01
+nama: "Root tidak bisa login lewat SSH"
+kode_cis: "5.1.20"
+kode_cis_judul_asli: "5.1.20 Ensure sshd PermitRootLogin is disabled"
+kode_cis_sumber: "Tenable audit CIS_Ubuntu_Linux_24.04_LTS_v1.0.0_L1_Server.audit rev 1.14 (17 Jul 2026), dicocokkan 5 Sep 2026. Bukan dari PDF CIS asli - jangan menulis 'sesuai CIS' seolah kami memegang dokumen primernya."
+kode_cis_koreksi: >
+  Sebelum dicocokkan, berkas ini menulis "5.2.10". Itu penomoran benchmark
+  Ubuntu versi lama, bukan 24.04. Salah, dan sekarang sudah dibetulkan.
+risiko: BERISIKO
+kategori: ssh
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+tasks:
+  # Task internal untuk memastikan folder logs/ selalu ada
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  # 1. Cek user lain yang punya akses SSH
+  check-users:
+    desc: "Mengecek daftar user non-root yang memiliki akses SSH atau sudo"
+    cmds:
+      - echo "=== User dengan Shell Aktif (Bisa Login) ==="
+      - awk -F':' '$7 !~ /(nologin|false)/ {print $1}' /etc/passwd
+      - echo "=== User di Group Sudo / Wheel ==="
+      - getent group sudo wheel 2>/dev/null || true
+
+  # 2. Audit SSH Root Login
+  audit:
+    desc: "Menjalankan audit SSH Root login"
+    deps: [init-log-dir]
+    cmds:
+      - chmod +x {{.SCRIPT_DIR}}/audit.sh
+      - sudo {{.SCRIPT_DIR}}/audit.sh
+
+  # 3. Hardening SSH (Nonaktifkan Root Login)
+  hardening:
+    desc: "Menonaktifkan login Root via SSH"
+    deps: [init-log-dir]
+    cmds:
+      - chmod +x {{.SCRIPT_DIR}}/hardening.sh
+      - sudo {{.SCRIPT_DIR}}/hardening.sh
+
+  # 4. Rollback SSH
+  rollback:
+    desc: "Mengembalikan konfigurasi SSH"
+    deps: [init-log-dir]
+    cmds:
+      - chmod +x {{.SCRIPT_DIR}}/rollback.sh
+      - sudo {{.SCRIPT_DIR}}/rollback.sh
