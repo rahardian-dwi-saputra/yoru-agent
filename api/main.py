@@ -11,10 +11,19 @@ app = FastAPI(
     description="API SSH Management berbasis Hermes Agent dengan mekanisme Human-in-the-Loop (HITL) Confirmation."
 )
 
-# Menentukan lokasi folder proyek
+# ==========================================
+# KONFIGURASI PATH MOUNTING
+# ==========================================
+# main.py ada di: yoru-agent/api/main.py
 API_DIR = Path(__file__).resolve().parent
-PROJECT_DIR = API_DIR.parent / "ssh-hardening-project"
-LOGS_DIR = PROJECT_DIR / "logs"
+BASE_DIR = API_DIR.parent  # Mengarah ke: yoru-agent/
+
+# Path scripts & logs disesuaikan dengan struktur baru
+SCRIPTS_DIR = BASE_DIR / "catalog" / "K01" / "scripts"
+LOGS_DIR = BASE_DIR / "catalog" / "K01" / "logs"
+
+# Pastikan direktori logs dibuat jika belum ada
+LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # Model Input Request
@@ -44,10 +53,10 @@ class K01Response(BaseModel):
 # ==========================================
 
 async def run_taskfile_action(action: str) -> int:
-    """Execution Layer: Memanggil Taskfile secara asynchronous."""
+    """Execution Layer: Memanggil Taskfile secara asynchronous dari folder scripts."""
     process = await asyncio.create_subprocess_exec(
         "task", action,
-        cwd=str(PROJECT_DIR),
+        cwd=str(SCRIPTS_DIR),  # Menjalankan command dari direktori catalog/K01/scripts
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
@@ -56,7 +65,7 @@ async def run_taskfile_action(action: str) -> int:
 
 
 def read_action_logs(action: str) -> List[Dict[str, Any]]:
-    """Log Parser: Membaca log JSON spesifik action."""
+    """Log Parser: Membaca log JSON spesifik action dari folder logs."""
     log_file_path = LOGS_DIR / f"{action}.json"
     if not log_file_path.exists():
         return []
