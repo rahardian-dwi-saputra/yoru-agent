@@ -3,16 +3,7 @@
 # Hentikan eksekusi jika terjadi error
 set -e
 
-echo "=== 1. Pengecekan Hermes Agent ==="
-if command -v hermes-agent &> /dev/null; then
-    echo -n "Hermes Agent sudah terpasang! Versi: "
-    hermes-agent --version 2>&1 || hermes-agent -v 2>&1
-else
-    echo "Hermes Agent belum terpasang di sistem ini."
-fi
-
-echo ""
-echo "=== 2. Pembuatan Virtual Environment FastAPI ==="
+echo "=== Pembuatan Virtual Environment FastAPI ==="
 
 # Menentukan path target relatif dari script ini
 # Script berada di project/setup/, venv akan dibuat di project/api/venv
