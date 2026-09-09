@@ -18,13 +18,22 @@ app = FastAPI(
 API_DIR = Path(__file__).resolve().parent
 BASE_DIR = API_DIR.parent  # Mengarah ke: yoru-agent/
 
-# Path scripts & logs disesuaikan dengan struktur baru
-SCRIPTS_DIR = BASE_DIR / "catalog" / "K01" / "scripts"
-LOGS_DIR = BASE_DIR / "catalog" / "K01" / "logs"
+# Path scripts & logs untuk K01
+SCRIPTS_DIR_K01 = BASE_DIR / "catalog" / "K01" / "scripts"
+LOGS_DIR_K01 = BASE_DIR / "catalog" / "K01" / "logs"
+
+# Path scripts & logs untuk K03
+SCRIPTS_DIR_K03 = BASE_DIR / "catalog" / "K03" / "scripts"
+LOGS_DIR_K03 = BASE_DIR / "catalog" / "K03" / "logs"
 
 # Pastikan direktori logs dibuat jika belum ada
-LOGS_DIR.mkdir(parents=True, exist_ok=True)
+LOGS_DIR_K01.mkdir(parents=True, exist_ok=True)
+LOGS_DIR_K03.mkdir(parents=True, exist_ok=True)
 
+
+# ==========================================
+# MODEL PYDANTIC
+# ==========================================
 
 # Model Input Request
 class TriggerRequest(BaseModel):
@@ -38,8 +47,18 @@ class TriggerRequest(BaseModel):
     )
 
 
-# Model Output Response
+# Model Output Response untuk K01
 class K01Response(BaseModel):
+    status: Literal["completed", "pending_confirmation", "cancelled", "error"]
+    selected_action: Literal["audit", "hardening", "rollback", "none"]
+    requires_confirmation: bool
+    confirmation_message: Optional[str] = None
+    execution_code: Optional[int] = None
+    action_logs: List[Dict[str, Any]] = []
+
+
+# Model Output Response untuk K03
+class K03Response(BaseModel):
     status: Literal["completed", "pending_confirmation", "cancelled", "error"]
     selected_action: Literal["audit", "hardening", "rollback", "none"]
     requires_confirmation: bool
@@ -52,11 +71,11 @@ class K01Response(BaseModel):
 # HELPER FUNCTIONS
 # ==========================================
 
-async def run_taskfile_action(action: str) -> int:
-    """Execution Layer: Memanggil Taskfile secara asynchronous dari folder scripts."""
+async def run_taskfile_action(action: str, scripts_dir: Path) -> int:
+    """Execution Layer: Memanggil Taskfile secara asynchronous dari folder scripts yang ditentukan."""
     process = await asyncio.create_subprocess_exec(
         "task", action,
-        cwd=str(SCRIPTS_DIR),  # Menjalankan command dari direktori catalog/K01/scripts
+        cwd=str(scripts_dir),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
@@ -64,9 +83,9 @@ async def run_taskfile_action(action: str) -> int:
     return process.returncode
 
 
-def read_action_logs(action: str) -> List[Dict[str, Any]]:
-    """Log Parser: Membaca log JSON spesifik action dari folder logs."""
-    log_file_path = LOGS_DIR / f"{action}.json"
+def read_action_logs(action: str, logs_dir: Path) -> List[Dict[str, Any]]:
+    """Log Parser: Membaca log JSON spesifik action dari folder logs yang ditentukan."""
+    log_file_path = logs_dir / f"{action}.json"
     if not log_file_path.exists():
         return []
 
@@ -83,7 +102,7 @@ def read_action_logs(action: str) -> List[Dict[str, Any]]:
 
 
 # ==========================================
-# ENDPOINT MAIN
+# ENDPOINT K01
 # ==========================================
 
 @app.post(
@@ -103,12 +122,12 @@ async def trigger_k01(payload: TriggerRequest):
 
         # Jika User Setuju (Ya / Yes / Lanjutkan)
         if intent_lower in ["ya", "yes", "setuju", "lanjutkan", "y"]:
-            exec_code = await run_taskfile_action(action_to_execute)
+            exec_code = await run_taskfile_action(action_to_execute, SCRIPTS_DIR_K01)
             
             if exec_code != 0:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Hermes Agent gagal mengeksekusi '{action_to_execute}'."
+                    detail=f"Hermes Agent gagal mengeksekusi '{action_to_execute}' pada K01."
                 )
 
             return K01Response(
@@ -117,7 +136,7 @@ async def trigger_k01(payload: TriggerRequest):
                 requires_confirmation=False,
                 confirmation_message=f"Konfirmasi diterima. Tindakan {action_to_execute} berhasil dieksekusi.",
                 execution_code=exec_code,
-                action_logs=read_action_logs(action_to_execute)
+                action_logs=read_action_logs(action_to_execute, LOGS_DIR_K01)
             )
 
         # Jika User Membatalkan (Tidak / No / Batal)
@@ -164,12 +183,105 @@ async def trigger_k01(payload: TriggerRequest):
 
     # 3. Audit / Auto -> Aman untuk Langsung Dieksekusi (Rendah Risiko)
     else:
-        exec_code = await run_taskfile_action("audit")
+        exec_code = await run_taskfile_action("audit", SCRIPTS_DIR_K01)
         return K01Response(
             status="completed",
             selected_action="audit",
             requires_confirmation=False,
             confirmation_message="Tindakan audit aman dijalankan tanpa konfirmasi.",
             execution_code=exec_code,
-            action_logs=read_action_logs("audit")
+            action_logs=read_action_logs("audit", LOGS_DIR_K01)
+        )
+
+
+# ==========================================
+# ENDPOINT K03
+# ==========================================
+
+@app.post(
+    "/K03",
+    response_model=K03Response,
+    status_code=status.HTTP_200_OK,
+    summary="Interactive SSH Login Limits Action Trigger with HITL (CIS 5.1.13 & 5.1.16)",
+)
+async def trigger_k03(payload: TriggerRequest):
+    intent_lower = payload.requested_intent.strip().lower()
+
+    # -------------------------------------------------------------
+    # TAHAP 1: Menangani Respon Konfirmasi (User Menjawab Ya / Tidak)
+    # -------------------------------------------------------------
+    if payload.pending_action in ["hardening", "rollback"]:
+        action_to_execute = payload.pending_action
+
+        # Jika User Setuju (Ya / Yes / Lanjutkan)
+        if intent_lower in ["ya", "yes", "setuju", "lanjutkan", "y"]:
+            exec_code = await run_taskfile_action(action_to_execute, SCRIPTS_DIR_K03)
+            
+            if exec_code != 0:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Hermes Agent gagal mengeksekusi '{action_to_execute}' pada K03."
+                )
+
+            return K03Response(
+                status="completed",
+                selected_action=action_to_execute,
+                requires_confirmation=False,
+                confirmation_message=f"Konfirmasi diterima. Tindakan {action_to_execute} berhasil dieksekusi.",
+                execution_code=exec_code,
+                action_logs=read_action_logs(action_to_execute, LOGS_DIR_K03)
+            )
+
+        # Jika User Membatalkan (Tidak / No / Batal)
+        elif intent_lower in ["tidak", "no", "batal", "n"]:
+            return K03Response(
+                status="cancelled",
+                selected_action="none",
+                requires_confirmation=False,
+                confirmation_message=f"Tindakan {action_to_execute} telah dibatalkan oleh pengguna.",
+                execution_code=0,
+                action_logs=[]
+            )
+        
+        # Jika respon konfirmasi tidak jelas
+        else:
+            return K03Response(
+                status="pending_confirmation",
+                selected_action=action_to_execute,
+                requires_confirmation=True,
+                confirmation_message=f"Jawaban tidak dikenali. Mohon jawab 'Ya' untuk melanjutkan {action_to_execute} atau 'Tidak' untuk membatalkan."
+            )
+
+    # -------------------------------------------------------------
+    # TAHAP 2: Evaluasi Intent Awal oleh Hermes Agent
+    # -------------------------------------------------------------
+    
+    # 1. Deteksi Hardening -> Butuh Konfirmasi
+    if any(k in intent_lower for k in ["hardening", "amankan", "batasi login", "limit login", "maxauth"]):
+        return K03Response(
+            status="pending_confirmation",
+            selected_action="hardening",
+            requires_confirmation=True,
+            confirmation_message="PERHATIAN: Hardening K03 akan membatasi percobaaan login SSH (MaxAuthTries & LoginGraceTime). Apakah Anda yakin ingin melanjutkan? (Jawab 'Ya' atau 'Tidak')"
+        )
+
+    # 2. Deteksi Rollback -> Butuh Konfirmasi
+    elif any(k in intent_lower for k in ["rollback", "kembalikan", "restore", "undo"]):
+        return K03Response(
+            status="pending_confirmation",
+            selected_action="rollback",
+            requires_confirmation=True,
+            confirmation_message="PERHATIAN: Rollback K03 akan mengembalikan batasan login SSH ke nilai default. Apakah Anda yakin? (Jawab 'Ya' atau 'Tidak')"
+        )
+
+    # 3. Audit / Auto -> Aman untuk Langsung Dieksekusi (Rendah Risiko)
+    else:
+        exec_code = await run_taskfile_action("audit", SCRIPTS_DIR_K03)
+        return K03Response(
+            status="completed",
+            selected_action="audit",
+            requires_confirmation=False,
+            confirmation_message="Tindakan audit K03 aman dijalankan tanpa konfirmasi.",
+            execution_code=exec_code,
+            action_logs=read_action_logs("audit", LOGS_DIR_K03)
         )

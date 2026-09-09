@@ -1,0 +1,52 @@
+id: K03
+nama: "Membatasi Login SSH (LoginGraceTime & MaxAuthTries)"
+kode_cis: "5.1.13, 5.1.16"
+kode_cis_judul_asli: "5.1.13 Ensure sshd LoginGraceTime is configured & 5.1.16 Ensure sshd MaxAuthTries is configured"
+kode_cis_sumber: "Tenable audit CIS_Ubuntu_Linux_24.04_LTS_v1.0.0_L1_Server.audit rev 1.14 (17 Jul 2026), dicocokkan 5 Sep 2026. Bukan dari PDF CIS asli - jangan menulis 'sesuai CIS' seolah kami memegang dokumen primernya."
+kode_cis_koreksi: >
+  Penomoran disesuaikan dengan benchmark Ubuntu 24.04 LTS v1.0.0 L1 Server.
+  Memastikan LoginGraceTime <= 60 detik dan MaxAuthTries <= 4 kali.
+risiko: BERISIKO
+kategori: ssh
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+tasks:
+  # Task internal untuk memastikan folder logs/ selalu ada
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  # 1. Cek parameter SSH Login Limits saat ini
+  check-limits:
+    desc: "Mengecek nilai LoginGraceTime dan MaxAuthTries pada sshd_config"
+    cmds:
+      - echo "=== Parameter SSH Login Limits Saat Ini ==="
+      - sudo sshd -T 2>/dev/null | grep -iE '^(logingracetime|maxauthtries)' || grep -ihE '^\s*(LoginGraceTime|MaxAuthTries)\s+' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null || true
+# 2. Audit SSH Login Limits
+  audit:
+    desc: "Menjalankan audit SSH LoginGraceTime dan MaxAuthTries"
+    deps: [init-log-dir]
+    cmds:
+      - chmod +x {{.SCRIPT_DIR}}/audit.sh
+      - sudo {{.SCRIPT_DIR}}/audit.sh
+
+  # 3. Hardening SSH Login Limits
+  hardening:
+    desc: "Mengonfigurasi LoginGraceTime (60s) dan MaxAuthTries (4) pada SSH"
+    deps: [init-log-dir]
+    cmds:
+      - chmod +x {{.SCRIPT_DIR}}/hardening.sh
+      - sudo {{.SCRIPT_DIR}}/hardening.sh
+
+  # 4. Rollback SSH Login Limits
+  rollback:
+    desc: "Mengembalikan konfigurasi SSH Login Grace Time & Max Auth Tries"
+    deps: [init-log-dir]
+    cmds:
+      - chmod +x {{.SCRIPT_DIR}}/rollback.sh
+      - sudo {{.SCRIPT_DIR}}/rollback.sh

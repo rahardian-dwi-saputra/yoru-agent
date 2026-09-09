@@ -1,11 +1,9 @@
 #!/bin/bash
 
-# Hentikan eksekusi jika terjadi error
 set -e
 
 echo "=== Pembuatan Virtual Environment FastAPI ==="
 
-# Menentukan path target relatif dari script ini
 # Script berada di project/setup/, venv akan dibuat di project/api/venv
 API_DIR="$(dirname "$0")/../api"
 VENV_DIR="$API_DIR/venv"

@@ -3,27 +3,40 @@
 
 set -e
 
-# Warna untuk output terminal
 GREEN='\033[0;32m'
-NC='\033[0m' # No Color
+NC='\033[0m'
 RED='\033[0;31m'
 
 echo -e "${GREEN}[*] Memulai Setup Environment Hermes Agent...${NC}"
 
-# 1. Pastikan skrip dijalankan dengan akses root/sudo
+# 1. PASTIkan SKRIP DIJALANKAN SEBAGAI ROOT / SUDO
 if [ "$EUID" -ne 0 ]; then
   echo -e "${RED}[ERROR] Skrip ini harus dijalankan dengan sudo atau sebagai root.${NC}"
   exit 1
 fi
 
-# Dapatkan nama user asli jika dijalankan menggunakan sudo
-TARGET_USER=${SUDO_USER:-$USER}
-USER_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
+# ==========================================
+# 2. OTOMASI PEMBUATAN USER 'yoru-agent'
+# ==========================================
+TARGET_USER="yoru-agent"
 
-echo -e "${GREEN}[*] Target User System: ${TARGET_USER}${NC}"
+if ! id "$TARGET_USER" &>/dev/null; then
+    echo -e "${GREEN}[*] Membuat user sistem baru: ${TARGET_USER}...${NC}"
+    # Membuat user dengan home directory dan shell bash
+    useradd -m -s /bin/bash "$TARGET_USER"
+    # Menambahkan ke grup sudo
+    usermod -aG sudo "$TARGET_USER" 2>/dev/null || usermod -aG wheel "$TARGET_USER" 2>/dev/null
+    echo -e "${GREEN}[OK] User ${TARGET_USER} berhasil dibuat.${NC}"
+else
+    echo -e "${GREEN}[OK] User ${TARGET_USER} sudah ada di sistem.${NC}"
+fi
+
+# Dapatkan home directory resmi dari target user
+USER_HOME=$(getent passwd "$TARGET_USER" | cut -d: -f6)
+echo -e "${GREEN}[*] Target User System: ${TARGET_USER} (Home: ${USER_HOME})${NC}"
 
 # ==========================================
-# 2. INSTALASI TASKFILE CLI (Task Runner)
+# 3. INSTALASI TASKFILE CLI (Task Runner)
 # ==========================================
 if ! command -v task &> /dev/null; then
     echo -e "${GREEN}[*] Menginstall Taskfile CLI...${NC}"
@@ -34,22 +47,29 @@ else
 fi
 
 # ==========================================
-# 3. KONFIGURASI SUDOERS (NOPASSWD)
+# 4. KONFIGURASI SUDOERS AKSES PENUH (NOPASSWD)
 # ==========================================
-# Memastikan user bisa mengeksekusi sudo systemctl restart sshd tanpa minta password
 SUDOERS_FILE="/etc/sudoers.d/hermes_agent_${TARGET_USER}"
 
-echo -e "${GREEN}[*] Mengonfigurasi izin Sudoers tanpa password untuk user ${TARGET_USER}...${NC}"
+echo -e "${GREEN}[*] Mengonfigurasi izin Sudoers NOPASSWD ALL untuk user ${TARGET_USER}...${NC}"
 cat <<EOF > "$SUDOERS_FILE"
-# Izin NOPASSWD untuk otomatisasi Hermes Agent & Taskfile
-${TARGET_USER} ALL=(ALL) NOPASSWD: ALL
+# Akses penuh tanpa password untuk eksekusi otomasi Hermes Agent & Taskfile
+${TARGET_USER} ALL=(ALL:ALL) NOPASSWD: ALL
 EOF
 
 chmod 0440 "$SUDOERS_FILE"
-echo -e "${GREEN}[OK] Konfigurasi sudoers tersimpan di $SUDOERS_FILE${NC}"
+
+# Validasi sintaks sudoers dengan visudo untuk mencegah lockout
+if visudo -cf "$SUDOERS_FILE" &>/dev/null; then
+    echo -e "${GREEN}[OK] Konfigurasi sudoers valid dan tersimpan di $SUDOERS_FILE${NC}"
+else
+    echo -e "${RED}[ERROR] Konfigurasi sudoers invalid! Menghapus file...${NC}"
+    rm -f "$SUDOERS_FILE"
+    exit 1
+fi
 
 # ==========================================
-# 4. MEMBUAT FILE PROMPT SYSTEM INSTRUCTION
+# 5. MEMBUAT FILE PROMPT SYSTEM INSTRUCTION
 # ==========================================
 HERMES_CONFIG_DIR="${USER_HOME}/.config/hermes-agent"
 mkdir -p "$HERMES_CONFIG_DIR"
@@ -60,28 +80,32 @@ cat <<'EOF' > "${HERMES_CONFIG_DIR}/system_instruction.txt"
 Role: Security Orchestrator for SSH Hardening System
 
 Protocol:
-1. When user requests SSH check or general task:
-   - Send HTTP POST to FastAPI: http://127.0.0.1:8000/K01
+1. Intent Classification & Routing:
+   Analyze user input to decide the target module/endpoint:
+   - Target Endpoint: http://127.0.0.1:8000/K01
+     Use when the user intent relates to SSH Root Access / Login rules (e.g., "amankan root", "matikan root login", "audit root ssh", "rollback root").
+   - Target Endpoint: http://127.0.0.1:8000/K03
+     Use when the user intent relates to SSH Login Attempt Limits & Timeout rules (e.g., "batasi percobaan login", "limit maxauth", "set grace time", "audit login limits", "rollback limits").
+   - Default Routing: If intent is ambiguous or general (e.g., "cek ssh", "audit sistem"), route to /K01 by default.
+
+2. Initial Action Trigger:
+   - Send HTTP POST to the determined target endpoint (/K01 or /K03).
    - Payload: {"requested_intent": "<user_intent>"}
 
-2. When response status is 'pending_confirmation':
-   - Present the 'confirmation_message' to the user.
-   - Wait for explicit user confirmation ('Ya' or 'Tidak').
-
-3. When user replies with confirmation:
-   - Send HTTP POST to FastAPI: http://127.0.0.1:8000/K01
-   - Payload: {"requested_intent": "<user_reply>", "pending_action": "<action_from_previous_step>"}
+3. HITL Confirmation Handling:
+   - If response status is 'pending_confirmation':
+     a. Display the 'confirmation_message' to the user.
+     b. Wait for explicit user confirmation ('Ya' or 'Tidak').
+   - When the user replies with confirmation:
+     a. Send HTTP POST to the SAME endpoint used in step 2.
+     b. Payload: {"requested_intent": "<user_reply>", "pending_action": "<action_from_previous_step>"}
 
 4. Output Formatting:
    - Always present 'action_logs' to the user in a clear JSON or formatted text structure.
 EOF
 
-# Sesuaikan kepemilikan folder ke user biasa (non-root)
-chown -R "${TARGET_USER}:${TARGET_USER}" "$HERMES_CONFIG_DIR"
-echo -e "${GREEN}[OK] System Instruction disimpan di ${HERMES_CONFIG_DIR}/system_instruction.txt${NC}"
-
 # ==========================================
-# 5. ENVIRONMENT VARIABLES SETUP
+# 6. ENVIRONMENT VARIABLES SETUP
 # ==========================================
 ENV_FILE="${HERMES_CONFIG_DIR}/.env"
 echo -e "${GREEN}[*] Membuat file .env untuk Hermes Agent...${NC}"
@@ -91,12 +115,14 @@ HERMES_ENV=production
 PATH=\$PATH:/usr/local/bin
 EOF
 
-chown "${TARGET_USER}:${TARGET_USER}" "$ENV_FILE"
-echo -e "${GREEN}[OK] File .env disimpan di $ENV_FILE${NC}"
+# Pastikan kepemilikan seluruh folder & file konfigurasi dimiliki oleh yoru-agent
+chown -R "${TARGET_USER}:${TARGET_USER}" "${USER_HOME}/.config"
+echo -e "${GREEN}[OK] System Instruction & .env disimpan di ${HERMES_CONFIG_DIR}${NC}"
 
 echo -e "\n${GREEN}=== SETUP HERMES AGENT SELESAI ===${NC}"
 echo "Ringkasan:"
-echo "1. Taskfile installed : $(command -v task)"
-echo "2. Sudoers file       : $SUDOERS_FILE"
-echo "3. System Instructions: ${HERMES_CONFIG_DIR}/system_instruction.txt"
-echo "4. Environment File   : $ENV_FILE"
+echo "1. Target User        : $TARGET_USER"
+echo "2. Taskfile installed : $(command -v task)"
+echo "3. Sudoers file       : $SUDOERS_FILE (Akses NOPASSWD ALL Aktif)"
+echo "4. System Instructions: ${HERMES_CONFIG_DIR}/system_instruction.txt"
+echo "5. Environment File   : $ENV_FILE"
