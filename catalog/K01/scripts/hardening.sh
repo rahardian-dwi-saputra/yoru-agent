@@ -30,8 +30,7 @@ log_json() {
     echo "[$LEVEL] $MESSAGE"
 
     # Menyimpan baris JSON terstruktur ke file log (JSON Lines)
-    printf '{"timestamp":"%s","level":"%s","event":"%s","cis_id":"%s","config_value":"%s","message":"%s"}
-' \
+    printf '{"timestamp":"%s","level":"%s","event":"%s","cis_id":"%s","config_value":"%s","message":"%s"}\n' \
         "$TIMESTAMP" "$LEVEL" "$EVENT" "$CIS_ID" "$CONFIG_VAL" "$MESSAGE" >> "$LOG_FILE"
 }
 
@@ -73,14 +72,16 @@ if [ "$CURR_TRIES" -le 3 ] 2>/dev/null && [ "$VAL_GRACE" -le 30 ]; then
     exit 0
 fi
 
-# Fungsi helper untuk memperbarui atau menambahkan parameter tunggal
+# ==============================================================================
+# PERBAIKAN 1: PERBAIKAN REGEX SUBTITUSI SED (NAMA PARAMETER TIDAK TERHAPUS)
+# ==============================================================================
 set_sshd_parameter() {
     local PARAM_NAME="$1"
     local TARGET_VAL="$2"
 
     if grep -iqE "^\s*${PARAM_NAME}\s+" "$SSHD_CONFIG"; then
-        # Mengubah baris parameter yang sudah ada tanpa menyentuh bagian lain
-        sed -i -E "s/^\s*(${PARAM_NAME})\s+.*/ ${TARGET_VAL}/i" "$SSHD_CONFIG"
+        # Menggunakan '\1' agar nama parameter tetap dipertahankan saat disunting
+        sed -i -E "s/^\s*(${PARAM_NAME})\s+.*/\1 ${TARGET_VAL}/i" "$SSHD_CONFIG"
     else
         # Jika belum ada, tambahkan di akhir file
         echo "${PARAM_NAME} ${TARGET_VAL}" >> "$SSHD_CONFIG"
@@ -111,6 +112,11 @@ else
     # Rollback jika sintaks invalid
     cp "$BACKUP_FILE" "$SSHD_CONFIG"
     log_json "ERROR" "hardening_failed" "5.1.13,5.1.16" "invalid_config" "Sintaks sshd_config tidak valid setelah diubah. Melakukan rollback otomatis."
+    
+    # ==========================================================================
+    # PERBAIKAN 2: INTEGRITAS FILE LOG DENGAN METODE UNESCAPE NEWLINE
+    # ==========================================================================
+    # Tambahkan newline manual jika printf membuat format log terputus
     exit 1
 fi
 

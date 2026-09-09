@@ -72,14 +72,21 @@ class K03Response(BaseModel):
 # ==========================================
 
 async def run_taskfile_action(action: str, scripts_dir: Path) -> int:
-    """Execution Layer: Memanggil Taskfile secara asynchronous dari folder scripts yang ditentukan."""
+    """Execution Layer: Memanggil Taskfile menggunakan sudo secara asynchronous dari folder scripts yang ditentukan."""
+    # Menambahkan 'sudo', '-E', 'task' agar dieksekusi dengan privilege root tanpa password
     process = await asyncio.create_subprocess_exec(
-        "task", action,
+        "sudo", "-E", "task", action,
         cwd=str(scripts_dir),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE
     )
     stdout, stderr = await process.communicate()
+
+    # Cetak log jika ada error dari stderr untuk mempermudah debugging
+    if process.returncode != 0:
+        print(f"[ERROR] Taskfile execution failed with exit code {process.returncode}")
+        print(f"[STDERR]: {stderr.decode('utf-8')}")
+
     return process.returncode
 
 
