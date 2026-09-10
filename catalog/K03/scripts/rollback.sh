@@ -83,8 +83,8 @@ set_sshd_parameter() {
     local TARGET_VAL="$2"
 
     if grep -iqE "^\s*${PARAM_NAME}\s+" "$SSHD_CONFIG"; then
-        # Mengubah baris parameter yang sudah ada tanpa menyentuh bagian lain
-        sed -i -E "s/^\s*(${PARAM_NAME})\s+.*/ ${TARGET_VAL}/i" "$SSHD_CONFIG"
+        # Memperbaiki perintah sed agar mengganti seluruh baris dengan parameter dan nilai baru secara akurat
+        sed -i -E "s/^\s*${PARAM_NAME}\s+.*/${PARAM_NAME} ${TARGET_VAL}/i" "$SSHD_CONFIG"
     else
         # Jika belum ada, tambahkan di akhir file
         echo "${PARAM_NAME} ${TARGET_VAL}" >> "$SSHD_CONFIG"

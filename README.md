@@ -35,6 +35,7 @@ sudo su - yoru-agent
 Pindah ke direktori api yang berada di dalam folder proyek Anda:
 > Catatan: Ganti (nama-user-lama) dengan nama username utama komputer Anda sebelumnya tempat folder proyek diunduh.
 ```bash
+sudo chown -R yoru-agent:yoru-agent /home/(nam-user-lama)/yoru-agent
 cd /home/(nama-user-lama)/yoru-agent/api
 ```
 
