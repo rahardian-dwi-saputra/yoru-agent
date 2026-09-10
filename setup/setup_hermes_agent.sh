@@ -107,22 +107,38 @@ EOF
 # ==========================================
 # 6. ENVIRONMENT VARIABLES SETUP
 # ==========================================
-ENV_FILE="${HERMES_CONFIG_DIR}/.env"
-echo -e "${GREEN}[*] Membuat file .env untuk Hermes Agent...${NC}"
-cat <<EOF > "$ENV_FILE"
+echo -e "${GREEN}[*] Membuat file .env terpisah untuk endpoint /K01 dan /K03...${NC}"
+
+# File .env untuk Endpoint K01 (SSH Root Access)
+cat <<EOF > "${HERMES_CONFIG_DIR}/K01.env"
+ENDPOINT_ID=K01
 HERMES_API_URL=http://127.0.0.1:8000/K01
+MODULE_NAME=SSH Root Access Hardening
 HERMES_ENV=production
 PATH=\$PATH:/usr/local/bin
 EOF
 
+# File .env untuk Endpoint K03 (SSH Limits & Timeouts)
+cat <<EOF > "${HERMES_CONFIG_DIR}/K03.env"
+ENDPOINT_ID=K03
+HERMES_API_URL=http://127.0.0.1:8000/K03
+MODULE_NAME=SSH Attempt Limits & Timeout Hardening
+HERMES_ENV=production
+PATH=\$PATH:/usr/local/bin
+EOF
+
+# File .env default
+cp "${HERMES_CONFIG_DIR}/K01.env" "${HERMES_CONFIG_DIR}/.env"
+
+# Pastikan kepemilikan seluruh folder & file konfigurasi dimiliki oleh yoru-agent
 # Pastikan kepemilikan seluruh folder & file konfigurasi dimiliki oleh yoru-agent
 chown -R "${TARGET_USER}:${TARGET_USER}" "${USER_HOME}/.config"
-echo -e "${GREEN}[OK] System Instruction & .env disimpan di ${HERMES_CONFIG_DIR}${NC}"
+echo -e "${GREEN}[OK] System Instruction & Konfigurasi .env (/K01 & /K03) disimpan di ${HERMES_CONFIG_DIR}${NC}"
 
 echo -e "\n${GREEN}=== SETUP HERMES AGENT SELESAI ===${NC}"
 echo "Ringkasan:"
 echo "1. Target User        : $TARGET_USER"
 echo "2. Taskfile installed : $(command -v task)"
-echo "3. Sudoers file       : $SUDOERS_FILE (Akses NOPASSWD ALL Aktif)"
+echo "3. Sudoers file       : $SUDOERS_FILE"
 echo "4. System Instructions: ${HERMES_CONFIG_DIR}/system_instruction.txt"
-echo "5. Environment File   : $ENV_FILE"
+echo "5. Endpoints Active   : /K01 (${HERMES_CONFIG_DIR}/K01.env) & /K03 (${HERMES_CONFIG_DIR}/K03.env)"

@@ -1,18 +1,18 @@
-id: K03
-nama: "Membatasi Login SSH (LoginGraceTime & MaxAuthTries)"
-kode_cis: "5.1.13, 5.1.16"
-kode_cis_judul_asli: "5.1.13 Ensure sshd LoginGraceTime is configured & 5.1.16 Ensure sshd MaxAuthTries is configured"
-kode_cis_sumber: "Tenable audit CIS_Ubuntu_Linux_24.04_LTS_v1.0.0_L1_Server.audit rev 1.14 (17 Jul 2026), dicocokkan 5 Sep 2026. Bukan dari PDF CIS asli - jangan menulis 'sesuai CIS' seolah kami memegang dokumen primernya."
-kode_cis_koreksi: >
-  Penomoran disesuaikan dengan benchmark Ubuntu 24.04 LTS v1.0.0 L1 Server.
-  Memastikan LoginGraceTime <= 60 detik dan MaxAuthTries <= 4 kali.
-risiko: BERISIKO
-kategori: ssh
+version: '3'
 
 vars:
   PROJECT_DIR: "{{.TASKFILE_DIR}}"
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  # Metadata CIS dipindahkan ke dalam vars agar tidak merusak root parser Taskfile
+  K03_ID: "K03"
+  K03_NAMA: "Membatasi Login SSH (LoginGraceTime & MaxAuthTries)"
+  K03_KODE_CIS: "5.1.13, 5.1.16"
+  K03_CIS_JUDUL: "5.1.13 Ensure sshd LoginGraceTime is configured & 5.1.16 Ensure sshd MaxAuthTries is configured"
+  K03_CIS_SUMBER: "Tenable audit CIS_Ubuntu_Linux_24.04_LTS_v1.0.0_L1_Server.audit rev 1.14 (17 Jul 2026), dicocokkan 5 Sep 2026."
+  K03_RISIKO: "BERISIKO"
+  K03_KATEGORI: "ssh"
 
 tasks:
   # Task internal untuk memastikan folder logs/ selalu ada
@@ -27,7 +27,8 @@ tasks:
     cmds:
       - echo "=== Parameter SSH Login Limits Saat Ini ==="
       - sudo sshd -T 2>/dev/null | grep -iE '^(logingracetime|maxauthtries)' || grep -ihE '^\s*(LoginGraceTime|MaxAuthTries)\s+' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null || true
-# 2. Audit SSH Login Limits
+
+  # 2. Audit SSH Login Limits
   audit:
     desc: "Menjalankan audit SSH LoginGraceTime dan MaxAuthTries"
     deps: [init-log-dir]

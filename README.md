@@ -1,4 +1,13 @@
 # Yoru Agent
+yoru-agent adalah agen berbasis Hermes-agent yang dirancang untuk melakukan hardening atau pengerasan keamanan server secara otomatis sesuai standar kepatuhan CIS (Center for Internet Security). Sistem ini menyediakan antarmuka FastAPI berbasis Python yang memungkinkan proses pengerasan server dipicu dan dikelola dengan mudah melalui integrasi API. Dengan mengombinasikan otomatisasi kepatuhan CIS dan kepraktisan FastAPI, agen ini membantu menjaga infrastruktur server tetap aman, terstandarisasi, dan efisien untuk diintegrasikan ke dalam alur kerja DevOps.
+
+## Requirement
+Sebelum menjalankan proyek pastikan di komputer anda sudah terinstall:
+- [Hermes Agent](https://github.com/nousresearch/hermes-agent)
+- Open SSH Server
+- Dependensi: `python3-venv`
+
+---
 
 ## Cara Instalasi & Penggunaan
 Ikuti langkah-langkah di bawah ini untuk menjalankan proyek di komputer lokal:
