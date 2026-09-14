@@ -4,13 +4,14 @@ vars:
   PROJECT_DIR: "{{.TASKFILE_DIR}}"
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
-  
-  # Metadata CIS dipindahkan ke dalam vars
-  K01_ID: "K01"
-  K01_NAMA: "Root tidak bisa login lewat SSH"
-  K01_KODE_CIS: "5.1.20"
-  K01_CIS_JUDUL: "5.1.20 Ensure sshd PermitRootLogin is disabled"
-  K01_RISIKO: "BERISIKO"
+
+  # Metadata CIS Benchmark
+  ID: "K01"
+  NAMA: "Root tidak bisa login lewat SSH"
+  KODE_CIS: "5.1.20"
+  CIS_JUDUL: "5.1.20 Ensure sshd PermitRootLogin is disabled"
+  RISIKO: "BERISIKO"
+  KATEGORI: "SSH"
 
 tasks:
   # Task internal untuk memastikan folder logs/ selalu ada
@@ -19,7 +20,7 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Cek user lain yang punya akses SSH
+  # 1. Cek user lain yang punya akses SSH (Pengecekan Manual Terminal)
   check-users:
     desc: "Mengecek daftar user non-root yang memiliki akses SSH atau sudo"
     cmds:
@@ -33,21 +34,18 @@ tasks:
     desc: "Menjalankan audit SSH Root login"
     deps: [init-log-dir]
     cmds:
-      - chmod +x {{.SCRIPT_DIR}}/audit.sh
-      - sudo {{.SCRIPT_DIR}}/audit.sh
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
   # 3. Hardening SSH (Nonaktifkan Root Login)
   hardening:
     desc: "Menonaktifkan login Root via SSH"
     deps: [init-log-dir]
     cmds:
-      - chmod +x {{.SCRIPT_DIR}}/hardening.sh
-      - sudo {{.SCRIPT_DIR}}/hardening.sh
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 4. Rollback SSH
+  # 4. Rollback SSH (Memulihkan PermitRootLogin ke yes)
   rollback:
-    desc: "Mengembalikan konfigurasi SSH"
+    desc: "Mengembalikan parameter PermitRootLogin via SSH ke nilai 'yes'"
     deps: [init-log-dir]
     cmds:
-      - chmod +x {{.SCRIPT_DIR}}/rollback.sh
-      - sudo {{.SCRIPT_DIR}}/rollback.sh
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

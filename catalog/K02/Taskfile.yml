@@ -1,0 +1,49 @@
+version: '3'
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  # Metadata CIS Benchmark
+  ID: "K02"
+  NAMA: "Login SSH menggunakan Password Dimatikan (Khusus SSH Key)"
+  KODE_CIS: "5.2.14"
+  CIS_JUDUL: "5.2.14 Ensure SSH PasswordAuthentication is disabled"
+  RISIKO: "SANGAT BERISIKO"
+  KATEGORI: "SSH"
+
+tasks:
+  # Task internal untuk memastikan folder logs/ selalu ada
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  # 1. Cek ketersediaan SSH Key pada user non-root (Validasi Keamanan)
+  check-ssh-keys:
+    desc: "Mengecek apakah user non-root sudah memiliki SSH public key di authorized_keys"
+    cmds:
+      - echo "=== User dengan authorized_keys (Bisa Login SSH Key) ==="
+      - ls -la /home/*/.ssh/authorized_keys 2>/dev/null || echo "WARNING: Tidak ditemukan authorized_keys di /home/*!"
+
+  # 2. Audit SSH Password Authentication
+  audit:
+    desc: "Menjalankan audit parameter PasswordAuthentication di sshd_config"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/audit_password_auth.py
+
+  # 3. Hardening SSH (Matikan Login Password)
+  hardening:
+    desc: "Menonaktifkan login password via SSH (PasswordAuthentication no)"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening_password_auth.py
+
+  # 4. Rollback SSH (Aktifkan Kembali Login Password)
+  rollback:
+    desc: "Mengembalikan parameter PasswordAuthentication via SSH ke nilai 'yes'"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback_password_auth.py
