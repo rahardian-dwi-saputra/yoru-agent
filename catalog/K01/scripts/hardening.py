@@ -22,6 +22,7 @@ from pipeline.catalogutils import (
     check_sshd_config_exists,
     get_non_root_users,
     release_lock,
+    restart_ssh_service,
 )
 
 
@@ -79,17 +80,6 @@ def apply_permit_root_login_logic(
         action_taken = "appended_new_parameter"
 
     return found_parameter, action_taken
-
-
-def restart_ssh_service() -> bool:
-    """Mencoba merestart service sshd atau ssh."""
-    for service in ["sshd", "ssh"]:
-        result = subprocess.run(
-            ["systemctl", "restart", service], capture_output=True
-        )
-        if result.returncode == 0:
-            return True
-    return False
 
 
 def main():

@@ -7,6 +7,7 @@ import sys
 import tempfile
 from typing import Optional, Tuple
 
+
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
@@ -18,16 +19,16 @@ from pipeline.catalogutils import (
     SSHD_CONFIG,
     BaseLogger,
     acquire_lock,
+    check_sshd_config_exists,
     release_lock,
     restart_ssh_service,
-    check_sshd_config_exists,
 )
 
 
-def check_permit_root_login_state(
+def check_password_auth_state(
     config_path: Path,
 ) -> Tuple[str, Optional[str]]:
-    """Mengecek keberadaan dan nilai PermitRootLogin di sshd_config.
+    """Mengecek keberadaan dan nilai PasswordAuthentication di sshd_config.
 
     Return:
         Tuple[state, value]
@@ -41,16 +42,16 @@ def check_permit_root_login_state(
         for line in f:
             line_stripped = line.strip()
 
-            # Cek jika baris berkomentar
+            # 1. Baris Terkomentar
             if line_stripped.startswith("#"):
                 uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("permitrootlogin"):
+                if uncommented.lower().startswith("passwordauthentication"):
                     parts = uncommented.split()
                     val = parts[1] if len(parts) >= 2 else None
                     return "commented", val
 
-            # Cek jika baris aktif
-            elif line_stripped.lower().startswith("permitrootlogin"):
+            # 2. Baris Aktif
+            elif line_stripped.lower().startswith("passwordauthentication"):
                 parts = line_stripped.split()
                 val = parts[1] if len(parts) >= 2 else None
                 return "active", val
@@ -59,31 +60,28 @@ def check_permit_root_login_state(
 
 
 def apply_rollback_logic(src_path: Path, dst_file_obj) -> None:
-    """Mengubah parameter PermitRootLogin aktif yang bernilai 'no' menjadi 'yes'."""
+    """Mengubah parameter PasswordAuthentication aktif yang bernilai 'no' menjadi 'yes'."""
     with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             line_stripped = line.strip()
 
-            # Ubah HANYA baris aktif PermitRootLogin
             if not line_stripped.startswith(
                 "#"
-            ) and line_stripped.lower().startswith("permitrootlogin"):
-                dst_file_obj.write("PermitRootLogin yes\n")
+            ) and line_stripped.lower().startswith("passwordauthentication"):
+                dst_file_obj.write("PasswordAuthentication yes\n")
             else:
                 dst_file_obj.write(line)
 
 
 def main():
-    
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
-        catalog="K01",
-        cis_id="5.1.20",
+        catalog="K02",
+        cis_id="5.2.14",
         log_type="rollback",
     )
 
-    # Kunci eksekusi skrip
     lock_file_obj = acquire_lock(logger)
 
     try:
@@ -95,46 +93,46 @@ def main():
             )
             sys.exit(1)
 
-        # Cek status parameter PermitRootLogin di sshd_config
-        state, value = check_permit_root_login_state(SSHD_CONFIG)
+        # Cek status parameter PasswordAuthentication di sshd_config
+        state, value = check_password_auth_state(SSHD_CONFIG)
 
-        # Syarat 1: Tidak ada parameter PermitRootLogin di SSHD_CONFIG
+        # 1. Jika parameter tidak ditemukan -> Batalkan rollback
         if state == "not_found":
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: Dibatalkan - Parameter PermitRootLogin tidak ditemukan di sshd_config.",
+                "Hasil Rollback: Dibatalkan - Parameter PasswordAuthentication tidak ditemukan di sshd_config.",
             )
             sys.exit(0)
 
-        # Syarat 2: Parameter PermitRootLogin dalam posisi Comment ('#')
+        # 2. Jika parameter terkomentar (#) -> Batalkan rollback
         if state == "commented":
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: Dibatalkan - Parameter PermitRootLogin dalam keadaan terkomentar (#).",
+                "Hasil Rollback: Dibatalkan - Parameter PasswordAuthentication dalam keadaan terkomentar (#).",
             )
             sys.exit(0)
 
-        # Syarat 3: Parameter PermitRootLogin sudah bernilai 'yes'
+        # 3. Jika parameter sudah bernilai 'yes' -> Batalkan rollback
         if state == "active" and value and value.lower() == "yes":
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: Dibatalkan - PermitRootLogin sudah bernilai 'yes'.",
+                "Hasil Rollback: Rollback - PasswordAuthentication sudah bernilai 'yes'.",
             )
             sys.exit(0)
 
-        # Syarat 4: Jika bernilai bukan 'no' (misal: prohibit-password / forced-commands-only)
+        # Penanganan jika parameter aktif tapi nilainya bukan 'no' (misal nilai kustom/tidak valid)
         if state == "active" and value and value.lower() != "no":
             logger.log(
                 "WARNING",
                 "Result",
-                f"Hasil Rollback: Dibatalkan - PermitRootLogin bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
+                f"Hasil Rollback: Dibatalkan - PasswordAuthentication bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
             )
             sys.exit(0)
 
-        # Proses perubahan config (Hanya jika bernilai 'no')
+        # 4. Jika parameter bernilai 'no' -> Ubah nilainya menjadi 'yes'
         with tempfile.NamedTemporaryFile(
             "w+", delete=False, prefix="sshd_config_"
         ) as tmp_file:
@@ -147,7 +145,6 @@ def main():
         )
 
         if validate_cmd.returncode == 0:
-            # Timpa file utama secara atomic
             shutil.move(str(tmp_config_path), str(SSHD_CONFIG))
             os.chmod(SSHD_CONFIG, 0o600)
 
@@ -155,7 +152,7 @@ def main():
                 logger.log(
                     "SUCCESS",
                     "Result",
-                    "Hasil Rollback: PermitRootLogin berhasil dikembalikan ke 'yes'. Konfigurasi lain tetap terjaga.",
+                    "Hasil Rollback: berhasil - PasswordAuthentication berhasil dikembalikan ke 'yes'.",
                 )
             else:
                 logger.log(
@@ -177,7 +174,7 @@ def main():
         logger.log(
             "ERROR",
             "Note",
-            f"Terjadi error saat rollback: {e}"
+            f"Terjadi error saat rollback K02: {e}"
         )
         logger.log(
             "FAILED",
@@ -187,7 +184,6 @@ def main():
         sys.exit(1)
 
     finally:
-        # Melepaskan penguncian file
         release_lock(lock_file_obj)
 
 

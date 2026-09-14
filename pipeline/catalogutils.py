@@ -1,12 +1,14 @@
 from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
-from typing import List
+from typing import List, Tuple, Union
 import fcntl
 import json
 import sys
 import uuid
 import os
+import subprocess
+import pwd
 
 # Path Konfigurasi sistem
 SSHD_CONFIG = Path("/etc/ssh/sshd_config")
@@ -14,6 +16,7 @@ LOCK_FILE = Path("/tmp/sshd_config.lock")
 PASSWD_FILE = Path("/etc/passwd")
 
 VALID_SHELLS = {"/bin/bash", "/bin/sh", "/bin/zsh"}
+INVALID_SHELLS = {"/bin/false", "/usr/sbin/nologin", "/sbin/nologin", "/bin/sync"}
 
 def check_sshd_config_exists(
     logger: BaseLogger | None = None, 
@@ -32,6 +35,16 @@ def check_sshd_config_exists(
             )
         return False
     return True
+
+def restart_ssh_service() -> bool:
+    """Mencoba merestart service sshd atau ssh."""
+    for service in ["sshd", "ssh"]:
+        result = subprocess.run(
+            ["systemctl", "restart", service], capture_output=True
+        )
+        if result.returncode == 0:
+            return True
+    return False
 
 class BaseLogger:
 
@@ -99,21 +112,20 @@ def release_lock(lock_file_obj) -> None:
         lock_file_obj.close()
 
 
-def get_non_root_users() -> List[str]:
-    non_root_users = []
-    if not PASSWD_FILE.exists():
-        return non_root_users
+def get_non_root_users(include_home: bool = False) -> Union[List[str], List[Tuple[str, Path]]]:
+    """Mendapatkan daftar user non-root aktif (UID >= 1000).
+    
+    Args:
+        include_home: Jika True, mengembalikan List[Tuple[username, home_dir]].
+                      Jika False, hanya mengembalikan List[username].
+    """
+    valid_users = []
+    for user in pwd.getpwall():
+        if user.pw_uid >= 1000 and user.pw_name != "nobody":
+            if user.pw_shell not in INVALID_SHELLS:
+                if include_home:
+                    valid_users.append((user.pw_name, Path(user.pw_dir)))
+                else:
+                    valid_users.append(user.pw_name)
 
-    with open(PASSWD_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith("#"):
-                continue
-
-            parts = line.split(":")
-            if len(parts) >= 7:
-                username, shell = parts[0], parts[6]
-                if username != "root" and shell in VALID_SHELLS:
-                    non_root_users.append(username)
-
-    return non_root_users
+    return valid_users

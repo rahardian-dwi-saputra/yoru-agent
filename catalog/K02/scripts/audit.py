@@ -1,82 +1,24 @@
 from __future__ import annotations
-from datetime import datetime
-import fcntl
-import json
-import os
 from pathlib import Path
-import pwd
+from typing import Optional, Tuple
 import subprocess
 import sys
-from typing import List, Optional, Tuple
 
-# Konfigurasi Path
+# Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
-LOG_DIR = SCRIPT_DIR.parent / "logs"
-LOG_FILE = LOG_DIR / "audit.json"
-SSHD_CONFIG = Path("/etc/ssh/sshd_config")
-LOCK_FILE = Path("/tmp/sshd_config.lock")
+PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-def get_next_log_id() -> int:
-    if LOG_FILE.exists():
-        with open(LOG_FILE, "r", encoding="utf-8") as f:
-            return sum(1 for _ in f) + 1
-    return 1
-
-
-class Logger:
-    
-    def __init__(self, log_path: Path):
-        self.log_path = log_path
-        self.log_path.parent.mkdir(parents=True, exist_ok=True)
-        self.current_id = get_next_log_id()
-
-    def log(
-        self, level: str, message: str
-    ) -> None:
-        print(f"[{level}] {message}")
-
-        log_entry = {
-            "id": self.current_id,
-            "timestamp": datetime.now().astimezone().isoformat(),
-            "catalog": "K02",
-            "cis_id": "5.2.14",
-            "type":"audit",
-            "level": level,
-            "message": message,
-        }
-
-        with open(self.log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
-
-        self.current_id += 1
-
-
-def acquire_lock(lock_file_path: Path, logger: Logger):
-    """Mencegah bentrokan eksekusi dengan skrip lain."""
-    try:
-        lock_file = open(lock_file_path, "w")
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return lock_file
-    except (BlockingIOError, OSError):
-        logger.log(
-            "ERROR",
-            "File sshd_config sedang diakses oleh proses lain. Audit dibatalkan.",
-        )
-        sys.exit(1)
-
-
-def get_non_root_users() -> List[Tuple[str, Path]]:
-    """Mendapatkan daftar user non-root (UID >= 1000) yang memiliki login shell aktif."""
-    valid_users = []
-    invalid_shells = {"/bin/false", "/usr/sbin/nologin", "/sbin/nologin", "/bin/sync"}
-
-    for user in pwd.getpwall():
-        if user.pw_uid >= 1000 and user.pw_name != "nobody":
-            if user.pw_shell not in invalid_shells:
-                valid_users.append((user.pw_name, Path(user.pw_dir)))
-
-    return valid_users
+from pipeline.catalogutils import (
+    SSHD_CONFIG,
+    BaseLogger,
+    acquire_lock,
+    get_non_root_users,
+    check_sshd_config_exists,
+    release_lock,
+)
 
 
 def check_ssh_key_validity(key_file: Path) -> Tuple[bool, str]:
@@ -110,37 +52,59 @@ def check_password_auth_status() -> Optional[str]:
 
 
 def main():
-    logger = Logger(LOG_FILE)
 
-    # Kunci eksekusi skrip (jika gagal, akan otomatis catat log ERROR)
-    lock_file_obj = acquire_lock(LOCK_FILE, logger)
+    logger = BaseLogger(
+        script_dir=SCRIPT_DIR,
+        log_file_name="audit.json",
+        catalog="K02",
+        cis_id="5.2.14",
+        log_type="audit",
+    )
+    
+    # Kunci eksekusi skrip
+    lock_file = acquire_lock(logger)
 
+    logger.log(
+        "INFO", 
+        "Start", 
+        "Memulai audit CIS 5.2.14 (sshd PasswordAuthentication)..."
+    )
+    
     try:
-        audit_passed = True
+        if not check_sshd_config_exists(logger):
+            logger.log(
+                "FAILED", 
+                "Result", 
+                "Hasil Audit: FAILED - File sshd_config tidak ditemukan."
+            )
+            sys.exit(1)
 
         # Pastikan sudah memiliki daftar user non-root
-        non_root_users = get_non_root_users()
-        if not non_root_users:
+        users_with_home = get_non_root_users(include_home=True)
+        if not users_with_home:
             logger.log(
                 "WARNING",
+                "Note",
                 "Tidak ditemukan user non-root dengan shell aktif di sistem.",
             )
             audit_passed = False
         else:
-            user_list_str = ", ".join([u[0] for u in non_root_users])
+            user_list_str = ", ".join([u[0] for u in users_with_home])
             logger.log(
                 "INFO",
-                f"Ditemukan user non-root aktif: {user_list_str}",
+                "Note",
+                f"Ditemukan {len(user_list_str)} user non-root aktif: {', '.join(user_list_str)}",
             )
 
         # Verifikasi SSH Key setiap user
-        for username, home_dir in non_root_users:
+        for username, home_dir in users_with_home:
             auth_keys_path = home_dir / ".ssh" / "authorized_keys"
 
             # Check 2: Keberadaan public key
             if not auth_keys_path.is_file() or auth_keys_path.stat().st_size == 0:
                 logger.log(
                     "ERROR",
+                    "Note",
                     f"User '{username}' tidak memiliki file authorized_keys yang valid.",
                 )
                 audit_passed = False
@@ -151,6 +115,7 @@ def main():
             if not is_valid:
                 logger.log(
                     "ERROR",
+                    "Note",
                     f"File authorized_keys milik user '{username}' corrupt/tidak valid: {err_msg}",
                 )
                 audit_passed = False
@@ -160,6 +125,7 @@ def main():
             if file_mode != "0o600":
                 logger.log(
                     "ERROR",
+                    "Note",
                     f"Permission file authorized_keys user '{username}' adalah {file_mode} (Wajib 0o600).",
                 )
                 audit_passed = False
@@ -170,33 +136,40 @@ def main():
         if pass_auth_status != "no":
             logger.log(
                 "WARNING",
+                "Note",
                 f"Parameter PasswordAuthentication bernilai '{pass_auth_status or 'default (yes)'}' (Seharusnya 'no').",
             )
             audit_passed = False
 
-        # -------------------------------------------------------------
-        # KESIMPULAN AUDIT
-        # -------------------------------------------------------------
+        # Kesimpulan Audit
         if audit_passed:
             logger.log(
                 "SUCCESS",
-                "audit_completed",
-                "compliant",
-                "Sistem COMPLIANT: Seluruh user non-root memiliki SSH key valid (permission 600) dan PasswordAuthentication di-set ke 'no'.",
+                "Result",
+                "Hasil Audit: Seluruh user non-root memiliki SSH key valid (permission 600) dan PasswordAuthentication di-set ke 'no'.",
             )
         else:
             logger.log(
                 "WARNING",
-                "audit_completed",
-                "non_compliant",
-                "Sistem NON-COMPLIANT: Terdapat syarat SSH Key atau konfigurasi SSHD yang belum terpenuhi.",
+                "Result",
+                "Hasil Audit: Terdapat syarat SSH Key atau konfigurasi SSHD yang belum terpenuhi.",
             )
 
-        logger.log("INFO", "audit_end", "completed", "Proses audit selesai.")
+    except Exception as e:
+            logger.log(
+                "ERROR",
+                "Note", 
+                f"Terjadi error saat audit: {e}"
+            )
+            logger.log(
+                "FAILED",
+                "Result",
+                "Hasil Audit: FAILED - Terjadi kesalahan pada proses audit."
+            ) 
 
     finally:
-        fcntl.flock(lock_file_obj, fcntl.LOCK_UN)
-        lock_file_obj.close()
+        # Melepaskan penguncian file
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

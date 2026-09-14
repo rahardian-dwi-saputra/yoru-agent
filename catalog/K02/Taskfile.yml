@@ -32,18 +32,18 @@ tasks:
     desc: "Menjalankan audit parameter PasswordAuthentication di sshd_config"
     deps: [init-log-dir]
     cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/audit_password_auth.py
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
   # 3. Hardening SSH (Matikan Login Password)
   hardening:
     desc: "Menonaktifkan login password via SSH (PasswordAuthentication no)"
     deps: [init-log-dir]
     cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/hardening_password_auth.py
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
   # 4. Rollback SSH (Aktifkan Kembali Login Password)
   rollback:
     desc: "Mengembalikan parameter PasswordAuthentication via SSH ke nilai 'yes'"
     deps: [init-log-dir]
     cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/rollback_password_auth.py
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

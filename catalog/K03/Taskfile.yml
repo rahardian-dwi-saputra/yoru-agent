@@ -5,49 +5,50 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS dipindahkan ke dalam vars agar tidak merusak root parser Taskfile
-  K03_ID: "K03"
-  K03_NAMA: "Membatasi Login SSH (LoginGraceTime & MaxAuthTries)"
-  K03_KODE_CIS: "5.1.13, 5.1.16"
-  K03_CIS_JUDUL: "5.1.13 Ensure sshd LoginGraceTime is configured & 5.1.16 Ensure sshd MaxAuthTries is configured"
-  K03_CIS_SUMBER: "Tenable audit CIS_Ubuntu_Linux_24.04_LTS_v1.0.0_L1_Server.audit rev 1.14 (17 Jul 2026), dicocokkan 5 Sep 2026."
-  K03_RISIKO: "BERISIKO"
-  K03_KATEGORI: "ssh"
+  # Metadata CIS
+  ID: "K03"
+  NAMA: "Membatasi Waktu Login SSH"
+  KODE_CIS: "5.1.13"
+  CIS_JUDUL: "5.1.13 Ensure sshd LoginGraceTime is configured"
+  RISIKO: "BERISIKO"
+  KATEGORI: "SSH"
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
-  init-log-dir:
-    internal: true
+  default:
+    desc: "Menampilkan informasi catalog dan daftar task yang tersedia"
     cmds:
-      - mkdir -p {{.LOG_DIR}}
+      - task: info
 
-  # 1. Cek parameter SSH Login Limits saat ini
-  check-limits:
-    desc: "Mengecek nilai LoginGraceTime dan MaxAuthTries pada sshd_config"
+  info:
+    desc: "Menampilkan metadata aturan CIS K03"
+    silent: true
     cmds:
-      - echo "=== Parameter SSH Login Limits Saat Ini ==="
-      - sudo sshd -T 2>/dev/null | grep -iE '^(logingracetime|maxauthtries)' || grep -ihE '^\s*(LoginGraceTime|MaxAuthTries)\s+' /etc/ssh/sshd_config /etc/ssh/sshd_config.d/*.conf 2>/dev/null || true
+      - echo "=================================================="
+      - echo " Catalog ID  : {{.ID}}"
+      - echo " Nama        : {{.NAMA}}"
+      - echo " Kode CIS    : {{.KODE_CIS}}"
+      - echo " Judul CIS   : {{.CIS_JUDUL}}"
+      - echo " Risiko      : {{.RISIKO}}"
+      - echo " Kategori    : {{.KATEGORI}}"
+      - echo "=================================================="
 
-  # 2. Audit SSH Login Limits
   audit:
-    desc: "Menjalankan audit SSH LoginGraceTime dan MaxAuthTries"
-    deps: [init-log-dir]
+    desc: "Menjalankan audit untuk CIS 5.1.13 LoginGraceTime"
     cmds:
-      - chmod +x {{.SCRIPT_DIR}}/audit.sh
-      - sudo {{.SCRIPT_DIR}}/audit.sh
+      - python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 3. Hardening SSH Login Limits
   hardening:
-    desc: "Mengonfigurasi LoginGraceTime (60s) dan MaxAuthTries (4) pada SSH"
-    deps: [init-log-dir]
+    desc: "Menjalankan hardening untuk CIS 5.1.13 LoginGraceTime"
     cmds:
-      - chmod +x {{.SCRIPT_DIR}}/hardening.sh
-      - sudo {{.SCRIPT_DIR}}/hardening.sh
+      - python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 4. Rollback SSH Login Limits
   rollback:
-    desc: "Mengembalikan konfigurasi SSH Login Grace Time & Max Auth Tries"
-    deps: [init-log-dir]
+    desc: "Menjalankan rollback untuk CIS 5.1.13 LoginGraceTime"
     cmds:
-      - chmod +x {{.SCRIPT_DIR}}/rollback.sh
-      - sudo {{.SCRIPT_DIR}}/rollback.sh
+      - python3 {{.SCRIPT_DIR}}/rollback.py
+
+  clean:
+    desc: "Membersihkan file log pada catalog K03"
+    cmds:
+      - rm -rf {{.LOG_DIR}}/*.json
+      - echo "Log catalog {{.ID}} berhasil dibersihkan."
