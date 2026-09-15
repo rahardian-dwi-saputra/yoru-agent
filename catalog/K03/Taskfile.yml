@@ -20,16 +20,16 @@ tasks:
       - task: info
 
   info:
-    desc: "Menampilkan metadata aturan CIS K03"
+    desc: "Menampilkan perintah pengecekan LoginGraceTime sesuai standar CIS 5.1.13"
     silent: true
     cmds:
       - echo "=================================================="
-      - echo " Catalog ID  : {{.ID}}"
-      - echo " Nama        : {{.NAMA}}"
-      - echo " Kode CIS    : {{.KODE_CIS}}"
-      - echo " Judul CIS   : {{.CIS_JUDUL}}"
-      - echo " Risiko      : {{.RISIKO}}"
-      - echo " Kategori    : {{.KATEGORI}}"
+      - echo " Kategori  : {{.KATEGORI}} ({{.KODE_CIS}})"
+      - echo " Perintah Pengecekan LoginGraceTime:"
+      - echo "   sshd -T | grep -i logingracetime"
+      - echo "   grep -i '^LoginGraceTime' /etc/ssh/sshd_config*"
+      - echo " Standar Nilai:"
+      - echo "   LoginGraceTime harus diatur ke 60 detik atau kurang (misal: 60)."
       - echo "=================================================="
 
   audit:

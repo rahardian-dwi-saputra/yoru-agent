@@ -144,25 +144,25 @@ def main():
         # Kesimpulan Audit
         if audit_passed:
             logger.log(
-                "SUCCESS",
+                "PASSED",
                 "Result",
-                "Hasil Audit: Seluruh user non-root memiliki SSH key valid (permission 600) dan PasswordAuthentication di-set ke 'no'.",
+                "Hasil Audit: PASSED - Seluruh user non-root memiliki SSH key valid (permission 600) dan PasswordAuthentication di-set ke 'no'.",
             )
         else:
             logger.log(
-                "WARNING",
+                "FAIL",
                 "Result",
-                "Hasil Audit: Terdapat syarat SSH Key atau konfigurasi SSHD yang belum terpenuhi.",
+                "Hasil Audit: FAILED - Terdapat syarat SSH Key atau konfigurasi SSHD yang belum terpenuhi.",
             )
 
     except Exception as e:
             logger.log(
                 "ERROR",
                 "Note", 
-                f"Terjadi error saat audit: {e}"
+                f"Terjadi error saat audit K02: {e}"
             )
             logger.log(
-                "FAILED",
+                "FAIL",
                 "Result",
                 "Hasil Audit: FAILED - Terjadi kesalahan pada proses audit."
             ) 

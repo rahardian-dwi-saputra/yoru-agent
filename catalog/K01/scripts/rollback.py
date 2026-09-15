@@ -1,11 +1,12 @@
 from __future__ import annotations
-import os
 from pathlib import Path
+from typing import Optional, Tuple
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Optional, Tuple
+
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -103,7 +104,7 @@ def main():
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: Dibatalkan - Parameter PermitRootLogin tidak ditemukan di sshd_config.",
+                "Hasil Rollback: CANCELLED - Parameter PermitRootLogin tidak ditemukan di sshd_config.",
             )
             sys.exit(0)
 
@@ -112,7 +113,7 @@ def main():
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: Dibatalkan - Parameter PermitRootLogin dalam keadaan terkomentar (#).",
+                "Hasil Rollback: CANCELLED - Parameter PermitRootLogin dalam keadaan terkomentar (#).",
             )
             sys.exit(0)
 
@@ -121,7 +122,7 @@ def main():
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: Dibatalkan - PermitRootLogin sudah bernilai 'yes'.",
+                "Hasil Rollback: CANCELLED - PermitRootLogin sudah bernilai 'yes'.",
             )
             sys.exit(0)
 
@@ -130,7 +131,7 @@ def main():
             logger.log(
                 "WARNING",
                 "Result",
-                f"Hasil Rollback: Dibatalkan - PermitRootLogin bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
+                f"Hasil Rollback: CANCELLED - PermitRootLogin bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
             )
             sys.exit(0)
 
@@ -155,13 +156,13 @@ def main():
                 logger.log(
                     "SUCCESS",
                     "Result",
-                    "Hasil Rollback: PermitRootLogin berhasil dikembalikan ke 'yes'. Konfigurasi lain tetap terjaga.",
+                    "Hasil Rollback: SUCCEED - PermitRootLogin berhasil dikembalikan ke 'yes'. Konfigurasi lain tetap terjaga.",
                 )
             else:
                 logger.log(
                     "WARNING",
                     "Result",
-                    "Hasil Rollback: Konfigurasi diubah ke 'yes', tetapi gagal merestart service SSH.",
+                    "Hasil Rollback: WARNING - Konfigurasi diubah ke 'yes', tetapi gagal merestart service SSH.",
                 )
         else:
             if tmp_config_path.exists():
@@ -169,7 +170,7 @@ def main():
             logger.log(
                 "ERROR",
                 "Result",
-                "Hasil Rollback: Sintaks konfigurasi invalid! Rollback dibatalkan.",
+                "Hasil Rollback: CANCELLED - Sintaks konfigurasi invalid! Rollback dibatalkan.",
             )
             sys.exit(1)
 
@@ -177,7 +178,7 @@ def main():
         logger.log(
             "ERROR",
             "Note",
-            f"Terjadi error saat rollback: {e}"
+            f"Terjadi error saat rollback K01: {e}"
         )
         logger.log(
             "FAILED",

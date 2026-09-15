@@ -20,34 +20,24 @@ from pipeline.catalogutils import (
 )
 
 
-def parse_grace_time_to_seconds(raw_value: str) -> Optional[int]:
-    """Mengonversi nilai LoginGraceTime (misal: '60', '60s', '1m', '1h') ke satuan detik."""
-    val = raw_value.strip().lower()
+def parse_max_auth_tries(raw_value: str) -> Optional[int]:
+    """Mengonversi nilai MaxAuthTries ke tipe data integer."""
     try:
-        if val.endswith("m"):
-            return int(val[:-1]) * 60
-        elif val.endswith("h"):
-            return int(val[:-1]) * 3600
-        elif val.endswith("d"):
-            return int(val[:-1]) * 86400
-        elif val.endswith("s"):
-            return int(val[:-1])
-        else:
-            return int(val)
+        return int(raw_value.strip())
     except ValueError:
         return None
 
 
-def get_login_grace_time_status(
+def get_max_auth_tries_status(
     config_path: Path,
 ) -> Tuple[str, Optional[str], Optional[int]]:
-    """Mengecek status dan nilai LoginGraceTime di sshd_config.
+    """Mengecek status dan nilai MaxAuthTries di sshd_config.
 
     Return:
-        Tuple[state, raw_value, seconds]
+        Tuple[state, raw_value, tries]
         - state: 'not_found', 'commented', 'active'
-        - raw_value: Nilai mentah di config (misal '60', '1m')
-        - seconds: Nilai dalam detik atau None jika tidak valid
+        - raw_value: Nilai mentah di config (misal '4')
+        - tries: Nilai integer atau None jika tidak valid
     """
     if not config_path.is_file():
         return "not_found", None, None
@@ -59,18 +49,18 @@ def get_login_grace_time_status(
             # 1. Baris Terkomentar
             if line_stripped.startswith("#"):
                 uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("logingracetime"):
+                if uncommented.lower().startswith("maxauthtries"):
                     parts = uncommented.split()
                     raw_val = parts[1] if len(parts) >= 2 else None
-                    sec = parse_grace_time_to_seconds(raw_val) if raw_val else None
-                    return "commented", raw_val, sec
+                    tries = parse_max_auth_tries(raw_val) if raw_val else None
+                    return "commented", raw_val, tries
 
             # 2. Baris Aktif
-            elif line_stripped.lower().startswith("logingracetime"):
+            elif line_stripped.lower().startswith("maxauthtries"):
                 parts = line_stripped.split()
                 raw_val = parts[1] if len(parts) >= 2 else None
-                sec = parse_grace_time_to_seconds(raw_val) if raw_val else None
-                return "active", raw_val, sec
+                tries = parse_max_auth_tries(raw_val) if raw_val else None
+                return "active", raw_val, tries
 
     return "not_found", None, None
 
@@ -79,35 +69,35 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K03",
-        cis_id="5.1.13",
+        catalog="K04",
+        cis_id="5.1.16",
         log_type="audit",
     )
 
     lock_file_obj = acquire_lock(logger)
 
     logger.log(
-        "INFO", 
-        "Start", 
-        "Memulai audit CIS 5.1.13 (sshd LoginGraceTime)..."
+        "INFO",
+        "Start",
+        "Memulai audit CIS 5.1.16 (sshd MaxAuthTries)...",
     )
 
     try:
         if not check_sshd_config_exists(logger):
             logger.log(
-                "FAILED", 
-                "Result", 
-                "Hasil Audit: FAILED - File sshd_config tidak ditemukan."
+                "FAILED",
+                "Result",
+                "Hasil Audit: FAILED - File sshd_config tidak ditemukan.",
             )
             sys.exit(1)
 
-        state, raw_val, seconds = get_login_grace_time_status(SSHD_CONFIG)
+        state, raw_val, tries = get_max_auth_tries_status(SSHD_CONFIG)
 
         if state == "not_found":
             logger.log(
                 "FAIL",
                 "Result",
-                "Hasil Audit: FAILED - Parameter LoginGraceTime tidak ditemukan di sshd_config (menggunakan default yang tidak aman).",
+                "Hasil Audit: FAILED - Parameter MaxAuthTries tidak ditemukan di sshd_config (menggunakan default yang tidak aman).",
             )
             sys.exit(1)
 
@@ -115,45 +105,45 @@ def main():
             logger.log(
                 "FAIL",
                 "Result",
-                f"Hasil Audit: FAILED - Parameter LoginGraceTime ditemukan tetapi terkomentar (#) dengan nilai default '{raw_val}'.",
+                f"Hasil Audit: FAILED - Parameter MaxAuthTries ditemukan tetapi terkomentar (#) dengan nilai default '{raw_val}'.",
             )
             sys.exit(1)
 
         elif state == "active":
-            if seconds is None:
+            if tries is None:
                 logger.log(
                     "FAIL",
                     "Result",
-                    f"Hasil Audit: FAILED - Parameter LoginGraceTime aktif namun nilainya tidak valid ('{raw_val}').",
+                    f"Hasil Audit: FAILED - Parameter MaxAuthTries aktif namun nilainya tidak valid ('{raw_val}').",
                 )
                 sys.exit(1)
 
-            # Sesuai standar CIS 5.1.13: Harus aktif dan bernilai 1-60 detik (misal <= 60 detik dan > 0)
-            if 0 < seconds <= 60:
+            # Sesuai standar CIS 5.1.16: Harus aktif dan bernilai 1-4 (misal <= 4 dan > 0)
+            if 0 < tries <= 4:
                 logger.log(
                     "PASSED",
                     "Result",
-                    f"Hasil Audit: PASSED - LoginGraceTime dikonfigurasi secara aman dengan nilai {seconds} detik ('{raw_val}').",
+                    f"Hasil Audit: PASSED - MaxAuthTries dikonfigurasi secara aman dengan nilai {tries} ('{raw_val}').",
                 )
                 sys.exit(0)
             else:
                 logger.log(
                     "FAIL",
                     "Result",
-                    f"Hasil Audit: FAILED - LoginGraceTime bernilai {seconds} detik ('{raw_val}'). Persyaratan aman: > 0 dan <= 60 detik.",
+                    f"Hasil Audit: FAILED - MaxAuthTries bernilai {tries} ('{raw_val}'). Persyaratan aman: > 0 dan <= 4.",
                 )
                 sys.exit(1)
 
     except Exception as e:
         logger.log(
-            "ERROR", 
+            "ERROR",
             "Note",
-            f"Terjadi error saat audit K03: {e}"
+            f"Terjadi error saat audit K04: {e}",
         )
         logger.log(
             "FAIL",
             "Result",
-            "Hasil Audit: FAILED - Terjadi kesalahan pada proses audit."
+            "Hasil Audit: FAILED - Terjadi kesalahan pada proses audit.",
         )
         sys.exit(1)
 

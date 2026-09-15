@@ -1,11 +1,12 @@
 from __future__ import annotations
-import os
 from pathlib import Path
+from typing import Optional, Tuple
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Optional, Tuple
+
 
 
 # Import modul catalogutils via sys.path
@@ -101,7 +102,7 @@ def main():
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: Dibatalkan - Parameter PasswordAuthentication tidak ditemukan di sshd_config.",
+                "Hasil Rollback: CANCELLED - Parameter PasswordAuthentication tidak ditemukan di sshd_config.",
             )
             sys.exit(0)
 
@@ -110,7 +111,7 @@ def main():
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: Dibatalkan - Parameter PasswordAuthentication dalam keadaan terkomentar (#).",
+                "Hasil Rollback: CANCELLED - Parameter PasswordAuthentication dalam keadaan terkomentar (#).",
             )
             sys.exit(0)
 
@@ -119,7 +120,7 @@ def main():
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: Rollback - PasswordAuthentication sudah bernilai 'yes'.",
+                "Hasil Rollback: CANCELLED - PasswordAuthentication sudah bernilai 'yes'.",
             )
             sys.exit(0)
 
@@ -128,7 +129,7 @@ def main():
             logger.log(
                 "WARNING",
                 "Result",
-                f"Hasil Rollback: Dibatalkan - PasswordAuthentication bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
+                f"Hasil Rollback: CANCELLED - PasswordAuthentication bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
             )
             sys.exit(0)
 
@@ -152,13 +153,13 @@ def main():
                 logger.log(
                     "SUCCESS",
                     "Result",
-                    "Hasil Rollback: berhasil - PasswordAuthentication berhasil dikembalikan ke 'yes'.",
+                    "Hasil Rollback: SUCCEED - PasswordAuthentication berhasil dikembalikan ke 'yes'.",
                 )
             else:
                 logger.log(
                     "WARNING",
                     "Result",
-                    "Hasil Rollback: Konfigurasi diubah ke 'yes', tetapi gagal merestart service SSH.",
+                    "Hasil Rollback: WARNING - Konfigurasi diubah ke 'yes', tetapi gagal merestart service SSH.",
                 )
         else:
             if tmp_config_path.exists():
@@ -166,7 +167,7 @@ def main():
             logger.log(
                 "ERROR",
                 "Result",
-                "Hasil Rollback: Sintaks konfigurasi invalid! Rollback dibatalkan.",
+                "Hasil Rollback: CANCELLED - Sintaks konfigurasi invalid! Rollback dibatalkan.",
             )
             sys.exit(1)
 

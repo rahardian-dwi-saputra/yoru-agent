@@ -1,0 +1,59 @@
+version: '3'
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  # Metadata CIS
+  ID: "K04"
+  NAMA: "Membatasi Percobaan Auth SSH"
+  KODE_CIS: "5.1.16"
+  CIS_JUDUL: "5.1.16 Ensure sshd MaxAuthTries is configured"
+  RISIKO: "BERISIKO"
+  KATEGORI: "SSH"
+
+tasks:
+  default:
+    desc: "Menampilkan informasi catalog dan daftar task yang tersedia"
+    cmds:
+      - task: info
+
+  info:
+    desc: "Menampilkan perintah pengecekan MaxAuthTries sesuai standar CIS 5.1.16"
+    silent: true
+    cmds:
+      - echo "=================================================="
+      - echo " Catalog ID : {{.ID}}"
+      - echo " Nama       : {{.NAMA}}"
+      - echo " Kategori   : {{.KATEGORI}} ({{.KODE_CIS}})"
+      - echo " Judul CIS  : {{.CIS_JUDUL}}"
+      - echo " Risiko     : {{.RISIKO}}"
+      - echo "--------------------------------------------------"
+      - echo " Perintah Pengecekan MaxAuthTries:"
+      - echo "   sshd -T | grep -i maxauthtries"
+      - echo "   grep -i '^MaxAuthTries' /etc/ssh/sshd_config*"
+      - echo " Standar Nilai:"
+      - echo "   MaxAuthTries harus diatur ke 4 atau kurang (misal: MaxAuthTries 4)."
+      - echo "=================================================="
+
+  audit:
+    desc: "Menjalankan audit untuk CIS 5.1.16 MaxAuthTries"
+    cmds:
+      - python3 {{.SCRIPT_DIR}}/audit.py
+
+  hardening:
+    desc: "Menjalankan hardening untuk CIS 5.1.16 MaxAuthTries"
+    cmds:
+      - python3 {{.SCRIPT_DIR}}/hardening.py
+
+  rollback:
+    desc: "Menjalankan rollback untuk CIS 5.1.16 MaxAuthTries"
+    cmds:
+      - python3 {{.SCRIPT_DIR}}/rollback.py
+
+  clean:
+    desc: "Membersihkan file log pada catalog K04"
+    cmds:
+      - rm -rf {{.LOG_DIR}}/*.json
+      - echo "Log catalog {{.ID}} berhasil dibersihkan."

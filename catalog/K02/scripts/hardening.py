@@ -1,11 +1,12 @@
 from __future__ import annotations
-import os
 from pathlib import Path
+from typing import Optional, Tuple
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
-from typing import Optional, Tuple
+
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -152,7 +153,7 @@ def main():
             logger.log(
                 "ERROR",
                 "Result",
-                f"Hasil Hardening: Dibatalkan - Permission file {SSHD_CONFIG} adalah {file_mode} (harus 0600).",
+                f"Hasil Hardening: CANCELLED - Permission file {SSHD_CONFIG} adalah {file_mode} (harus 0600).",
             )
             sys.exit(1)
 
@@ -163,7 +164,7 @@ def main():
             logger.log(
                 "ERROR",
                 "Result",
-                "Hasil Hardening: Dibatalkan demi keamanan: Tidak ditemukan user non-root aktif di sistem!",
+                "Hasil Hardening: CANCELLED FOR SECURITY REASONS - Tidak ditemukan user non-root aktif di sistem!",
             )
             sys.exit(1)
 
@@ -176,7 +177,7 @@ def main():
             logger.log(
                 "ERROR",
                 "Result",
-                "Hasil Hardening: Dibatalkan demi keamanan: Tidak ada user non-root yang memiliki SSH Key valid (~/.ssh/authorized_keys)!",
+                "Hasil Hardening: CANCELLED FOR SECURITY REASONS - Tidak ada user non-root yang memiliki SSH Key valid (~/.ssh/authorized_keys)!",
             )
             sys.exit(1)
 
@@ -193,7 +194,7 @@ def main():
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Hardening: Dibatalkan - Parameter PasswordAuthentication sudah bernilai 'no'.",
+                "Hasil Hardening: CANCELLED - Parameter PasswordAuthentication sudah bernilai 'no'.",
             )
             sys.exit(0)
 
@@ -216,13 +217,13 @@ def main():
                 logger.log(
                     "SUCCESS",
                     "Result",
-                    f"Hardening berhasil: PasswordAuthentication berhasil DINONAKTIFKAN (Aksi: {action}).",
+                    f"Hardening berhasil: SUCCEED - PasswordAuthentication berhasil DINONAKTIFKAN (Aksi: {action}).",
                 )
             else:
                 logger.log(
                     "WARNING",
                     "Result",
-                    "Hardening berhasil: Konfigurasi diubah, tetapi gagal merestart service SSH.",
+                    "Hardening berhasil: WARNING - Konfigurasi diubah, tetapi gagal merestart service SSH.",
                 )
         else:
             if tmp_config_path.exists():
@@ -230,7 +231,7 @@ def main():
             logger.log(
                 "ERROR",
                 "Result",
-                "Hardening berhasil: Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                "Hardening berhasil: CANCELLED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
             )
             sys.exit(1)
 

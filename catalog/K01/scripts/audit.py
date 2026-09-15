@@ -103,14 +103,14 @@ def main():
 
         if audit_passed:
             logger.log(
-                "SUCCESS",
+                "PASSED",
                 "Result",
                 "Hasil Audit: PASSED - Konfigurasi PermitRootLogin sudah sesuai standar CIS.",
             )
         else:
             logger.log(
-                "FAILED",
-                "Note",
+                "FAIL",
+                "Result",
                 "Hasil Audit: FAILED - Konfigurasi PermitRootLogin tidak memenuhi standar CIS.",
             )
 
@@ -118,10 +118,10 @@ def main():
         logger.log(
             "ERROR",
             "Note", 
-            f"Terjadi error saat audit: {e}"
+            f"Terjadi error saat audit K01: {e}"
         )
         logger.log(
-            "FAILED",
+            "FAIL",
             "Result",
             "Hasil Audit: FAILED - Terjadi kesalahan pada proses audit."
         )

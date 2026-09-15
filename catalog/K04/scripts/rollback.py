@@ -25,34 +25,24 @@ from pipeline.catalogutils import (
 )
 
 
-def parse_grace_time_to_seconds(raw_value: str) -> Optional[int]:
-    """Mengonversi nilai LoginGraceTime (misal: '60', '60s', '1m', '1h') ke satuan detik."""
-    val = raw_value.strip().lower()
+def parse_max_auth_tries(raw_value: str) -> Optional[int]:
+    """Mengonversi nilai MaxAuthTries ke tipe data integer."""
     try:
-        if val.endswith("m"):
-            return int(val[:-1]) * 60
-        elif val.endswith("h"):
-            return int(val[:-1]) * 3600
-        elif val.endswith("d"):
-            return int(val[:-1]) * 86400
-        elif val.endswith("s"):
-            return int(val[:-1])
-        else:
-            return int(val)
+        return int(raw_value.strip())
     except ValueError:
         return None
 
 
-def get_login_grace_time_state(
+def get_max_auth_tries_state(
     config_path: Path,
 ) -> Tuple[str, Optional[str], Optional[int]]:
-    """Mengecek keberadaan dan nilai LoginGraceTime di sshd_config.
+    """Mengecek keberadaan dan nilai MaxAuthTries di sshd_config.
 
     Return:
-        Tuple[state, raw_value, seconds]
+        Tuple[state, raw_value, tries]
         - state: 'not_found', 'commented', 'active'
-        - raw_value: Nilai mentah di config (misal '60', '120')
-        - seconds: Nilai dalam detik atau None
+        - raw_value: Nilai mentah di config (misal '4', '6')
+        - tries: Nilai integer atau None
     """
     if not config_path.is_file():
         return "not_found", None, None
@@ -64,34 +54,34 @@ def get_login_grace_time_state(
             # 1. Baris Terkomentar
             if line_stripped.startswith("#"):
                 uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("logingracetime"):
+                if uncommented.lower().startswith("maxauthtries"):
                     parts = uncommented.split()
                     raw_val = parts[1] if len(parts) >= 2 else None
-                    sec = parse_grace_time_to_seconds(raw_val) if raw_val else None
-                    return "commented", raw_val, sec
+                    tries = parse_max_auth_tries(raw_val) if raw_val else None
+                    return "commented", raw_val, tries
 
             # 2. Baris Aktif
-            elif line_stripped.lower().startswith("logingracetime"):
+            elif line_stripped.lower().startswith("maxauthtries"):
                 parts = line_stripped.split()
                 raw_val = parts[1] if len(parts) >= 2 else None
-                sec = parse_grace_time_to_seconds(raw_val) if raw_val else None
-                return "active", raw_val, sec
+                tries = parse_max_auth_tries(raw_val) if raw_val else None
+                return "active", raw_val, tries
 
     return "not_found", None, None
 
 
-def apply_rollback_login_grace_time(
-    src_path: Path, dst_file_obj, rollback_value: str = "120"
+def apply_rollback_max_auth_tries(
+    src_path: Path, dst_file_obj, rollback_value: str = "6"
 ) -> None:
-    """Mengubah parameter LoginGraceTime aktif dari 60 menjadi nilai default (120)."""
+    """Mengubah parameter MaxAuthTries aktif dari 4 menjadi nilai default OpenSSH (6)."""
     with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             line_stripped = line.strip()
 
             if not line_stripped.startswith(
                 "#"
-            ) and line_stripped.lower().startswith("logingracetime"):
-                dst_file_obj.write(f"LoginGraceTime {rollback_value}\n")
+            ) and line_stripped.lower().startswith("maxauthtries"):
+                dst_file_obj.write(f"MaxAuthTries {rollback_value}\n")
             else:
                 dst_file_obj.write(line)
 
@@ -100,8 +90,8 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
-        catalog="K03",
-        cis_id="5.1.13",
+        catalog="K04",
+        cis_id="5.1.16",
         log_type="rollback",
     )
 
@@ -111,21 +101,21 @@ def main():
         # 1. Cek keberadaan file sshd_config
         if not check_sshd_config_exists(logger):
             logger.log(
-                "FAILED", 
-                "Result", 
-                "Hasil Rollback: FAILED - File sshd_config tidak ditemukan."
+                "FAILED",
+                "Result",
+                "Hasil Rollback: FAILED - File sshd_config tidak ditemukan.",
             )
             sys.exit(1)
 
-        # 2. Cek status LoginGraceTime saat ini
-        state, raw_val, seconds = get_login_grace_time_state(SSHD_CONFIG)
+        # 2. Cek status MaxAuthTries saat ini
+        state, raw_val, tries = get_max_auth_tries_state(SSHD_CONFIG)
 
         # Syarat 1: Parameter tidak ditemukan -> Batalkan rollback
         if state == "not_found":
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: CANCELLED - Parameter LoginGraceTime tidak ditemukan di sshd_config.",
+                "Hasil Rollback: CANCELLED - Parameter MaxAuthTries tidak ditemukan di sshd_config.",
             )
             sys.exit(0)
 
@@ -134,25 +124,25 @@ def main():
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: CANCELLED - Parameter LoginGraceTime dalam keadaan terkomentar (#).",
+                "Hasil Rollback: CANCELLED - Parameter MaxAuthTries dalam keadaan terkomentar (#).",
             )
             sys.exit(0)
 
-        # Syarat 3: Jika nilainya sudah 120 (atau bukan 60/hasil hardening) -> Batalkan rollback
-        if state == "active" and seconds is not None and seconds != 60:
+        # Syarat 3: Jika nilainya bukan 4 (bukan nilai hasil hardening K04) -> Batalkan rollback
+        if state == "active" and tries is not None and tries != 4:
             logger.log(
                 "INFO",
                 "Result",
-                f"Hasil Rollback: CANCELLED - LoginGraceTime tidak bernilai 60 detik (saat ini '{raw_val}').",
+                f"Hasil Rollback: CANCELLED - MaxAuthTries tidak bernilai 4 (saat ini '{raw_val}').",
             )
             sys.exit(0)
 
-        # 3. Jalankan proses rollback ke nilai default (120 detik)
+        # 3. Jalankan proses rollback ke nilai default (6)
         with tempfile.NamedTemporaryFile(
             "w+", delete=False, prefix="sshd_config_"
         ) as tmp_file:
             tmp_config_path = Path(tmp_file.name)
-            apply_rollback_login_grace_time(SSHD_CONFIG, tmp_file, rollback_value="120")
+            apply_rollback_max_auth_tries(SSHD_CONFIG, tmp_file, rollback_value="6")
 
         # 4. Validasi sintaks file baru
         validate_cmd = subprocess.run(
@@ -167,13 +157,13 @@ def main():
                 logger.log(
                     "SUCCESS",
                     "Result",
-                    "Hasil Rollback: SUCCEED - LoginGraceTime berhasil dikembalikan ke 120 detik.",
+                    "Hasil Rollback: SUCCEED - MaxAuthTries berhasil dikembalikan ke 6.",
                 )
             else:
                 logger.log(
                     "WARNING",
                     "Result",
-                    "Hasil Rollback: WARNING - Konfigurasi LoginGraceTime diubah ke 120, tetapi gagal merestart service SSH.",
+                    "Hasil Rollback: WARNING - Konfigurasi MaxAuthTries diubah ke 6, tetapi gagal merestart service SSH.",
                 )
         else:
             if tmp_config_path.exists():
@@ -189,12 +179,12 @@ def main():
         logger.log(
             "ERROR",
             "Note",
-            f"Terjadi error saat rollback K03: {e}"
+            f"Terjadi error saat rollback K04: {e}",
         )
         logger.log(
             "FAILED",
             "Result",
-            "Hasil Rollback: FAILED - Terjadi kesalahan pada proses rollback."
+            "Hasil Rollback: FAILED - Terjadi kesalahan pada proses rollback.",
         )
         sys.exit(1)
 

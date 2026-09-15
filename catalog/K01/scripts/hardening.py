@@ -110,7 +110,7 @@ def main():
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Hardening: Dibatalkan - Root login SSH sudah dalam keadaan nonaktif (PermitRootLogin no).",
+                "Hasil Hardening: CANCELLED - Root login SSH sudah dalam keadaan nonaktif (PermitRootLogin no).",
             )
             sys.exit(0)
 
@@ -120,7 +120,7 @@ def main():
             logger.log(
                 "ERROR",
                 "Result",
-                "Hasil Hardening: Dibatalkan demi keamanan - Tidak ditemukan user non-root dengan akses shell!",
+                "Hasil Hardening: CANCELLED FOR SECURITY REASONS - Tidak ditemukan user non-root dengan akses shell!",
             )
             sys.exit(1)
 
@@ -153,13 +153,13 @@ def main():
                 logger.log(
                     "SUCCESS",
                     "Result",
-                    f"Hasil Hardening: Berhasil - Root login via SSH berhasil DINONAKTIFKAN (Aksi: {action}).",
+                    f"Hasil Hardening: SUCCEED - Root login via SSH berhasil DINONAKTIFKAN (Aksi: {action}).",
                 )
             else:
                 logger.log(
                     "WARNING",
                     "Result",
-                    "Hasil Hardening: Konfigurasi sudah diubah, tetapi gagal merestart service SSH.",
+                    "Hasil Hardening: WARNING - Konfigurasi sudah diubah, tetapi gagal merestart service SSH.",
                 )
         else:
             if tmp_config_path.exists():
@@ -167,7 +167,7 @@ def main():
             logger.log(
                 "ERROR",
                 "Result",
-                "Hasil Hardening: Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                "Hasil Hardening: CANCELLED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
             )
             sys.exit(1)
 
@@ -175,7 +175,7 @@ def main():
         logger.log(
             "ERROR",
             "Note", 
-            f"Terjadi error saat proses hardening: {e}"
+            f"Terjadi error saat proses hardening K01: {e}"
         )
         logger.log(
             "FAILED",
