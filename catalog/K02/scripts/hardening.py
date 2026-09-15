@@ -236,16 +236,7 @@ def main():
             sys.exit(1)
 
     except Exception as e:
-        logger.log(
-            "ERROR",
-            "Note",
-            f"Terjadi error saat proses hardening K02: {e}"
-        )
-        logger.log(
-            "FAILED",
-            "Result",
-            "Hasil Hardening: FAILED - Terjadi kesalahan pada proses hardening."
-        )
+        logger.log_error("K02", "hardening", e)
         sys.exit(1)
 
     finally:

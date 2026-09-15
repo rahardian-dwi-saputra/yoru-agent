@@ -24,12 +24,6 @@ tasks:
     silent: true
     cmds:
       - echo "=================================================="
-      - echo " Catalog ID : {{.ID}}"
-      - echo " Nama       : {{.NAMA}}"
-      - echo " Kategori   : {{.KATEGORI}} ({{.KODE_CIS}})"
-      - echo " Judul CIS  : {{.CIS_JUDUL}}"
-      - echo " Risiko     : {{.RISIKO}}"
-      - echo "--------------------------------------------------"
       - echo " Perintah Pengecekan MaxAuthTries:"
       - echo "   sshd -T | grep -i maxauthtries"
       - echo "   grep -i '^MaxAuthTries' /etc/ssh/sshd_config*"

@@ -156,16 +156,7 @@ def main():
             )
 
     except Exception as e:
-            logger.log(
-                "ERROR",
-                "Note", 
-                f"Terjadi error saat audit K02: {e}"
-            )
-            logger.log(
-                "FAIL",
-                "Result",
-                "Hasil Audit: FAILED - Terjadi kesalahan pada proses audit."
-            ) 
+        logger.log_error("K02", "audit", e)
 
     finally:
         # Melepaskan penguncian file

@@ -91,6 +91,25 @@ class BaseLogger:
 
         self.current_id += 1
 
+    def log_error(
+            self,
+            catalog: str, 
+            proses: str, 
+            exception: Exception
+        ):
+       
+        self.log(
+            "ERROR",
+            "Note",
+            f"Terjadi error saat {proses} {catalog}: {exception}"
+        )
+    
+        self.log(
+            "FAIL",
+            "Result",
+            f"Hasil {proses.capitalize()}: FAILED - Terjadi kesalahan pada proses {proses}."
+        )
+
 
 def acquire_lock(logger: BaseLogger):
     try:

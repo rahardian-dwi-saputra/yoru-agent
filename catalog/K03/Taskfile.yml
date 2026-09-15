@@ -24,7 +24,6 @@ tasks:
     silent: true
     cmds:
       - echo "=================================================="
-      - echo " Kategori  : {{.KATEGORI}} ({{.KODE_CIS}})"
       - echo " Perintah Pengecekan LoginGraceTime:"
       - echo "   sshd -T | grep -i logingracetime"
       - echo "   grep -i '^LoginGraceTime' /etc/ssh/sshd_config*"

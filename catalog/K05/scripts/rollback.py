@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 import os
 import shutil
 import subprocess
@@ -24,64 +24,53 @@ from pipeline.catalogutils import (
     restart_ssh_service,
 )
 
+# Daftar Ciphers hasil hardening K05
+HARDENED_CIPHERS_LIST = [
+    "chacha20-poly1305@openssh.com",
+    "aes256-gcm@openssh.com",
+    "aes128-gcm@openssh.com",
+    "aes256-ctr",
+    "aes192-ctr",
+    "aes128-ctr",
+]
+HARDENED_CIPHERS_SET = set(HARDENED_CIPHERS_LIST)
 
-def parse_max_auth_tries(raw_value: str) -> Optional[int]:
-    """Mengonversi nilai MaxAuthTries ke tipe data integer."""
-    try:
-        return int(raw_value.strip())
-    except ValueError:
-        return None
 
-
-def get_max_auth_tries_state(
-    config_path: Path,
-) -> Tuple[str, Optional[str], Optional[int]]:
-    """Mengecek keberadaan dan nilai MaxAuthTries di sshd_config.
-
-    Return:
-        Tuple[state, raw_value, tries]
-        - state: 'not_found', 'commented', 'active'
-        - raw_value: Nilai mentah di config (misal '4', '6')
-        - tries: Nilai integer atau None
-    """
+def parse_ciphers_from_config(config_path: Path) -> Tuple[str, Optional[List[str]]]:
+    """Mengecek dan meng-extract daftar Ciphers dari file sshd_config."""
     if not config_path.is_file():
-        return "not_found", None, None
+        return "not_found", None
 
     with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             line_stripped = line.strip()
 
-            # 1. Baris Terkomentar
             if line_stripped.startswith("#"):
                 uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("maxauthtries"):
-                    parts = uncommented.split()
-                    raw_val = parts[1] if len(parts) >= 2 else None
-                    tries = parse_max_auth_tries(raw_val) if raw_val else None
-                    return "commented", raw_val, tries
+                if uncommented.lower().startswith("ciphers"):
+                    parts = uncommented.split(maxsplit=1)
+                    if len(parts) >= 2:
+                        raw_ciphers = parts[1].strip()
+                        return "commented", [c.strip() for c in raw_ciphers.split(",")]
 
-            # 2. Baris Aktif
-            elif line_stripped.lower().startswith("maxauthtries"):
-                parts = line_stripped.split()
-                raw_val = parts[1] if len(parts) >= 2 else None
-                tries = parse_max_auth_tries(raw_val) if raw_val else None
-                return "active", raw_val, tries
+            elif line_stripped.lower().startswith("ciphers"):
+                parts = line_stripped.split(maxsplit=1)
+                if len(parts) >= 2:
+                    raw_ciphers = parts[1].strip()
+                    return "active", [c.strip() for c in raw_ciphers.split(",")]
 
-    return "not_found", None, None
+    return "not_found", None
 
 
-def apply_rollback_max_auth_tries(
-    src_path: Path, dst_file_obj, rollback_value: str = "6"
-) -> None:
-    """Mengubah parameter MaxAuthTries aktif dari 4 menjadi nilai default OpenSSH (6)."""
+def apply_rollback_ciphers(src_path: Path, dst_file_obj) -> None:
+    """Mengomentari atau mengembalikan baris Ciphers ke kondisi default/terkomentar."""
     with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             line_stripped = line.strip()
 
-            if not line_stripped.startswith(
-                "#"
-            ) and line_stripped.lower().startswith("maxauthtries"):
-                dst_file_obj.write(f"MaxAuthTries {rollback_value}\n")
+            # Jika baris merupakan direktif Ciphers aktif, ubah menjadi terkomentar
+            if not line_stripped.startswith("#") and line_stripped.lower().startswith("ciphers"):
+                dst_file_obj.write(f"# {line_stripped}\n")
             else:
                 dst_file_obj.write(line)
 
@@ -90,8 +79,8 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
-        catalog="K04",
-        cis_id="5.1.16",
+        catalog="K05",
+        cis_id="5.1.6",
         log_type="rollback",
     )
 
@@ -107,15 +96,15 @@ def main():
             )
             sys.exit(1)
 
-        # 2. Cek status MaxAuthTries saat ini
-        state, raw_val, tries = get_max_auth_tries_state(SSHD_CONFIG)
+        # 2. Cek status Ciphers saat ini
+        state, current_ciphers = parse_ciphers_from_config(SSHD_CONFIG)
 
         # Syarat 1: Parameter tidak ditemukan -> Batalkan rollback
         if state == "not_found":
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: CANCELLED - Parameter MaxAuthTries tidak ditemukan di sshd_config.",
+                "Hasil Rollback: CANCELLED - Parameter Ciphers tidak ditemukan di sshd_config.",
             )
             sys.exit(0)
 
@@ -124,27 +113,29 @@ def main():
             logger.log(
                 "INFO",
                 "Result",
-                "Hasil Rollback: CANCELLED - Parameter MaxAuthTries dalam keadaan terkomentar (#).",
+                "Hasil Rollback: CANCELLED - Parameter Ciphers sudah dalam keadaan terkomentar (#).",
             )
             sys.exit(0)
 
-        # Syarat 3: Jika nilainya bukan 4 (bukan nilai hasil hardening K04) -> Batalkan rollback
-        if state == "active" and tries is not None and tries != 4:
-            logger.log(
-                "INFO",
-                "Result",
-                f"Hasil Rollback: CANCELLED - MaxAuthTries tidak bernilai 4 (saat ini '{raw_val}').",
-            )
-            sys.exit(0)
+        # Syarat 3: Jika nilainya bukan nilai hasil hardening K05 -> Batalkan rollback
+        if state == "active" and current_ciphers:
+            current_set = set(current_ciphers)
+            if current_set != HARDENED_CIPHERS_SET:
+                logger.log(
+                    "INFO",
+                    "Result",
+                    "Hasil Rollback: CANCELLED - Konfigurasi Ciphers aktif saat ini bukan berasal dari hasil hardening K05.",
+                )
+                sys.exit(0)
 
-        # 3. Jalankan proses rollback ke nilai default (6)
+        # 3. Jalankan proses rollback (mengomentari direktif Ciphers)
         with tempfile.NamedTemporaryFile(
             "w+", delete=False, prefix="sshd_config_"
         ) as tmp_file:
             tmp_config_path = Path(tmp_file.name)
-            apply_rollback_max_auth_tries(SSHD_CONFIG, tmp_file, rollback_value="6")
+            apply_rollback_ciphers(SSHD_CONFIG, tmp_file)
 
-        # 4. Validasi sintaks file baru
+        # 4. Validasi sintaks sshd
         validate_cmd = subprocess.run(
             ["sshd", "-t", "-f", str(tmp_config_path)], capture_output=True
         )
@@ -157,13 +148,13 @@ def main():
                 logger.log(
                     "SUCCESS",
                     "Result",
-                    "Hasil Rollback: SUCCEED - MaxAuthTries berhasil dikembalikan ke 6.",
+                    "Hasil Rollback: SUCCEED - Konfigurasi Ciphers berhasil dikembalikan ke kondisi default sistem.",
                 )
             else:
                 logger.log(
                     "WARNING",
                     "Result",
-                    "Hasil Rollback: WARNING - Konfigurasi MaxAuthTries diubah ke 6, tetapi gagal merestart service SSH.",
+                    "Hasil Rollback: WARNING - Konfigurasi Ciphers dikembalikan ke default, tetapi gagal merestart service SSH.",
                 )
         else:
             if tmp_config_path.exists():
@@ -176,7 +167,7 @@ def main():
             sys.exit(1)
 
     except Exception as e:
-        logger.log_error("K04", "rollback", e)
+        logger.log_error("K05", "rollback", e)
         sys.exit(1)
 
     finally:

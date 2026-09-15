@@ -1,283 +1,198 @@
-import asyncio
-import json
+from __future__ import annotations
 from pathlib import Path
-from typing import Any, Dict, List, Literal, Optional
-from fastapi import FastAPI, HTTPException, status
+from typing import List, Literal, Optional
+from fastapi import FastAPI, HTTPException, Status
 from pydantic import BaseModel, Field
+import uvicorn
+import subprocess
 
+
+# Inisialisasi FastAPI
 app = FastAPI(
-    title="Yoru Agent - Hardening API",
+    title="Yoru Agent API",
+    description="API Universal untuk Audit, Hardening, dan Rollback Konfigurasi Server Keamanan",
     version="1.0.0",
-    description="API Hardening berbasis Hermes Agent dengan mekanisme Human-in-the-Loop (HITL) Confirmation."
 )
 
-# ==========================================
-# KONFIGURASI PATH MOUNTING
-# ==========================================
-# main.py ada di: yoru-agent/api/main.py
+# Root direktori proyek (yoru-agent/)
 API_DIR = Path(__file__).resolve().parent
-BASE_DIR = API_DIR.parent  # Mengarah ke: yoru-agent/
-
-# Path scripts & logs untuk K01
-SCRIPTS_DIR_K01 = BASE_DIR / "catalog" / "K01" / "scripts"
-LOGS_DIR_K01 = BASE_DIR / "catalog" / "K01" / "logs"
-
-# Path scripts & logs untuk K03
-SCRIPTS_DIR_K03 = BASE_DIR / "catalog" / "K03" / "scripts"
-LOGS_DIR_K03 = BASE_DIR / "catalog" / "K03" / "logs"
-
-# Pastikan direktori logs dibuat jika belum ada
-LOGS_DIR_K01.mkdir(parents=True, exist_ok=True)
-LOGS_DIR_K03.mkdir(parents=True, exist_ok=True)
+PROJECT_ROOT = API_DIR.parent
+CATALOG_DIR = PROJECT_ROOT / "catalog"
 
 
-# ==========================================
-# MODEL PYDANTIC
-# ==========================================
+# --- PYDANTIC SCHEMAS ---
 
-# Model Input Request
-class TriggerRequest(BaseModel):
-    requested_intent: str = Field(
+class ExecutionRequest(BaseModel):
+    action: Literal["audit", "hardening", "rollback"] = Field(
+        ..., description="Aksi yang akan dijalankan."
+    )
+    catalogs: List[str] = Field(
         ...,
-        description="Instruksi user, misal: 'amankan root', 'batasi percobaan login', 'ya', 'tidak'.",
-        examples=["amankan root", "batasi percobaan login", "Ya", "Tidak"],
+        description="Daftar ID Katalog (misal ['K01', 'K03']) atau ['ALL'] untuk semua katalog.",
+        examples=[["K03", "K04"]],
     )
-    pending_action: Optional[Literal["hardening", "rollback"]] = Field(
-        default=None,
-        description="Aksi tertunda yang menunggu konfirmasi user (dikirim kembali oleh client saat konfirmasi).",
-    )
-
-# Base Model Output Response
-class BaseHardeningResponse(BaseModel):
-    endpoint_id: str = Field(
-        ...,
-        description="ID Endpoint penangan modul (misal: 'K01' atau 'K03').",
-    )
-    status: Literal["completed", "pending_confirmation", "cancelled", "error"] = Field(
-        ...,
-        description="Status eksekusi workflow dari FastAPI.",
-    )
-    selected_action: Literal["audit", "hardening", "rollback", "none"] = Field(
-        ...,
-        description="Jenis aksi yang diidentifikasi oleh engine.",
-    )
-    requires_confirmation: bool = Field(
-        ...,
-        description="Penanda apakah langkah ini membutuhkan persetujuan user.",
-    )
-    confirmation_message: Optional[str] = Field(
-        default=None,
-        description="Pesan konfirmasi yang harus ditampilkan ke user jika status=pending_confirmation.",
-    )
-    execution_code: Optional[int] = Field(
-        default=None,
-        description="Exit code dari Taskfile / script hardening (0 = sukses).",
-    )
-    action_logs: List[Dict[str, Any]] = Field(
-        default_factory=list,
-        description="Log rinci hasil audit atau eksekusi perintah terminal.",
+    confirmed: bool = Field(
+        default=False,
+        description="Konfirmasi persetujuan user. Wajib True untuk aksi 'hardening' dan 'rollback'.",
     )
 
 
-# Model Output Response khusus K01
-class K01Response(BaseHardeningResponse):
-    """Model Response Khusus Endpoint /K01 (SSH Root Access Rules)"""
-
-    endpoint_id: Literal["K01"] = "K01"
-
-
-# Model Output Response khusus K03
-class K03Response(BaseHardeningResponse):
-    """Model Response Khusus Endpoint /K03 (SSH Login Limits & Timeouts)"""
-
-    endpoint_id: Literal["K03"] = "K03"
+class CatalogResult(BaseModel):
+    catalog: str
+    status: Literal["SUCCESS", "FAILED", "SKIPPED", "CANCELLED"]
+    output: str
+    error: Optional[str] = None
 
 
-# ==========================================
-# HELPER FUNCTIONS
-# ==========================================
-
-async def run_taskfile_action(action: str, scripts_dir: Path) -> int:
-    """Execution Layer: Memanggil Taskfile menggunakan sudo secara asynchronous dari folder scripts yang ditentukan."""
-    # Menambahkan 'sudo', '-E', 'task' agar dieksekusi dengan privilege root tanpa password
-    process = await asyncio.create_subprocess_exec(
-        "sudo", "-E", "task", action,
-        cwd=str(scripts_dir),
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await process.communicate()
-
-    # Cetak log jika ada error dari stderr untuk mempermudah debugging
-    if process.returncode != 0:
-        print(f"[ERROR] Taskfile execution failed with exit code {process.returncode}")
-        print(f"[STDERR]: {stderr.decode('utf-8')}")
-
-    return process.returncode
+class ExecutionResponse(BaseModel):
+    status: str
+    action: str
+    requires_confirmation: bool = False
+    message: str
+    results: List[CatalogResult] = []
 
 
-def read_action_logs(action: str, logs_dir: Path) -> List[Dict[str, Any]]:
-    """Log Parser: Membaca log JSON spesifik action dari folder logs yang ditentukan."""
-    log_file_path = logs_dir / f"{action}.json"
-    if not log_file_path.exists():
+# --- HELPER FUNCTIONS ---
+
+def get_available_catalogs() -> List[str]:
+    """Mengambil daftar folder katalog secara dinamis dari /catalog yang berawalan huruf 'K'."""
+    if not CATALOG_DIR.exists():
         return []
+    return sorted(
+        [
+            d.name
+            for d in CATALOG_DIR.iterdir()
+            if d.is_dir() and d.name.startswith("K")
+        ]
+    )
 
-    logs = []
-    with open(log_file_path, mode="r", encoding="utf-8") as f:
-        for line in f:
-            line_str = line.strip()
-            if line_str:
-                try:
-                    logs.append(json.loads(line_str))
-                except json.JSONDecodeError:
-                    continue
-    return logs
 
-async def process_hardening_intent(
-    endpoint_id: str,
-    payload: TriggerRequest,
-    scripts_dir: Path,
-    logs_dir: Path,
-    hardening_keywords: List[str],
-    hardening_warning_msg: str,
-    rollback_warning_msg: str,
-) -> Dict[str, Any]:
-    """Core Workflow Handler: Generic logic untuk memproses HITL dan instruksi pada /K01 dan /K03."""
-    intent_lower = payload.requested_intent.strip().lower()
+def run_taskfile(catalog_id: str, action: str) -> CatalogResult:
+    """Mengeksekusi Taskfile.yml pada katalog tertentu."""
+    target_path = CATALOG_DIR / catalog_id
+    taskfile_path = target_path / "Taskfile.yml"
 
-    # -------------------------------------------------------------
-    # TAHAP 1: Menangani Respon Konfirmasi (User Menjawab Ya / Tidak)
-    # -------------------------------------------------------------
-    if payload.pending_action in ["hardening", "rollback"]:
-        action_to_execute = payload.pending_action
+    # Validasi keberadaan katalog & Taskfile
+    if not target_path.exists() or not taskfile_path.exists():
+        return CatalogResult(
+            catalog=catalog_id,
+            status="FAILED",
+            output="",
+            error=f"Katalog '{catalog_id}' atau Taskfile.yml tidak ditemukan.",
+        )
 
-        # Jika User Setuju (Ya / Yes / Lanjutkan)
-        if intent_lower in ["ya", "yes", "setuju", "lanjutkan", "y"]:
-            exec_code = await run_taskfile_action(action_to_execute, scripts_dir)
+    # Perintah eksekusi task (misal: task audit)
+    cmd = ["task", action]
 
-            if exec_code != 0:
-                raise HTTPException(
-                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Hermes Agent gagal mengeksekusi '{action_to_execute}' pada {endpoint_id}.",
-                )
+    try:
+        process = subprocess.run(
+            cmd,
+            cwd=target_path,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
 
-            return {
-                "endpoint_id": endpoint_id,
-                "status": "completed",
-                "selected_action": action_to_execute,
-                "requires_confirmation": False,
-                "confirmation_message": f"Konfirmasi diterima. Tindakan {action_to_execute} berhasil dieksekusi pada {endpoint_id}.",
-                "execution_code": exec_code,
-                "action_logs": read_action_logs(action_to_execute, logs_dir),
-            }
-
-        # Jika User Membatalkan (Tidak / No / Batal)
-        elif intent_lower in ["tidak", "no", "batal", "n"]:
-            return {
-                "endpoint_id": endpoint_id,
-                "status": "cancelled",
-                "selected_action": "none",
-                "requires_confirmation": False,
-                "confirmation_message": f"Tindakan {action_to_execute} pada {endpoint_id} telah dibatalkan oleh pengguna.",
-                "execution_code": 0,
-                "action_logs": [],
-            }
-
-        # Jika respon konfirmasi tidak jelas
+        if process.returncode == 0:
+            return CatalogResult(
+                catalog=catalog_id,
+                status="SUCCESS",
+                output=process.stdout.strip(),
+            )
         else:
-            return {
-                "endpoint_id": endpoint_id,
-                "status": "pending_confirmation",
-                "selected_action": action_to_execute,
-                "requires_confirmation": True,
-                "confirmation_message": f"Jawaban tidak dikenali. Mohon jawab 'Ya' untuk melanjutkan {action_to_execute} pada {endpoint_id} atau 'Tidak' untuk membatalkan.",
-                "execution_code": None,
-                "action_logs": [],
-            }
+            return CatalogResult(
+                catalog=catalog_id,
+                status="FAILED",
+                output=process.stdout.strip(),
+                error=process.stderr.strip(),
+            )
 
-    # -------------------------------------------------------------
-    # TAHAP 2: Evaluasi Intent Awal oleh Hermes Agent
-    # -------------------------------------------------------------
+    except FileNotFoundError:
+        return CatalogResult(
+            catalog=catalog_id,
+            status="FAILED",
+            output="",
+            error="Binary 'task' (Taskfile runner) tidak terinstall di sistem.",
+        )
+    except Exception as e:
+        return CatalogResult(
+            catalog=catalog_id,
+            status="FAILED",
+            output="",
+            error=f"Terjadi error saat eksekusi: {str(e)}",
+        )
 
-    # 1. Deteksi Hardening -> Butuh Konfirmasi
-    if any(k in intent_lower for k in hardening_keywords):
-        return {
-            "endpoint_id": endpoint_id,
-            "status": "pending_confirmation",
-            "selected_action": "hardening",
-            "requires_confirmation": True,
-            "confirmation_message": hardening_warning_msg,
-            "execution_code": None,
-            "action_logs": [],
-        }
 
-    # 2. Deteksi Rollback -> Butuh Konfirmasi
-    elif any(k in intent_lower for k in ["rollback", "kembalikan", "restore", "undo"]):
-        return {
-            "endpoint_id": endpoint_id,
-            "status": "pending_confirmation",
-            "selected_action": "rollback",
-            "requires_confirmation": True,
-            "confirmation_message": rollback_warning_msg,
-            "execution_code": None,
-            "action_logs": [],
-        }
+# --- API ENDPOINTS ---
 
-    # 3. Audit / Default -> Aman untuk Langsung Dieksekusi (Rendah Risiko)
+@app.get("/api/v1/catalogs", summary="Mendapatkan Daftar Katalog Tersedia")
+async def list_catalogs():
+    """Mengembalikan semua katalog yang tersedia di direktori catalog/ secara otomatis."""
+    catalogs = get_available_catalogs()
+    return {
+        "total": len(catalogs),
+        "catalogs": catalogs,
+    }
+
+
+@app.post(
+    "/api/v1/agent/execute",
+    response_model=ExecutionResponse,
+    summary="Endpoint Universal Eksekusi Agent",
+)
+async def execute_agent_task(payload: ExecutionRequest):
+    """
+    Endpoint universal untuk menjalankan aksi (audit, hardening, rollback) pada satu atau banyak katalog.
+    - Untuk aksi 'hardening' atau 'rollback', properti `confirmed` HARUS bernilai `True` ('IYA').
+    - Penggunaan 'ALL' pada `catalogs` akan otomatis mengeksekusi seluruh katalog yang ada.
+    """
+    action = payload.action
+    requested_catalogs = payload.catalogs
+
+    # 1. MEKANISME KONFIRMASI (USER APPROVAL CHECK)
+    if action in ["hardening", "rollback"] and not payload.confirmed:
+        return ExecutionResponse(
+            status="NEED_CONFIRMATION",
+            action=action,
+            requires_confirmation=True,
+            message=(
+                f"Aksi '{action}' akan mengubah konfigurasi server. "
+                f"Apakah Anda yakin ingin melanjutkan eksekusi pada katalog {requested_catalogs}? "
+                "Kirimkan konfirmasi dengan nilai 'confirmed: True' (IYA) untuk mengeksekusi."
+            ),
+            results=[],
+        )
+
+    # 2. RESOLUSI KATALOG DINAMIS
+    available_catalogs = get_available_catalogs()
+
+    if "ALL" in [c.upper() for c in requested_catalogs]:
+        target_catalogs = available_catalogs
     else:
-        exec_code = await run_taskfile_action("audit", scripts_dir)
-        return {
-            "endpoint_id": endpoint_id,
-            "status": "completed",
-            "selected_action": "audit",
-            "requires_confirmation": False,
-            "confirmation_message": f"Tindakan audit pada {endpoint_id} aman dijalankan tanpa konfirmasi.",
-            "execution_code": exec_code,
-            "action_logs": read_action_logs("audit", logs_dir),
-        }
+        # Bersihkan kapitalisasi
+        target_catalogs = [c.upper() for c in requested_catalogs]
 
+    if not target_catalogs:
+        raise HTTPException(
+            status_code=Status.HTTP_400_BAD_REQUEST,
+            detail="Tidak ada katalog valid yang ditentukan atau direktori catalog/ kosong.",
+        )
 
-# ==========================================
-# ENDPOINT K01
-# ==========================================
+    # 3. EKSEKUSI TASK UNTUK SETIAP KATALOG
+    execution_results: List[CatalogResult] = []
 
-@app.post(
-    "/K01",
-    response_model=K01Response,
-    status_code=status.HTTP_200_OK,
-    summary="Interactive SSH Root Security Action Trigger with HITL (CIS 5.1.x)",
-)
-async def trigger_k01(payload: TriggerRequest):
-    result = await process_hardening_intent(
-        endpoint_id="K01",
-        payload=payload,
-        scripts_dir=SCRIPTS_DIR_K01,
-        logs_dir=LOGS_DIR_K01,
-        hardening_keywords=["hardening", "amankan", "matikan root", "secure", "root"],
-        hardening_warning_msg="PERHATIAN: Hardening K01 akan mematikan SSH Root Login. Apakah Anda yakin ingin melanjutkan? (Jawab 'Ya' atau 'Tidak')",
-        rollback_warning_msg="PERHATIAN: Rollback K01 akan mengembalikan konfigurasi SSH Root Login ke kondisi awal. Apakah Anda yakin? (Jawab 'Ya' atau 'Tidak')",
+    for cat_id in target_catalogs:
+        result = run_taskfile(cat_id, action)
+        execution_results.append(result)
+
+    return ExecutionResponse(
+        status="COMPLETED",
+        action=action,
+        requires_confirmation=False,
+        message=f"Aksi '{action}' selesai diproses untuk {len(execution_results)} katalog.",
+        results=execution_results,
     )
-    return K01Response(**result)
 
 
-# ==========================================
-# ENDPOINT K03
-# ==========================================
-
-@app.post(
-    "/K03",
-    response_model=K03Response,
-    status_code=status.HTTP_200_OK,
-    summary="Interactive SSH Login Limits Action Trigger with HITL (CIS 5.1.13 & 5.1.16)",
-)
-async def trigger_k03(payload: TriggerRequest):
-    result = await process_hardening_intent(
-        endpoint_id="K03",
-        payload=payload,
-        scripts_dir=SCRIPTS_DIR_K03,
-        logs_dir=LOGS_DIR_K03,
-        hardening_keywords=["hardening", "amankan", "batasi login", "limit login", "maxauth", "grace time"],
-        hardening_warning_msg="PERHATIAN: Hardening K03 akan membatasi percobaaan login SSH (MaxAuthTries & LoginGraceTime). Apakah Anda yakin ingin melanjutkan? (Jawab 'Ya' atau 'Tidak')",
-        rollback_warning_msg="PERHATIAN: Rollback K03 akan mengembalikan batasan login SSH ke nilai default. Apakah Anda yakin? (Jawab 'Ya' atau 'Tidak')",
-    )
-    return K03Response(**result)
+if __name__ == "__main__":
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
