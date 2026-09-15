@@ -1,0 +1,42 @@
+version: '3'
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  # Metadata CIS Benchmark
+  ID: "K06"
+  NAMA: "Pengaturan MACs SSH yang Aman"
+  KODE_CIS: "5.1.7"
+  CIS_JUDUL: "5.1.7 Ensure sshd MACs are configured"
+  RISIKO: "BERISIKO"
+  KATEGORI: "SSH"
+
+tasks:
+  # Task internal untuk memastikan folder logs/ selalu ada
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  # 1. Audit SSH MACs Configuration
+  audit:
+    desc: "Menjalankan audit konfigurasi SSH MACs"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
+
+  # 2. Hardening SSH MACs (Terapkan algoritma Message Authentication Code yang kuat)
+  hardening:
+    desc: "Menerapkan konfigurasi MACs terenkripsi kuat pada SSH"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
+
+  # 3. Rollback SSH MACs (Mengembalikan parameter MACs ke kondisi awal)
+  rollback:
+    desc: "Mengembalikan konfigurasi MACs SSH ke nilai default/kondisi sebelum hardening"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

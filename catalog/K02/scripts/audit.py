@@ -93,7 +93,7 @@ def main():
             logger.log(
                 "INFO",
                 "Note",
-                f"Ditemukan {len(user_list_str)} user non-root aktif: {', '.join(user_list_str)}",
+                f"Ditemukan {len(users_with_home)} user non-root aktif: {user_list_str}"
             )
 
         # Verifikasi SSH Key setiap user

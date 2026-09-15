@@ -1,0 +1,42 @@
+version: '3'
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  # Metadata CIS Benchmark
+  ID: "K08"
+  NAMA: "Memastikan UFW Terinstall"
+  KODE_CIS: "4.2.1"
+  CIS_JUDUL: "4.2.1 Ensure ufw is installed"
+  RISIKO: "BERISIKO"
+  KATEGORI: "Firewall"
+
+tasks:
+  # Task internal untuk memastikan folder logs/ selalu ada
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  # 1. Audit status installasi UFW
+  audit:
+    desc: "Menjalankan audit keberadaan paket UFW pada sistem"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
+
+  # 2. Hardening (Install UFW jika belum terinstall)
+  hardening:
+    desc: "Menginstall paket UFW pada sistem"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
+
+  # 3. Rollback (Uninstall/Remove UFW jika di-install oleh K08)
+  rollback:
+    desc: "Mencopot paket UFW jika sebelumnya diinstall via hardening K08"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

@@ -89,8 +89,6 @@ class BaseLogger:
         with open(self.log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
-        self.current_id += 1
-
     def log_error(
             self,
             catalog: str, 

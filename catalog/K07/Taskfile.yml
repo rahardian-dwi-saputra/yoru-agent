@@ -1,0 +1,42 @@
+version: '3'
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  # Metadata CIS Benchmark
+  ID: "K07"
+  NAMA: "Pengaturan KexAlgorithms SSH yang Aman"
+  KODE_CIS: "5.1.8"
+  CIS_JUDUL: "5.1.8 Ensure sshd KexAlgorithms are configured"
+  RISIKO: "BERISIKO"
+  KATEGORI: "SSH"
+
+tasks:
+  # Task internal untuk memastikan folder logs/ selalu ada
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  # 1. Audit SSH KexAlgorithms Configuration
+  audit:
+    desc: "Menjalankan audit konfigurasi SSH KexAlgorithms"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
+
+  # 2. Hardening SSH KexAlgorithms (Terapkan Key Exchange Algorithms yang kuat)
+  hardening:
+    desc: "Menerapkan konfigurasi KexAlgorithms terenkripsi kuat pada SSH"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
+
+  # 3. Rollback SSH KexAlgorithms (Mengembalikan parameter KexAlgorithms ke kondisi awal)
+  rollback:
+    desc: "Mengembalikan konfigurasi KexAlgorithms SSH ke nilai default/kondisi sebelum hardening"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

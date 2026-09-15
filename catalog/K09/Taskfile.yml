@@ -1,0 +1,42 @@
+version: '3'
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  # Metadata CIS Benchmark
+  ID: "K09"
+  NAMA: "Memastikan Layanan UFW Aktif"
+  KODE_CIS: "4.2.3"
+  CIS_JUDUL: "4.2.3 Ensure ufw service is enabled"
+  RISIKO: "BERISIKO"
+  KATEGORI: "Firewall"
+
+tasks:
+  # Task internal untuk memastikan folder logs/ selalu ada
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  # 1. Audit status ufw service (enabled & active)
+  audit:
+    desc: "Menjalankan audit status layanan ufw"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
+
+  # 2. Hardening (Enable dan start ufw service / ufw enable)
+  hardening:
+    desc: "Mengaktifkan (enable) dan menjalankan (start) layanan ufw"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
+
+  # 3. Rollback (Disable / mengembalikan status ufw service ke kondisi awal)
+  rollback:
+    desc: "Mengembalikan status layanan ufw ke kondisi sebelum hardening"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

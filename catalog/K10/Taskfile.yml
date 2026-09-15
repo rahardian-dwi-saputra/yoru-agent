@@ -1,0 +1,42 @@
+version: '3'
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  # Metadata CIS Benchmark
+  ID: "K10"
+  NAMA: "Pengaturan Kebijakan Default UFW Firewall"
+  KODE_CIS: "4.2.7"
+  CIS_JUDUL: "4.2.7 Ensure ufw default deny firewall policy"
+  RISIKO: "BERISIKO"
+  KATEGORI: "Firewall"
+
+tasks:
+  # Task internal untuk memastikan folder logs/ selalu ada
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  # 1. Audit status kebijakan default UFW
+  audit:
+    desc: "Menjalankan audit kebijakan default UFW firewall"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
+
+  # 2. Hardening (Set default policy UFW: incoming deny/reject, routed deny/reject)
+  hardening:
+    desc: "Mengubah kebijakan default UFW ke deny/reject untuk incoming dan routed"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
+
+  # 3. Rollback (Mengembalikan kebijakan default UFW ke kondisi sebelum hardening)
+  rollback:
+    desc: "Mengembalikan kebijakan default UFW ke kondisi awal sebelum hardening K10"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py
