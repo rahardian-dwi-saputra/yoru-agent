@@ -84,13 +84,7 @@ def main():
         log_type="audit",
     )
 
-    lock_file_obj = acquire_lock(logger)
-
-    logger.log(
-        "INFO", 
-        "Start", 
-        "Memulai audit CIS 5.1.13 (sshd LoginGraceTime)..."
-    )
+    lock_file = acquire_lock(logger)
 
     try:
         if not check_sshd_config_exists(logger):
@@ -105,7 +99,7 @@ def main():
 
         if state == "not_found":
             logger.log(
-                "FAIL",
+                "FAILED",
                 "Result",
                 "Hasil Audit: FAILED - Parameter LoginGraceTime tidak ditemukan di sshd_config (menggunakan default yang tidak aman).",
             )
@@ -113,7 +107,7 @@ def main():
 
         elif state == "commented":
             logger.log(
-                "FAIL",
+                "FAILED",
                 "Result",
                 f"Hasil Audit: FAILED - Parameter LoginGraceTime ditemukan tetapi terkomentar (#) dengan nilai default '{raw_val}'.",
             )
@@ -122,7 +116,7 @@ def main():
         elif state == "active":
             if seconds is None:
                 logger.log(
-                    "FAIL",
+                    "FAILED",
                     "Result",
                     f"Hasil Audit: FAILED - Parameter LoginGraceTime aktif namun nilainya tidak valid ('{raw_val}').",
                 )
@@ -131,25 +125,22 @@ def main():
             # Sesuai standar CIS 5.1.13: Harus aktif dan bernilai 1-60 detik (misal <= 60 detik dan > 0)
             if 0 < seconds <= 60:
                 logger.log(
-                    "PASSED",
+                    "COMPLIANT",
                     "Result",
-                    f"Hasil Audit: PASSED - LoginGraceTime dikonfigurasi secara aman dengan nilai {seconds} detik ('{raw_val}').",
+                    f"Hasil Audit: COMPLIANT - LoginGraceTime dikonfigurasi secara aman dengan nilai {seconds} detik ('{raw_val}').",
                 )
-                sys.exit(0)
             else:
                 logger.log(
-                    "FAIL",
+                    "NON_COMPLIANT",
                     "Result",
-                    f"Hasil Audit: FAILED - LoginGraceTime bernilai {seconds} detik ('{raw_val}'). Persyaratan aman: > 0 dan <= 60 detik.",
+                    f"Hasil Audit: NON_COMPLIANT - LoginGraceTime bernilai {seconds} detik ('{raw_val}'). Persyaratan aman: > 0 dan <= 60 detik.",
                 )
-                sys.exit(1)
 
     except Exception as e:
         logger.log_error("K03", "audit", e)
-        sys.exit(1)
 
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

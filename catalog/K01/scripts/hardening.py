@@ -92,8 +92,7 @@ def main():
         log_type="hardening",
     )
 
-    # Kunci eksekusi skrip
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
 
     try:
         if not check_sshd_config_exists(logger):
@@ -108,9 +107,9 @@ def main():
         current_status = get_current_root_login_status()
         if current_status and current_status.lower() == "no":
             logger.log(
-                "INFO",
+                "SKIPPED",
                 "Result",
-                "Hasil Hardening: CANCELLED - Root login SSH sudah dalam keadaan nonaktif (PermitRootLogin no).",
+                "Hasil Hardening: SKIPPED - Root login SSH sudah dalam keadaan nonaktif (PermitRootLogin no).",
             )
             sys.exit(0)
 
@@ -118,7 +117,7 @@ def main():
         other_users_count = len(get_non_root_users())
         if other_users_count == 0:
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
                 "Hasil Hardening: CANCELLED FOR SECURITY REASONS - Tidak ditemukan user non-root dengan akses shell!",
             )
@@ -165,19 +164,17 @@ def main():
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
-                "Hasil Hardening: CANCELLED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                "Hasil Hardening: FAILED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
             )
             sys.exit(1)
 
     except Exception as e:
         logger.log_error("K01", "hardening", e)
-        sys.exit(1)
 
     finally:
-        # Melepaskan penguncian file
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

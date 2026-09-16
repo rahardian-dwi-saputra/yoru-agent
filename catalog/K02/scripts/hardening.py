@@ -135,8 +135,7 @@ def main():
         log_type="hardening",
     )
 
-    # Kunci eksekusi skrip
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
 
     try:
         if not check_sshd_config_exists(logger):
@@ -151,7 +150,7 @@ def main():
         if not check_file_permissions(SSHD_CONFIG, 0o600):
             file_mode = oct(SSHD_CONFIG.stat().st_mode & 0o777)
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
                 f"Hasil Hardening: CANCELLED - Permission file {SSHD_CONFIG} adalah {file_mode} (harus 0600).",
             )
@@ -162,7 +161,7 @@ def main():
 
         if not non_root_users:
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
                 "Hasil Hardening: CANCELLED FOR SECURITY REASONS - Tidak ditemukan user non-root aktif di sistem!",
             )
@@ -175,7 +174,7 @@ def main():
 
         if not users_with_key:
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
                 "Hasil Hardening: CANCELLED FOR SECURITY REASONS - Tidak ada user non-root yang memiliki SSH Key valid (~/.ssh/authorized_keys)!",
             )
@@ -192,9 +191,9 @@ def main():
 
         if state == "active" and value and value.lower() == "no":
             logger.log(
-                "INFO",
+                "SKIPPED",
                 "Result",
-                "Hasil Hardening: CANCELLED - Parameter PasswordAuthentication sudah bernilai 'no'.",
+                "Hasil Hardening: SKIPPED - Parameter PasswordAuthentication sudah bernilai 'no'.",
             )
             sys.exit(0)
 
@@ -229,18 +228,17 @@ def main():
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
-                "Hardening berhasil: CANCELLED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                "Hardening berhasil: FAILED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
             )
             sys.exit(1)
 
     except Exception as e:
         logger.log_error("K02", "hardening", e)
-        sys.exit(1)
 
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

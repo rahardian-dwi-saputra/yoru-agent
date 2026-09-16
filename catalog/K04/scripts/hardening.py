@@ -107,7 +107,7 @@ def main():
         log_type="hardening",
     )
 
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
 
     try:
         # 1. Cek keberadaan file sshd_config
@@ -125,9 +125,9 @@ def main():
         # Jika sudah aktif dan nilainya berada di kisaran aman (1-4), batalkan hardening
         if state == "active" and tries is not None and 0 < tries <= 4:
             logger.log(
-                "INFO",
+                "SKIPPED",
                 "Result",
-                f"Hasil Hardening: CANCELLED - MaxAuthTries sudah dikonfigurasi secara aman ({tries} / '{raw_val}').",
+                f"Hasil Hardening: SKIPPED - MaxAuthTries sudah dikonfigurasi secara aman ({tries} / '{raw_val}').",
             )
             sys.exit(0)
 
@@ -163,18 +163,17 @@ def main():
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
-                "Hardening berhasil: CANCELLED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                "Hardening berhasil: FAILED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
             )
             sys.exit(1)
 
     except Exception as e:
         logger.log_error("K04", "hardening", e)
-        sys.exit(1)
 
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

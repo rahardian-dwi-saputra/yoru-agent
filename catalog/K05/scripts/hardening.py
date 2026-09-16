@@ -97,7 +97,7 @@ def main():
         log_type="hardening",
     )
 
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
 
     try:
         if not check_sshd_config_exists(logger):
@@ -116,9 +116,9 @@ def main():
             current_set = set(current_ciphers)
             if current_set.issubset(APPROVED_CIPHERS_SET) and current_set == APPROVED_CIPHERS_SET:
                 logger.log(
-                    "INFO",
+                    "SKIPPED",
                     "Result",
-                    "Hasil Hardening: CANCELLED - Parameter Ciphers sudah ter-hardening dan sesuai standar CIS.",
+                    "Hasil Hardening: SKIPPED - Parameter Ciphers sudah ter-hardening dan sesuai standar CIS.",
                 )
                 sys.exit(0)
 
@@ -154,18 +154,17 @@ def main():
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
-                "Hasil Hardening: CANCELLED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                "Hasil Hardening: FAILED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
             )
             sys.exit(1)
 
     except Exception as e:
         logger.log_error("K05", "hardening", e)
-        sys.exit(1)
 
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

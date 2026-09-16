@@ -105,10 +105,9 @@ def main():
         log_type="rollback",
     )
 
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
 
     try:
-        # 1. Cek keberadaan file sshd_config
         if not check_sshd_config_exists(logger):
             logger.log(
                 "FAILED", 
@@ -117,13 +116,13 @@ def main():
             )
             sys.exit(1)
 
-        # 2. Cek status LoginGraceTime saat ini
+        # Cek status LoginGraceTime saat ini
         state, raw_val, seconds = get_login_grace_time_state(SSHD_CONFIG)
 
         # Syarat 1: Parameter tidak ditemukan -> Batalkan rollback
         if state == "not_found":
             logger.log(
-                "INFO",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Parameter LoginGraceTime tidak ditemukan di sshd_config.",
             )
@@ -132,7 +131,7 @@ def main():
         # Syarat 2: Parameter terkomentar (#) -> Batalkan rollback
         if state == "commented":
             logger.log(
-                "INFO",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Parameter LoginGraceTime dalam keadaan terkomentar (#).",
             )
@@ -141,9 +140,9 @@ def main():
         # Syarat 3: Jika nilainya sudah 120 (atau bukan 60/hasil hardening) -> Batalkan rollback
         if state == "active" and seconds is not None and seconds != 60:
             logger.log(
-                "INFO",
+                "SKIPPED",
                 "Result",
-                f"Hasil Rollback: CANCELLED - LoginGraceTime tidak bernilai 60 detik (saat ini '{raw_val}').",
+                f"Hasil Rollback: SKIPPED - LoginGraceTime tidak bernilai 60 detik (saat ini '{raw_val}').",
             )
             sys.exit(0)
 
@@ -179,7 +178,7 @@ def main():
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Sintaks konfigurasi invalid! Rollback dibatalkan.",
             )
@@ -187,10 +186,9 @@ def main():
 
     except Exception as e:
         logger.log_error("K03", "rollback", e)
-        sys.exit(1)
 
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

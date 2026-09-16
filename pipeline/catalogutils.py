@@ -103,7 +103,7 @@ class BaseLogger:
         )
     
         self.log(
-            "FAIL",
+            "FAILED",
             "Result",
             f"Hasil {proses.capitalize()}: FAILED - Terjadi kesalahan pada proses {proses}."
         )

@@ -95,7 +95,7 @@ def main():
         log_type="hardening",
     )
 
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
 
     try:
         # 1. Cek keberadaan file sshd_config
@@ -118,9 +118,9 @@ def main():
                 and current_set == APPROVED_MACS_SET
             ):
                 logger.log(
-                    "INFO",
+                    "SKIPPED",
                     "Result",
-                    "Hasil Hardening: CANCELLED - Parameter MACs sudah ter-hardening dan sesuai standar CIS.",
+                    "Hasil Hardening: SKIPPED - Parameter MACs sudah ter-hardening dan sesuai standar CIS.",
                 )
                 sys.exit(0)
 
@@ -156,27 +156,17 @@ def main():
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
-                "Hasil Hardening: CANCELLED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                "Hasil Hardening: FAILED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
             )
             sys.exit(1)
 
     except Exception as e:
-        logger.log(
-            "ERROR",
-            "Note",
-            f"Terjadi error saat hardening K06: {e}",
-        )
-        logger.log(
-            "FAILED",
-            "Result",
-            "Hasil Hardening: FAILED - Terjadi kesalahan pada proses hardening.",
-        )
-        sys.exit(1)
-
+        logger.log_error("K06", "hardening", e)
+   
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

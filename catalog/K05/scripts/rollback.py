@@ -84,10 +84,9 @@ def main():
         log_type="rollback",
     )
 
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
 
     try:
-        # 1. Cek keberadaan file sshd_config
         if not check_sshd_config_exists(logger):
             logger.log(
                 "FAILED",
@@ -102,7 +101,7 @@ def main():
         # Syarat 1: Parameter tidak ditemukan -> Batalkan rollback
         if state == "not_found":
             logger.log(
-                "INFO",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Parameter Ciphers tidak ditemukan di sshd_config.",
             )
@@ -111,7 +110,7 @@ def main():
         # Syarat 2: Parameter terkomentar (#) -> Batalkan rollback
         if state == "commented":
             logger.log(
-                "INFO",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Parameter Ciphers sudah dalam keadaan terkomentar (#).",
             )
@@ -122,9 +121,9 @@ def main():
             current_set = set(current_ciphers)
             if current_set != HARDENED_CIPHERS_SET:
                 logger.log(
-                    "INFO",
+                    "SKIPPED",
                     "Result",
-                    "Hasil Rollback: CANCELLED - Konfigurasi Ciphers aktif saat ini bukan berasal dari hasil hardening K05.",
+                    "Hasil Rollback: SKIPPED - Konfigurasi Ciphers aktif saat ini bukan berasal dari hasil hardening K05.",
                 )
                 sys.exit(0)
 
@@ -160,7 +159,7 @@ def main():
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Sintaks konfigurasi invalid! Rollback dibatalkan.",
             )
@@ -168,10 +167,9 @@ def main():
 
     except Exception as e:
         logger.log_error("K05", "rollback", e)
-        sys.exit(1)
 
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

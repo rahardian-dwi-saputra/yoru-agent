@@ -75,14 +75,8 @@ def main():
         log_type="audit",
     )
 
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
     
-    logger.log(
-        "INFO",
-        "Start",
-        "Memulai audit CIS 5.1.6 (sshd Ciphers)...",
-    )
-
     try:
         if not check_sshd_config_exists(logger):
             logger.log(
@@ -97,7 +91,7 @@ def main():
         # Skenario 1: Parameter Ciphers tidak dikonfigurasi / terkomentar
         if state in ("not_found", "commented"):
             logger.log(
-                "FAIL",
+                "FAILED",
                 "Result",
                 f"Hasil Audit: FAILED - Parameter 'Ciphers' belum dikonfigurasi secara eksplisit (State: {state}).",
             )
@@ -110,25 +104,23 @@ def main():
 
             if weak_ciphers:
                 logger.log(
-                    "FAIL",
+                    "NON_COMPLIANT",
                     "Result",
-                    f"Hasil Audit: FAILED - Ditemukan Ciphers yang tidak disetujui/lemah: {', '.join(weak_ciphers)}",
+                    f"Hasil Audit: NON_COMPLIANT - Ditemukan Ciphers yang tidak disetujui/lemah: {', '.join(weak_ciphers)}",
                 )
-                sys.exit(0)
+                
             else:
                 logger.log(
-                    "PASSED",
+                    "COMPLIANT",
                     "Result",
-                    "Hasil Audit: PASSED - Seluruh Ciphers yang dikonfigurasi sudah sesuai dengan standar CIS.",
+                    "Hasil Audit: COMPLIANT - Seluruh Ciphers yang dikonfigurasi sudah sesuai dengan standar CIS.",
                 )
-                sys.exit(0)
-
+            
     except Exception as e:
         logger.log_error("K05", "audit", e)
-        sys.exit(1)
-
+        
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

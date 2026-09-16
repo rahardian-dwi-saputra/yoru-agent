@@ -1,12 +1,12 @@
 from __future__ import annotations
-
-import os
 from pathlib import Path
+from typing import List, Optional, Tuple
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
-from typing import List, Optional, Tuple
+
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -89,7 +89,7 @@ def main():
         log_type="rollback",
     )
 
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
 
     try:
         # 1. Cek keberadaan file sshd_config
@@ -107,7 +107,7 @@ def main():
         # Syarat 1: Parameter tidak ditemukan -> Batalkan rollback
         if state == "not_found":
             logger.log(
-                "INFO",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Parameter KexAlgorithms tidak ditemukan di sshd_config.",
             )
@@ -116,7 +116,7 @@ def main():
         # Syarat 2: Parameter terkomentar (#) -> Batalkan rollback
         if state == "commented":
             logger.log(
-                "INFO",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Parameter KexAlgorithms sudah dalam keadaan terkomentar (#).",
             )
@@ -127,9 +127,9 @@ def main():
             current_set = set(current_kex)
             if current_set != HARDENED_KEX_SET:
                 logger.log(
-                    "INFO",
+                    "SKIPPED",
                     "Result",
-                    "Hasil Rollback: CANCELLED - Konfigurasi KexAlgorithms aktif saat ini bukan berasal dari hasil hardening K07.",
+                    "Hasil Rollback: SKIPPED - Konfigurasi KexAlgorithms aktif saat ini bukan berasal dari hasil hardening K07.",
                 )
                 sys.exit(0)
 
@@ -165,27 +165,17 @@ def main():
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Sintaks konfigurasi invalid! Rollback dibatalkan.",
             )
             sys.exit(1)
 
     except Exception as e:
-        logger.log(
-            "ERROR",
-            "Note",
-            f"Terjadi error saat rollback K07: {e}",
-        )
-        logger.log(
-            "FAILED",
-            "Result",
-            "Hasil Rollback: FAILED - Terjadi kesalahan pada proses rollback.",
-        )
-        sys.exit(1)
+        logger.log_error("K07", "rollback", e)
 
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

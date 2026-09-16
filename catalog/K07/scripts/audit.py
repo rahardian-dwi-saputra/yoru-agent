@@ -1,8 +1,7 @@
 from __future__ import annotations
-
-import sys
 from pathlib import Path
 from typing import List, Optional, Tuple
+import sys
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -14,7 +13,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from pipeline.catalogutils import (
     SSHD_CONFIG,
     BaseLogger,
+    acquire_lock,
     check_sshd_config_exists,
+    release_lock,
 )
 
 # Daftar KexAlgorithms yang diizinkan sesuai standar CIS 5.1.8
@@ -76,8 +77,9 @@ def main():
         log_type="audit",
     )
 
+    lock_file = acquire_lock(logger)
+
     try:
-        # 1. Cek keberadaan file sshd_config
         if not check_sshd_config_exists(logger):
             logger.log(
                 "FAILED",
@@ -86,15 +88,15 @@ def main():
             )
             sys.exit(1)
 
-        # 2. Extract konfigurasi KexAlgorithms
+        # Extract konfigurasi KexAlgorithms
         state, configured_kex = parse_kex_from_config(SSHD_CONFIG)
 
         # Skenario 1: Parameter KexAlgorithms tidak dikonfigurasi / terkomentar
         if state in ("not_found", "commented"):
             logger.log(
-                "NON_COMPLIANT",
+                "FAILED",
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Parameter 'KexAlgorithms' belum dikonfigurasi secara eksplisit (State: {state}).",
+                f"Hasil Audit: FAILED - Parameter 'KexAlgorithms' belum dikonfigurasi secara eksplisit (State: {state}).",
             )
             sys.exit(0)
 
@@ -109,28 +111,18 @@ def main():
                     "Result",
                     f"Hasil Audit: NON_COMPLIANT - Ditemukan KexAlgorithms yang tidak disetujui/lemah: {', '.join(weak_kex)}",
                 )
-                sys.exit(0)
             else:
                 logger.log(
                     "COMPLIANT",
                     "Result",
                     "Hasil Audit: COMPLIANT - Seluruh KexAlgorithms yang dikonfigurasi sudah sesuai dengan standar CIS.",
                 )
-                sys.exit(0)
 
     except Exception as e:
-        logger.log(
-            "ERROR",
-            "Note",
-            f"Terjadi error saat melakukan audit K07: {e}",
-        )
-        logger.log(
-            "FAILED",
-            "Result",
-            "Hasil Audit: FAILED - Terjadi kesalahan pada proses audit.",
-        )
-        sys.exit(1)
+        logger.log_error("K07", "audit", e)
 
+    finally:
+        release_lock(lock_file)
 
 if __name__ == "__main__":
     main()

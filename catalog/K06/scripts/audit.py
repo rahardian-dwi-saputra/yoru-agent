@@ -14,7 +14,9 @@ if str(PROJECT_ROOT) not in sys.path:
 from pipeline.catalogutils import (
     SSHD_CONFIG,
     BaseLogger,
+    acquire_lock,
     check_sshd_config_exists,
+    release_lock,
 )
 
 # Daftar MACs yang diizinkan sesuai standar CIS 5.1.7
@@ -72,9 +74,10 @@ def main():
         cis_id="5.1.7",
         log_type="audit",
     )
+    
+    lock_file = acquire_lock(logger)
 
     try:
-        # 1. Cek keberadaan file sshd_config
         if not check_sshd_config_exists(logger):
             logger.log(
                 "FAILED",
@@ -83,7 +86,6 @@ def main():
             )
             sys.exit(1)
 
-        # 2. Extract konfigurasi MACs
         state, configured_macs = parse_macs_from_config(SSHD_CONFIG)
 
         # Skenario 1: Parameter MACs tidak dikonfigurasi / terkomentar
@@ -116,18 +118,11 @@ def main():
                 sys.exit(0)
 
     except Exception as e:
-        logger.log(
-            "ERROR",
-            "Note",
-            f"Terjadi error saat melakukan audit K06: {e}",
-        )
-        logger.log(
-            "FAILED",
-            "Result",
-            "Hasil Audit: FAILED - Terjadi kesalahan pada proses audit.",
-        )
+        logger.log_error("K06", "audit", e)
         sys.exit(1)
 
+    finally:
+        release_lock(lock_file)
 
 if __name__ == "__main__":
     main()

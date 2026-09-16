@@ -2,9 +2,8 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
-# Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
+PROJECT_ROOT = SCRIPT_DIR.parents[2]
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -18,25 +17,23 @@ from pipeline.catalogutils import (
     release_lock,
 )
 
-def check_permit_root_login() -> str:
-    """Mengecek konfigurasi PermitRootLogin di sshd_config."""
+def get_permit_root_login_val() -> str | None:
+    """Membaca nilai PermitRootLogin yang aktif (non-commented) dari sshd_config."""
     if not SSHD_CONFIG.is_file():
-        return "not_found"
+        return None
 
     with open(SSHD_CONFIG, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
-            line_stripped = line.strip()
-            if line_stripped.startswith("#"):
+            clean_line = line.strip()
+            if clean_line.startswith("#") or not clean_line:
                 continue
-
-            if line_stripped.lower().startswith("permitrootlogin"):
-                parts = line_stripped.split()
-                if len(parts) >= 2:
-                    return parts[1]
-    return "not_set"
+            
+            parts = clean_line.split()
+            if parts[0].lower() == "permitrootlogin" and len(parts) >= 2:
+                return parts[1].lower()
+    return None
 
 def main():
-    
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
@@ -45,15 +42,7 @@ def main():
         log_type="audit",
     )
 
-    # Kunci eksekusi skrip
     lock_file = acquire_lock(logger)
-
-    logger.log(
-        "INFO", 
-        "Start", 
-        "Memulai audit CIS 5.1.20 (sshd PermitRootLogin)..."
-    )
-    audit_passed = True
 
     try:
         if not check_sshd_config_exists(logger):
@@ -64,63 +53,65 @@ def main():
             )
             sys.exit(1)
 
+        # Log informasi user non-root (opsional/pendukung)
         users = get_non_root_users()
-        if not users:
+        if users:
             logger.log(
-                "WARNING",
-                "Note",
-                "Tidak ditemukan user lain yang memiliki akses login SSH.",
+                "INFO", 
+                "Note", 
+                f"Ditemukan {len(users)} user non-root aktif: {', '.join(users)}"
             )
-            audit_passed = False
         else:
             logger.log(
-                "INFO",
-                "Note",
-                f"Ditemukan {len(users)} user non-root aktif: {', '.join(users)}",
+                "WARNING", 
+                "Note", 
+                "Tidak ditemukan user non-root aktif."
             )
 
-        status = check_permit_root_login()
-        if status == "not_set":
+        # Evaluasi CIS 5.1.20
+        status = get_permit_root_login_val()
+        
+        # Nilai yang tergolong compliant menurut CIS (biasanya 'no', atau 'prohibit-password' jika diizinkan kebijakan)
+        is_compliant = status in ["no", "prohibit-password", "without-password"]
+
+        if not status:
             logger.log(
-                "WARNING",
-                "Note",
-                "PermitRootLogin tidak diatur secara eksplisit di sshd_config",
+                "WARNING", 
+                "Note", 
+                "PermitRootLogin tidak diatur secara eksplisit di sshd_config."
             )
-            audit_passed = False
-        elif status.lower() == "yes":
+        elif not is_compliant:
             logger.log(
-                "WARNING",
-                "Note",
-                "Root BISA login via SSH (PermitRootLogin yes)"
+                "WARNING", 
+                "Note", 
+                f"Root BISA login via SSH (PermitRootLogin {status})."
             )
-            audit_passed = False
         else:
             logger.log(
-                "INFO",
-                "Note",
-                f"Root login SSH AMAN / Dibatasi (Status: {status})"
+                "INFO", 
+                "Note", 
+                f"Root login SSH dibatasi (PermitRootLogin {status})."
             )
 
-        if audit_passed:
+        # Keputusan Akhir Audit
+        if is_compliant:
             logger.log(
-                "PASSED",
-                "Result",
-                "Hasil Audit: PASSED - Konfigurasi PermitRootLogin sudah sesuai standar CIS.",
+                "COMPLIANT", 
+                "Result", 
+                "Hasil Audit: COMPLIANT - Konfigurasi PermitRootLogin sesuai standar CIS."
             )
         else:
             logger.log(
-                "FAIL",
-                "Result",
-                "Hasil Audit: FAILED - Konfigurasi PermitRootLogin tidak memenuhi standar CIS.",
+                "NON_COMPLIANT", 
+                "Result", 
+                "Hasil Audit: NON_COMPLIANT - Konfigurasi PermitRootLogin tidak sesuai standar CIS."
             )
 
     except Exception as e:
         logger.log_error("K01", "audit", e)
         
     finally:
-        # Melepaskan penguncian file
         release_lock(lock_file)
-
 
 if __name__ == "__main__":
     main()

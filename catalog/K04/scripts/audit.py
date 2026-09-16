@@ -74,13 +74,7 @@ def main():
         log_type="audit",
     )
 
-    lock_file_obj = acquire_lock(logger)
-
-    logger.log(
-        "INFO",
-        "Start",
-        "Memulai audit CIS 5.1.16 (sshd MaxAuthTries)...",
-    )
+    lock_file = acquire_lock(logger)
 
     try:
         if not check_sshd_config_exists(logger):
@@ -95,7 +89,7 @@ def main():
 
         if state == "not_found":
             logger.log(
-                "FAIL",
+                "FAILED",
                 "Result",
                 "Hasil Audit: FAILED - Parameter MaxAuthTries tidak ditemukan di sshd_config (menggunakan default yang tidak aman).",
             )
@@ -103,7 +97,7 @@ def main():
 
         elif state == "commented":
             logger.log(
-                "FAIL",
+                "FAILED",
                 "Result",
                 f"Hasil Audit: FAILED - Parameter MaxAuthTries ditemukan tetapi terkomentar (#) dengan nilai default '{raw_val}'.",
             )
@@ -112,7 +106,7 @@ def main():
         elif state == "active":
             if tries is None:
                 logger.log(
-                    "FAIL",
+                    "FAILED",
                     "Result",
                     f"Hasil Audit: FAILED - Parameter MaxAuthTries aktif namun nilainya tidak valid ('{raw_val}').",
                 )
@@ -121,25 +115,22 @@ def main():
             # Sesuai standar CIS 5.1.16: Harus aktif dan bernilai 1-4 (misal <= 4 dan > 0)
             if 0 < tries <= 4:
                 logger.log(
-                    "PASSED",
+                    "COMPLIANT",
                     "Result",
-                    f"Hasil Audit: PASSED - MaxAuthTries dikonfigurasi secara aman dengan nilai {tries} ('{raw_val}').",
+                    f"Hasil Audit: COMPLIANT - MaxAuthTries dikonfigurasi secara aman dengan nilai {tries} ('{raw_val}').",
                 )
-                sys.exit(0)
             else:
                 logger.log(
-                    "FAIL",
+                    "NON_COMPLIANT",
                     "Result",
-                    f"Hasil Audit: FAILED - MaxAuthTries bernilai {tries} ('{raw_val}'). Persyaratan aman: > 0 dan <= 4.",
+                    f"Hasil Audit: NON_COMPLIANT - MaxAuthTries bernilai {tries} ('{raw_val}'). Persyaratan aman: > 0 dan <= 4.",
                 )
-                sys.exit(1)
-
+               
     except Exception as e:
         logger.log_error("K04", "audit", e)
-        sys.exit(1)
 
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

@@ -1,12 +1,12 @@
 from __future__ import annotations
-
-import os
 from pathlib import Path
+from typing import List, Optional, Tuple
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
-from typing import List, Optional, Tuple
+
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -100,7 +100,7 @@ def main():
         log_type="hardening",
     )
 
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
 
     try:
         # 1. Cek keberadaan file sshd_config
@@ -123,9 +123,9 @@ def main():
                 and current_set == APPROVED_KEX_SET
             ):
                 logger.log(
-                    "INFO",
+                    "SKIPPED",
                     "Result",
-                    "Hasil Hardening: CANCELLED - Parameter KexAlgorithms sudah ter-hardening dan sesuai standar CIS.",
+                    "Hasil Hardening: SKIPPED - Parameter KexAlgorithms sudah ter-hardening dan sesuai standar CIS.",
                 )
                 sys.exit(0)
 
@@ -161,27 +161,17 @@ def main():
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
-                "Hasil Hardening: CANCELLED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                "Hasil Hardening: FAILED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
             )
             sys.exit(1)
 
     except Exception as e:
-        logger.log(
-            "ERROR",
-            "Note",
-            f"Terjadi error saat hardening K07: {e}",
-        )
-        logger.log(
-            "FAILED",
-            "Result",
-            "Hasil Hardening: FAILED - Terjadi kesalahan pada proses hardening.",
-        )
-        sys.exit(1)
+        logger.log_error("K07", "hardening", e)
 
     finally:
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

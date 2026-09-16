@@ -84,8 +84,7 @@ def main():
         log_type="rollback",
     )
 
-    # Kunci eksekusi skrip
-    lock_file_obj = acquire_lock(logger)
+    lock_file = acquire_lock(logger)
 
     try:
         if not check_sshd_config_exists(logger):
@@ -102,7 +101,7 @@ def main():
         # Syarat 1: Tidak ada parameter PermitRootLogin di SSHD_CONFIG
         if state == "not_found":
             logger.log(
-                "INFO",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Parameter PermitRootLogin tidak ditemukan di sshd_config.",
             )
@@ -111,7 +110,7 @@ def main():
         # Syarat 2: Parameter PermitRootLogin dalam posisi Comment ('#')
         if state == "commented":
             logger.log(
-                "INFO",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Parameter PermitRootLogin dalam keadaan terkomentar (#).",
             )
@@ -120,16 +119,16 @@ def main():
         # Syarat 3: Parameter PermitRootLogin sudah bernilai 'yes'
         if state == "active" and value and value.lower() == "yes":
             logger.log(
-                "INFO",
+                "SKIPPED",
                 "Result",
-                "Hasil Rollback: CANCELLED - PermitRootLogin sudah bernilai 'yes'.",
+                "Hasil Rollback: SKIPPED - PermitRootLogin sudah bernilai 'yes'.",
             )
             sys.exit(0)
 
         # Syarat 4: Jika bernilai bukan 'no' (misal: prohibit-password / forced-commands-only)
         if state == "active" and value and value.lower() != "no":
             logger.log(
-                "WARNING",
+                "FAILED",
                 "Result",
                 f"Hasil Rollback: CANCELLED - PermitRootLogin bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
             )
@@ -168,7 +167,7 @@ def main():
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "ERROR",
+                "FAILED",
                 "Result",
                 "Hasil Rollback: CANCELLED - Sintaks konfigurasi invalid! Rollback dibatalkan.",
             )
@@ -176,11 +175,9 @@ def main():
 
     except Exception as e:
         logger.log_error("K01", "rollback", e)
-        sys.exit(1)
 
     finally:
-        # Melepaskan penguncian file
-        release_lock(lock_file_obj)
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

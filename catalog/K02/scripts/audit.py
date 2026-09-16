@@ -61,14 +61,8 @@ def main():
         log_type="audit",
     )
     
-    # Kunci eksekusi skrip
     lock_file = acquire_lock(logger)
-
-    logger.log(
-        "INFO", 
-        "Start", 
-        "Memulai audit CIS 5.2.14 (sshd PasswordAuthentication)..."
-    )
+    audit_passed = True
     
     try:
         if not check_sshd_config_exists(logger):
@@ -144,22 +138,21 @@ def main():
         # Kesimpulan Audit
         if audit_passed:
             logger.log(
-                "PASSED",
+                "COMPLIANT",
                 "Result",
-                "Hasil Audit: PASSED - Seluruh user non-root memiliki SSH key valid (permission 600) dan PasswordAuthentication di-set ke 'no'.",
+                "Hasil Audit: COMPLIANT - Seluruh user non-root memiliki SSH key valid (permission 600) dan PasswordAuthentication di-set ke 'no'.",
             )
         else:
             logger.log(
-                "FAIL",
+                "NON_COMPLIANT",
                 "Result",
-                "Hasil Audit: FAILED - Terdapat syarat SSH Key atau konfigurasi SSHD yang belum terpenuhi.",
+                "Hasil Audit: NON_COMPLIANT - Terdapat syarat SSH Key atau konfigurasi SSHD yang belum terpenuhi.",
             )
 
     except Exception as e:
         logger.log_error("K02", "audit", e)
 
     finally:
-        # Melepaskan penguncian file
         release_lock(lock_file)
 
 
