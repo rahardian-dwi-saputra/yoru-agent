@@ -1,55 +1,22 @@
 from __future__ import annotations
+from typing import List, Optional, TextIO, Tuple, Union
 from datetime import datetime
 from pathlib import Path
-from typing import List, Tuple, Union
-from typing import Optional, TextIO
 import fcntl
 import json
+import os
+import pwd
+import subprocess
 import sys
 import uuid
-import os
-import subprocess
-import pwd
+
 
 # Path Konfigurasi sistem
 SSHD_CONFIG = Path("/etc/ssh/sshd_config")
-LOCK_FILE = Path("/tmp/sshd_config.lock")
-LOCK_FILE_UFW = Path("/tmp/ufw_audit.lock")
-PASSWD_FILE = Path("/etc/passwd")
-
-VALID_SHELLS = {"/bin/bash", "/bin/sh", "/bin/zsh"}
 INVALID_SHELLS = {"/bin/false", "/usr/sbin/nologin", "/sbin/nologin", "/bin/sync"}
 
-def check_sshd_config_exists(
-    logger: BaseLogger | None = None, 
-    config_path: Path = SSHD_CONFIG
-) -> bool:
-    """Mengecek apakah file sshd_config ada dan merupakan file valid.
-
-    Jika logger diberikan dan file tidak ada, pesan ERROR akan otomatis dicatat.
-    """
-    if not config_path.is_file():
-        if logger:
-            logger.log(
-                "ERROR",
-                "Note", 
-                f"File konfigurasi {config_path} tidak ditemukan."
-            )
-        return False
-    return True
-
-def restart_ssh_service() -> bool:
-    """Mencoba merestart service sshd atau ssh."""
-    for service in ["sshd", "ssh"]:
-        result = subprocess.run(
-            ["systemctl", "restart", service], capture_output=True
-        )
-        if result.returncode == 0:
-            return True
-    return False
 
 class BaseLogger:
-
     def __init__(
         self,
         script_dir: Path,
@@ -57,8 +24,7 @@ class BaseLogger:
         catalog: str,
         cis_id: str,
         log_type: str,
-    ):
-       
+    ) -> None:
         self.catalog_dir = script_dir.parent
         self.log_dir = self.catalog_dir / "logs"
         self.log_path = self.log_dir / log_file_name
@@ -77,9 +43,9 @@ class BaseLogger:
 
         log_entry = {
             "id": unique_log_id,
-            "execution_id": self.execution_id,  # Kode unik per sesi eksekusi
+            "execution_id": self.execution_id,
             "pid": os.getpid(),
-            "timestamp": datetime.now().astimezone().isoformat(),
+            "timestamp": now.isoformat(),
             "catalog": self.catalog,
             "cis_id": self.cis_id,
             "type": self.log_type,
@@ -92,81 +58,91 @@ class BaseLogger:
             f.write(json.dumps(log_entry, ensure_ascii=False) + "\n")
 
     def log_error(
-            self,
-            catalog: str, 
-            proses: str, 
-            exception: Exception
-        ):
-       
+        self,
+        catalog: str,
+        proses: str,
+        exception: Exception,
+    ) -> None:
         self.log(
             "ERROR",
             "Note",
-            f"Terjadi error saat {proses} {catalog}: {exception}"
+            f"Terjadi error saat {proses} {catalog}: {exception}",
         )
-    
         self.log(
             "FAILED",
             "Result",
-            f"Hasil {proses.capitalize()}: FAILED - Terjadi kesalahan pada proses {proses}."
+            f"Hasil {proses.capitalize()}: FAILED - Terjadi kesalahan pada proses {proses}.",
         )
 
 
-def acquire_lock(logger: BaseLogger):
-    try:
-        lock_file = open(LOCK_FILE, "w")
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return lock_file
-    except (BlockingIOError, OSError):
-        logger.log(
-            "ERROR",
-            "Note",
-            "File sshd_config sedang diakses oleh proses lain. Operasi dibatalkan.",
+def check_sshd_config_exists(
+    logger: BaseLogger | None = None,
+    config_path: Path = SSHD_CONFIG,
+) -> bool:
+    """Mengecek apakah file sshd_config ada dan merupakan file valid."""
+    if not config_path.is_file():
+        if logger:
+            logger.log(
+                "ERROR",
+                "Note",
+                f"File konfigurasi {config_path} tidak ditemukan.",
+            )
+        return False
+    return True
+
+
+def restart_ssh_service() -> bool:
+    """Mencoba merestart service sshd atau ssh."""
+    for service in ["sshd", "ssh"]:
+        result = subprocess.run(
+            ["systemctl", "restart", service], capture_output=True
         )
-        sys.exit(1)
+        if result.returncode == 0:
+            return True
+    return False
 
 
-def acquire_lock_ufw(logger: BaseLogger):
-    try:
-        lock_file = open(LOCK_FILE_UFW, "w")
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return lock_file
-    except (BlockingIOError, OSError):
-        logger.log(
-            "ERROR",
-            "Note",
-            "File UFW sedang diakses oleh proses lain. Operasi dibatalkan.",
-        )
-        sys.exit(1)
-
-def acquire_lock2(lock_name: str, logger=None) -> Optional[TextIO]:
+def acquire_lock(lock_name: str, logger: BaseLogger | None = None) -> Optional[TextIO]:
     """Mengambil lock eksklusif non-blocking berdasarkan nama lock."""
     lock_path = Path(f"/tmp/{lock_name}.lock")
     try:
         lock_file = open(lock_path, "w")
         fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
         return lock_file
-    except (BlockingIOError, IOError):
+    except (BlockingIOError, OSError):
         if logger:
             logger.log(
                 "SKIPPED",
                 "Result",
-                f"Proses audit/remediasi '{lock_name}' sedang berjalan. Eksekusi dibatalkan.",
+                f"Proses audit/remediasi '{lock_name}' sedang berjalan di proses lain. Eksekusi dibatalkan.",
             )
         sys.exit(0)
 
-def release_lock(lock_file_obj) -> None:
+
+def acquire_lock_sshd(logger: BaseLogger | None = None) -> Optional[TextIO]:
+    """Shortcut pengunci untuk proses sshd_config."""
+    return acquire_lock("sshd_config", logger)
+
+
+def acquire_lock_ufw(logger: BaseLogger | None = None) -> Optional[TextIO]:
+    """Shortcut pengunci untuk proses UFW."""
+    return acquire_lock("ufw_audit", logger)
+
+
+def release_lock(lock_file_obj: Optional[TextIO]) -> None:
+    """Melepaskan lock dan menutup file handle."""
     if lock_file_obj:
-        fcntl.flock(lock_file_obj, fcntl.LOCK_UN)
-        lock_file_obj.close()
+        try:
+            fcntl.flock(lock_file_obj, fcntl.LOCK_UN)
+            lock_file_obj.close()
+        except Exception:
+            pass
 
 
-def get_non_root_users(include_home: bool = False) -> Union[List[str], List[Tuple[str, Path]]]:
-    """Mendapatkan daftar user non-root aktif (UID >= 1000).
-    
-    Args:
-        include_home: Jika True, mengembalikan List[Tuple[username, home_dir]].
-                      Jika False, hanya mengembalikan List[username].
-    """
+def get_non_root_users(
+    include_home: bool = False,
+) -> Union[List[str], List[Tuple[str, Path]]]:
+    """Mendapatkan daftar user non-root aktif (UID >= 1000)."""
     valid_users = []
     for user in pwd.getpwall():
         if user.pw_uid >= 1000 and user.pw_name != "nobody":

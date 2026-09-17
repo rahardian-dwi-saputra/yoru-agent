@@ -18,7 +18,7 @@ if str(PROJECT_ROOT) not in sys.path:
 from pipeline.catalogutils import (
     SSHD_CONFIG,
     BaseLogger,
-    acquire_lock,
+    acquire_lock_sshd,
     release_lock,
     restart_ssh_service,
     check_sshd_config_exists,
@@ -84,7 +84,7 @@ def main():
         log_type="rollback",
     )
 
-    lock_file = acquire_lock(logger)
+    lock_file = acquire_lock_sshd(logger)
 
     try:
         if not check_sshd_config_exists(logger):
