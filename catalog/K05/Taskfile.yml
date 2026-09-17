@@ -12,6 +12,7 @@ vars:
   CIS_JUDUL: "5.1.6 Ensure sshd Ciphers are configured"
   RISIKO: "BERISIKO"
   KATEGORI: "SSH"
+  AUDIT_ONLY: false
 
 tasks:
   # Task internal untuk memastikan folder logs/ selalu ada

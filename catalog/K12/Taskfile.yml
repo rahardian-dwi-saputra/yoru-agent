@@ -6,12 +6,12 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   # Metadata CIS Benchmark
-  ID: "K07"
-  NAMA: "Pengaturan KexAlgorithms SSH yang Aman"
-  KODE_CIS: "5.1.8"
-  CIS_JUDUL: "5.1.8 Ensure sshd KexAlgorithms are configured"
+  ID: "K12"
+  NAMA: "Pengaturan Penyimpanan Log Journald"
+  KODE_CIS: "6.1.2.4"
+  CIS_JUDUL: "6.1.2.4 Ensure journald Storage is configured"
   RISIKO: "BERISIKO"
-  KATEGORI: "SSH"
+  KATEGORI: "Logging and Auditing"
   AUDIT_ONLY: false
 
 tasks:
@@ -21,23 +21,23 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit SSH KexAlgorithms Configuration
+  # 1. Audit journald Storage Configuration
   audit:
-    desc: "Menjalankan audit konfigurasi SSH KexAlgorithms"
+    desc: "Menjalankan audit konfigurasi penyimpanan journald"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 2. Hardening SSH KexAlgorithms (Terapkan Key Exchange Algorithms yang kuat)
+  # 2. Hardening journald Storage (Konfigurasi Storage=persistent)
   hardening:
-    desc: "Menerapkan konfigurasi KexAlgorithms terenkripsi kuat pada SSH"
+    desc: "Menerapkan konfigurasi penyimpan log journald secara permanen"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 3. Rollback SSH KexAlgorithms (Mengembalikan parameter KexAlgorithms ke kondisi awal)
+  # 3. Rollback journald Storage (Mengembalikan konfigurasi ke kondisi awal)
   rollback:
-    desc: "Mengembalikan konfigurasi KexAlgorithms SSH ke nilai default/kondisi sebelum hardening"
+    desc: "Mengembalikan konfigurasi penyimpanan journald ke kondisi sebelum hardening"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/rollback.py

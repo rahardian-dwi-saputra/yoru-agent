@@ -12,6 +12,7 @@ vars:
   CIS_JUDUL: "5.1.16 Ensure sshd MaxAuthTries is configured"
   RISIKO: "BERISIKO"
   KATEGORI: "SSH"
+  AUDIT_ONLY: false
 
 tasks:
   default:

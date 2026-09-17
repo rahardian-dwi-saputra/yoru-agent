@@ -44,5 +44,5 @@ Aktifkan environment Python dan jalankan server FastAPI menggunakan `uvicorn`:
 ```bash
 source venv/bin/activate
 uvicorn main:app --host 0.0.0.0 --port 8000
-python -m uvicorn api.main:app --reload --port 8000
+python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```

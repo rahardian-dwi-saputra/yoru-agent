@@ -12,6 +12,7 @@ vars:
   CIS_JUDUL: "4.2.3 Ensure ufw service is enabled"
   RISIKO: "BERISIKO"
   KATEGORI: "Firewall"
+  AUDIT_ONLY: true
 
 tasks:
   # Task internal untuk memastikan folder logs/ selalu ada

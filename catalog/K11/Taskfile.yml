@@ -6,12 +6,13 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   # Metadata CIS Benchmark
-  ID: "K10"
+  ID: "K11"
   NAMA: "Pengaturan Layanan Jaringan yang Mendengarkan Interface Network"
   KODE_CIS: "2.1.22"
   CIS_JUDUL: "2.1.22 Ensure only approved services are listening on a network interface"
   RISIKO: "BERISIKO"
   KATEGORI: "Services / Network Configuration"
+  AUDIT_ONLY: true
 
 tasks:
   # Task internal untuk memastikan folder logs/ selalu ada
