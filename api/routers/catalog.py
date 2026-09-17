@@ -1,6 +1,8 @@
 from typing import Dict
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 
+from api.config import limiter
+from api.dependencies import verify_api_key
 from api.schemas.catalog import (
     CatalogListResponse,
     CatalogMetadata,
@@ -8,9 +10,13 @@ from api.schemas.catalog import (
     ExecutionRequest,
     ExecutionResponse,
 )
-from api.services.catalog_service import get_available_catalogs, run_taskfile
+from app.services.catalog_service import get_available_catalogs, run_taskfile
 
-router = APIRouter(prefix="/api/v1", tags=["Catalog & Agent"])
+router = APIRouter(
+    prefix="/api/v1", 
+    tags=["Catalog & Agent"],
+    dependencies=[Depends(verify_api_key)]
+)
 
 
 @router.get(
@@ -18,7 +24,8 @@ router = APIRouter(prefix="/api/v1", tags=["Catalog & Agent"])
     response_model=CatalogListResponse,
     summary="Mendapatkan Daftar Katalog Tersedia",
 )
-async def list_catalogs():
+@limiter.limit("60/minute")
+async def list_catalogs(request: Request):
     """Mengembalikan semua katalog yang tersedia di direktori catalog/ secara otomatis."""
     catalogs = get_available_catalogs()
     return {
@@ -32,7 +39,8 @@ async def list_catalogs():
     response_model=ExecutionResponse,
     summary="Endpoint Universal Eksekusi Agent",
 )
-async def execute_agent_task(payload: ExecutionRequest):
+@limiter.limit("20/minute")
+async def execute_agent_task(request: Request, payload: ExecutionRequest):
     """Endpoint universal untuk menjalankan aksi (audit, hardening, rollback) pada satu atau banyak katalog."""
     action = payload.action
     requested_catalogs = payload.catalogs
