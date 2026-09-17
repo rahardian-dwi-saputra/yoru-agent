@@ -6,12 +6,12 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   # Metadata CIS Benchmark
-  ID: "K08"
-  NAMA: "Memastikan UFW Terinstall"
-  KODE_CIS: "4.2.1"
-  CIS_JUDUL: "4.2.1 Ensure ufw is installed"
+  ID: "K10"
+  NAMA: "Pengaturan Layanan Jaringan yang Mendengarkan Interface Network"
+  KODE_CIS: "2.1.22"
+  CIS_JUDUL: "2.1.22 Ensure only approved services are listening on a network interface"
   RISIKO: "BERISIKO"
-  KATEGORI: "Firewall"
+  KATEGORI: "Services / Network Configuration"
 
 tasks:
   # Task internal untuk memastikan folder logs/ selalu ada
@@ -20,9 +20,9 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # Audit status installasi UFW
+  # Audit layanan yang mendengarkan pada interface jaringan
   audit:
-    desc: "Menjalankan audit keberadaan paket UFW pada sistem"
+    desc: "Menjalankan audit layanan yang mendengarkan pada network interface"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py

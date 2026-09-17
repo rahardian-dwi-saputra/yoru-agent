@@ -1,9 +1,9 @@
 from __future__ import annotations
-
-import subprocess
-import sys
 from pathlib import Path
 from typing import Dict
+import subprocess
+import sys
+
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -12,20 +12,12 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from pipeline.catalogutils import BaseLogger
-
-
-def is_ufw_installed() -> bool:
-    """Memeriksa apakah paket UFW terinstall pada sistem."""
-    try:
-        res = subprocess.run(
-            ["dpkg-query", "-s", "ufw"],
-            capture_output=True,
-            text=True,
-        )
-        return res.returncode == 0 and "Status: install ok installed" in res.stdout
-    except Exception:
-        return False
+from pipeline.catalogutils import (
+    BaseLogger,
+    acquire_lock_ufw,
+    is_ufw_installed,
+    release_lock
+)
 
 
 def get_ufw_default_policies() -> Dict[str, str]:
@@ -67,17 +59,18 @@ def main():
         log_type="audit",
     )
 
+    lock_file = acquire_lock_ufw(logger)
+
     try:
-        # 1. Prasyarat: UFW harus terinstall
         if not is_ufw_installed():
             logger.log(
-                "NON_COMPLIANT",
+                "FAILED",
                 "Result",
-                "Hasil Audit: NON_COMPLIANT - Paket 'ufw' belum terinstall pada sistem.",
+                "Hasil Audit: FAILED - Paket 'ufw' belum terinstall pada sistem.",
             )
             sys.exit(0)
 
-        # 2. Cek policy default UFW
+        # Cek policy default UFW
         policies = get_ufw_default_policies()
 
         incoming = policies.get("incoming", "")
@@ -93,27 +86,18 @@ def main():
                 "Result",
                 f"Hasil Audit: COMPLIANT - Kebijakan default UFW sudah aman (incoming: {incoming}, routed: {routed}).",
             )
-            sys.exit(0)
         else:
             logger.log(
                 "NON_COMPLIANT",
                 "Result",
                 f"Hasil Audit: NON_COMPLIANT - Kebijakan default UFW tidak aman (incoming: {incoming}, routed: {routed}).",
             )
-            sys.exit(0)
 
     except Exception as e:
-        logger.log(
-            "ERROR",
-            "Note",
-            f"Terjadi error saat melakukan audit K10: {e}",
-        )
-        logger.log(
-            "FAILED",
-            "Result",
-            "Hasil Audit: FAILED - Terjadi kesalahan pada proses audit.",
-        )
-        sys.exit(1)
+        logger.log_error("K10", "audit", e)
+
+    finally:
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":

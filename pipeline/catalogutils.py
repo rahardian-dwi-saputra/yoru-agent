@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import List, Tuple, Union
+from typing import Optional, TextIO
 import fcntl
 import json
 import sys
@@ -13,6 +14,7 @@ import pwd
 # Path Konfigurasi sistem
 SSHD_CONFIG = Path("/etc/ssh/sshd_config")
 LOCK_FILE = Path("/tmp/sshd_config.lock")
+LOCK_FILE_UFW = Path("/tmp/ufw_audit.lock")
 PASSWD_FILE = Path("/etc/passwd")
 
 VALID_SHELLS = {"/bin/bash", "/bin/sh", "/bin/zsh"}
@@ -123,6 +125,35 @@ def acquire_lock(logger: BaseLogger):
         sys.exit(1)
 
 
+def acquire_lock_ufw(logger: BaseLogger):
+    try:
+        lock_file = open(LOCK_FILE_UFW, "w")
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_file
+    except (BlockingIOError, OSError):
+        logger.log(
+            "ERROR",
+            "Note",
+            "File UFW sedang diakses oleh proses lain. Operasi dibatalkan.",
+        )
+        sys.exit(1)
+
+def acquire_lock2(lock_name: str, logger=None) -> Optional[TextIO]:
+    """Mengambil lock eksklusif non-blocking berdasarkan nama lock."""
+    lock_path = Path(f"/tmp/{lock_name}.lock")
+    try:
+        lock_file = open(lock_path, "w")
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_file
+    except (BlockingIOError, IOError):
+        if logger:
+            logger.log(
+                "SKIPPED",
+                "Result",
+                f"Proses audit/remediasi '{lock_name}' sedang berjalan. Eksekusi dibatalkan.",
+            )
+        sys.exit(0)
+
 def release_lock(lock_file_obj) -> None:
     if lock_file_obj:
         fcntl.flock(lock_file_obj, fcntl.LOCK_UN)
@@ -146,3 +177,16 @@ def get_non_root_users(include_home: bool = False) -> Union[List[str], List[Tupl
                     valid_users.append(user.pw_name)
 
     return valid_users
+
+
+def is_ufw_installed() -> bool:
+    """Memeriksa apakah paket UFW terinstall pada sistem Debian/Ubuntu."""
+    try:
+        res = subprocess.run(
+            ["dpkg-query", "-s", "ufw"],
+            capture_output=True,
+            text=True,
+        )
+        return res.returncode == 0 and "Status: install ok installed" in res.stdout
+    except Exception:
+        return False

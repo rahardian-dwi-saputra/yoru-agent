@@ -1,8 +1,7 @@
 from __future__ import annotations
-
-import subprocess
-import sys
 from pathlib import Path
+import sys
+
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -11,21 +10,12 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from pipeline.catalogutils import BaseLogger
-
-
-def is_ufw_installed() -> bool:
-    """Memeriksa apakah paket UFW terinstall pada sistem Debian/Ubuntu."""
-    try:
-        res = subprocess.run(
-            ["dpkg-query", "-s", "ufw"],
-            capture_output=True,
-            text=True,
-        )
-        return res.returncode == 0 and "Status: install ok installed" in res.stdout
-    except Exception:
-        return False
-
+from pipeline.catalogutils import (
+    BaseLogger,
+    acquire_lock_ufw,
+    is_ufw_installed,
+    release_lock
+)
 
 def main():
     logger = BaseLogger(
@@ -35,6 +25,8 @@ def main():
         cis_id="4.2.1",
         log_type="audit",
     )
+
+    lock_file = acquire_lock_ufw(logger)
 
     try:
         if is_ufw_installed():
@@ -53,17 +45,10 @@ def main():
             sys.exit(0)
 
     except Exception as e:
-        logger.log(
-            "ERROR",
-            "Note",
-            f"Terjadi error saat melakukan audit K08: {e}",
-        )
-        logger.log(
-            "FAILED",
-            "Result",
-            "Hasil Audit: FAILED - Terjadi kesalahan pada proses audit.",
-        )
-        sys.exit(1)
+        logger.log_error("K08", "audit", e)
+
+    finally:
+        release_lock(lock_file)
 
 
 if __name__ == "__main__":
