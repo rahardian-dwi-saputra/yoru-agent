@@ -1,4 +1,4 @@
-from typing import List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
@@ -18,6 +18,7 @@ class CatalogMetadata(BaseModel):
 class CatalogListResponse(BaseModel):
     total: int
     catalogs: List[CatalogMetadata]
+
 
 
 class ExecutionRequest(BaseModel):
@@ -40,6 +41,7 @@ class CatalogResult(BaseModel):
     status: Literal["SUCCESS", "FAILED", "SKIPPED", "CANCELLED"]
     output: str
     error: Optional[str] = None
+    log_data: Optional[Dict[str, Any]] = None  # Menampung isi JSON log terakhir
 
 
 class ExecutionResponse(BaseModel):

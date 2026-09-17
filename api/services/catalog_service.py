@@ -1,7 +1,8 @@
+import json
 import re
 import subprocess
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from api.config import CATALOG_DIR
 from api.schemas.catalog import CatalogMetadata, CatalogResult
@@ -92,17 +93,35 @@ def get_available_catalogs() -> List[CatalogMetadata]:
     return results
 
 
+
+def read_latest_log(target_path: Path, action: str) -> Optional[Dict[str, Any]]:
+    """Membaca file log JSON sesuai aksi (audit.json, hardening.json, rollback.json)."""
+    log_filename = f"{action.lower()}.json"
+    log_path = target_path / log_filename
+
+    if log_path.is_file():
+        try:
+            with open(log_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            return {"error_reading_log": f"Gagal membaca/parse {log_filename}: {str(e)}"}
+    
+    return None
+
+
 def run_taskfile(catalog_id: str, action: str) -> CatalogResult:
-    """Mengeksekusi Taskfile.yml pada katalog tertentu."""
+    """Mengeksekusi Taskfile.yml pada katalog tertentu dan membaca log hasilnya."""
     target_path = CATALOG_DIR / catalog_id
     taskfile_path = target_path / "Taskfile.yml"
 
+    # Validasi keberadaan direktori & Taskfile
     if not target_path.exists() or not taskfile_path.exists():
         return CatalogResult(
             catalog=catalog_id,
             status="FAILED",
             output="",
             error=f"Katalog '{catalog_id}' atau Taskfile.yml tidak ditemukan.",
+            log_data=None,
         )
 
     cmd = ["task", action]
@@ -116,11 +135,15 @@ def run_taskfile(catalog_id: str, action: str) -> CatalogResult:
             check=False,
         )
 
+        # Membaca log file terkait setelah eksekusi selesai
+        log_content = read_latest_log(target_path, action)
+
         if process.returncode == 0:
             return CatalogResult(
                 catalog=catalog_id,
                 status="SUCCESS",
                 output=process.stdout.strip(),
+                log_data=log_content,
             )
         else:
             return CatalogResult(
@@ -128,6 +151,7 @@ def run_taskfile(catalog_id: str, action: str) -> CatalogResult:
                 status="FAILED",
                 output=process.stdout.strip(),
                 error=process.stderr.strip(),
+                log_data=log_content,
             )
 
     except FileNotFoundError:
@@ -136,6 +160,7 @@ def run_taskfile(catalog_id: str, action: str) -> CatalogResult:
             status="FAILED",
             output="",
             error="Binary 'task' (Taskfile runner) tidak terinstall di sistem.",
+            log_data=None,
         )
     except Exception as e:
         return CatalogResult(
@@ -143,4 +168,5 @@ def run_taskfile(catalog_id: str, action: str) -> CatalogResult:
             status="FAILED",
             output="",
             error=f"Terjadi error saat eksekusi: {str(e)}",
+            log_data=None,
         )
