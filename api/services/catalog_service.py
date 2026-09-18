@@ -91,17 +91,30 @@ def get_available_catalogs() -> List[CatalogMetadata]:
 
 
 def read_latest_log(target_path: Path, action: str) -> Optional[Dict[str, Any]]:
-    """Membaca file log JSON sesuai aksi (audit.json, hardening.json, rollback.json)."""
+    """Membaca log JSON terakhir dari file log katalog."""
     log_filename = f"{action.lower()}.json"
-    log_path = target_path / log_filename
+    log_path = target_path / "logs" / log_filename
 
     if log_path.is_file():
         try:
             with open(log_path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                content = f.read().strip()
+                
+            if not content:
+                return None
+
+            # 1. Coba parse sebagai JSON tunggal
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError:
+                # 2. Jika gagal (karena mode append/JSON lines), ambil baris non-kosong terakhir
+                lines = [line.strip() for line in content.splitlines() if line.strip()]
+                if lines:
+                    return json.loads(lines[-1])
+
         except Exception as e:
             return {"error_reading_log": f"Gagal membaca/parse {log_filename}: {str(e)}"}
-    
+
     return None
 
 
