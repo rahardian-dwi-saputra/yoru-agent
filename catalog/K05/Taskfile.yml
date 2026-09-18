@@ -10,6 +10,12 @@ vars:
   NAMA: "Pengaturan Ciphers SSH yang Aman"
   KODE_CIS: "5.1.6"
   CIS_JUDUL: "5.1.6 Ensure sshd Ciphers are configured"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan SSH hanya menggunakan 
+    algoritma enkripsi (cipher) yang aman dan sesuai standar 
+    saat melakukan komunikasi. Fungsinya untuk melindungi data 
+    yang dikirim antara client dan server SSH agar tidak mudah 
+    dibaca atau disadap oleh pihak yang tidak berwenang.
   RISIKO: "BERISIKO"
   KATEGORI: "SSH"
   AUDIT_ONLY: false

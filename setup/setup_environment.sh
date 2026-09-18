@@ -25,7 +25,7 @@ echo "Mengaktifkan venv dan menginstal packages dasar..."
 source "$VENV_DIR/bin/activate"
 
 pip install --upgrade pip
-pip install fastapi uvicorn slowapi
+pip install fastapi uvicorn slowapi pyyaml
 
 # === GENERATE API KEY ===
 echo ""

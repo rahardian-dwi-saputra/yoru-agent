@@ -10,6 +10,12 @@ vars:
   NAMA: "Pengaturan Kebijakan Default UFW Firewall"
   KODE_CIS: "4.2.7"
   CIS_JUDUL: "4.2.7 Ensure ufw default deny firewall policy"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan UFW secara default menolak 
+    koneksi jaringan yang tidak secara khusus diizinkan oleh 
+    aturan firewall. Fungsinya untuk membatasi akses yang tidak 
+    diperlukan ke server, sehingga hanya koneksi atau layanan 
+    yang telah diizinkan yang dapat mengakses sistem.
   RISIKO: "BERISIKO"
   KATEGORI: "Firewall"
   AUDIT_ONLY: true

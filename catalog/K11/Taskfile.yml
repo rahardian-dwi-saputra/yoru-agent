@@ -10,6 +10,12 @@ vars:
   NAMA: "Pengaturan Layanan Jaringan yang Mendengarkan Interface Network"
   KODE_CIS: "2.1.22"
   CIS_JUDUL: "2.1.22 Ensure only approved services are listening on a network interface"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan hanya layanan yang memang 
+    diperlukan dan telah disetujui yang dapat menerima koneksi melalui 
+    jaringan. Fungsinya untuk mengurangi port dan layanan yang terbuka 
+    sehingga memperkecil celah yang dapat dimanfaatkan oleh pihak yang 
+    tidak berwenang.
   RISIKO: "BERISIKO"
   KATEGORI: "Services / Network Configuration"
   AUDIT_ONLY: true

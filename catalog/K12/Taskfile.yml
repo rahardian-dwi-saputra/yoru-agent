@@ -10,6 +10,12 @@ vars:
   NAMA: "Pengaturan Penyimpanan Log Journald"
   KODE_CIS: "6.1.2.4"
   CIS_JUDUL: "6.1.2.4 Ensure journald Storage is configured"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan systemd-journald dikonfigurasi 
+    agar menyimpan log sistem dengan cara yang sesuai. Fungsinya 
+    untuk menjaga catatan aktivitas dan kejadian pada sistem 
+    agar dapat digunakan untuk pemantauan, pemeriksaan, dan 
+    investigasi ketika terjadi masalah atau insiden keamanan.
   RISIKO: "BERISIKO"
   KATEGORI: "Logging and Auditing"
   AUDIT_ONLY: false

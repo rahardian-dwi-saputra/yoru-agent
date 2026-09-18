@@ -10,6 +10,12 @@ vars:
   NAMA: "Root tidak bisa login lewat SSH"
   KODE_CIS: "5.1.20"
   CIS_JUDUL: "5.1.20 Ensure sshd PermitRootLogin is disabled"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan akun root tidak dapat 
+    digunakan untuk login langsung melalui SSH ke server.
+    Fungsinya untuk mengurangi risiko akses tidak sah, sehingga 
+    administrator harus login menggunakan akun biasa terlebih 
+    dahulu lalu menggunakan sudo jika membutuhkan hak akses root.
   RISIKO: "BERISIKO"
   KATEGORI: "SSH"
   AUDIT_ONLY: false

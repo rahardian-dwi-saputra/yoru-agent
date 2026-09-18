@@ -10,6 +10,11 @@ vars:
   NAMA: "Membatasi Percobaan Auth SSH"
   KODE_CIS: "5.1.16"
   CIS_JUDUL: "5.1.16 Ensure sshd MaxAuthTries is configured"
+  DESKRIPSI: |
+    Aturan keamanan untuk membatasi jumlah percobaan autentikasi/login 
+    SSH yang gagal dalam satu koneksi. Fungsinya untuk mengurangi 
+    risiko serangan brute-force, karena penyerang tidak dapat mencoba 
+    password atau kredensial berkali-kali tanpa batas.
   RISIKO: "BERISIKO"
   KATEGORI: "SSH"
   AUDIT_ONLY: false

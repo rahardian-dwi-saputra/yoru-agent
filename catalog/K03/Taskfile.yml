@@ -10,6 +10,12 @@ vars:
   NAMA: "Membatasi Waktu Login SSH"
   KODE_CIS: "5.1.13"
   CIS_JUDUL: "5.1.13 Ensure sshd LoginGraceTime is configured"
+  DESKRIPSI: |
+    Aturan keamanan untuk mengatur batas waktu yang diberikan 
+    kepada pengguna untuk menyelesaikan proses login SSH. 
+    Fungsinya untuk mencegah koneksi SSH yang tidak segera melakukan 
+    autentikasi tetap terbuka terlalu lama, sehingga mengurangi 
+    risiko penyalahgunaan koneksi dan serangan terhadap server.
   RISIKO: "BERISIKO"
   KATEGORI: "SSH"
   AUDIT_ONLY: false

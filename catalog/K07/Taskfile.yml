@@ -10,6 +10,12 @@ vars:
   NAMA: "Pengaturan KexAlgorithms SSH yang Aman"
   KODE_CIS: "5.1.8"
   CIS_JUDUL: "5.1.8 Ensure sshd KexAlgorithms are configured"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan SSH hanya menggunakan 
+    algoritma pertukaran kunci (Key Exchange/KEX) yang aman 
+    saat membuat koneksi. Fungsinya untuk melindungi proses 
+    pembentukan kunci enkripsi antara client dan server agar 
+    tidak mudah dieksploitasi oleh pihak yang tidak berwenang.
   RISIKO: "BERISIKO"
   KATEGORI: "SSH"
   AUDIT_ONLY: false

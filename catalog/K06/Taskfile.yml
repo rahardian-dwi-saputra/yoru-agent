@@ -10,6 +10,12 @@ vars:
   NAMA: "Pengaturan MACs SSH yang Aman"
   KODE_CIS: "5.1.7"
   CIS_JUDUL: "5.1.7 Ensure sshd MACs are configured"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan SSH hanya menggunakan 
+    algoritma MAC (Message Authentication Code) yang aman 
+    untuk memeriksa keaslian dan integritas data. Fungsinya 
+    untuk mencegah data komunikasi SSH diubah atau dimanipulasi 
+    oleh pihak yang tidak berwenang selama proses komunikasi.
   RISIKO: "BERISIKO"
   KATEGORI: "SSH"
   AUDIT_ONLY: false

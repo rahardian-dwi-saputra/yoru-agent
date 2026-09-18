@@ -7,6 +7,7 @@ class CatalogMetadata(BaseModel):
     nama: str
     kode_cis: str
     cis_judul: str
+    deskripsi: Optional[str] = ""
     resiko: str
     kategori: str
     audit_only: bool = Field(

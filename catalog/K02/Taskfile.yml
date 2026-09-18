@@ -10,6 +10,12 @@ vars:
   NAMA: "Login SSH menggunakan Password Dimatikan (Khusus SSH Key)"
   KODE_CIS: "5.2.14"
   CIS_JUDUL: "5.2.14 Ensure SSH PasswordAuthentication is disabled"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan login ke server melalui SSH tidak 
+    menggunakan password, melainkan metode autentikasi yang lebih aman 
+    seperti SSH key. Fungsinya untuk mengurangi risiko serangan seperti 
+    brute-force atau pencurian password saat seseorang mencoba 
+    mendapatkan akses ke server.
   RISIKO: "SANGAT BERISIKO"
   KATEGORI: "SSH"
   AUDIT_ONLY: false

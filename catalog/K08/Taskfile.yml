@@ -7,11 +7,17 @@ vars:
 
   # Metadata CIS Benchmark
   ID: "K08"
-  NAMA: "Memastikan UFW Terinstall"
-  KODE_CIS: "4.2.1"
-  CIS_JUDUL: "4.2.1 Ensure ufw is installed"
-  RISIKO: "BERISIKO"
-  KATEGORI: "Firewall"
+  NAMA: "Layanan Auditd Aktif dan Enabler"
+  KODE_CIS: "4.1.1.2"
+  CIS_JUDUL: "4.1.1.2 Ensure auditd service is enabled and active"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan layanan auditd selalu aktif 
+    dan berjalan untuk mencatat aktivitas penting yang terjadi 
+    pada sistem. Fungsinya untuk menyediakan rekaman aktivitas 
+    sistem yang dapat digunakan untuk pemantauan, pemeriksaan, 
+    dan investigasi ketika terjadi masalah atau insiden keamanan.
+  RISIKO: "HIGH"
+  KATEGORI: "LOGGING"
   AUDIT_ONLY: true
 
 tasks:
@@ -21,9 +27,9 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # Audit status installasi UFW
+  # Audit Task (Satu-satunya task eksekusi karena AUDIT_ONLY: true)
   audit:
-    desc: "Menjalankan audit keberadaan paket UFW pada sistem"
+    desc: "Menjalankan audit ketersediaan dan status layanan auditd"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py

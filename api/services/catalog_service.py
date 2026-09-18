@@ -1,5 +1,5 @@
+import yaml
 import json
-import re
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -13,44 +13,40 @@ def parse_taskfile_metadata(taskfile_path: Path) -> Optional[CatalogMetadata]:
     if not taskfile_path.is_file():
         return None
 
-    meta = {
-        "id": taskfile_path.parent.name,
-        "nama": "",
-        "kode_cis": "",
-        "cis_judul": "",
-        "resiko": "",
-        "kategori": "",
-        "audit_only": False,
-    }
-
     try:
         with open(taskfile_path, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                line_stripped = line.strip()
+            content = yaml.safe_load(f)
 
-                if line_stripped.startswith("#"):
-                    continue
+        vars_data = content.get("vars", {}) if isinstance(content, dict) else {}
 
-                for key in ["ID", "NAMA", "KODE_CIS", "CIS_JUDUL", "RISIKO", "KATEGORI"]:
-                    pattern = rf"^{key}:\s*[\"']?(.*?)[\"']?$"
-                    match = re.match(pattern, line_stripped, re.IGNORECASE)
-                    if match:
-                        meta[key.lower()] = match.group(1).strip()
-
-                match_audit_only = re.match(
-                    r"^AUDIT_ONLY:\s*(true|false)", line_stripped, re.IGNORECASE
-                )
-                if match_audit_only:
-                    meta["audit_only"] = match_audit_only.group(1).lower() == "true"
+        catalog_id = str(vars_data.get("ID") or taskfile_path.parent.name)
+        nama = str(vars_data.get("NAMA") or "")
+        kode_cis = str(vars_data.get("KODE_CIS") or "")
+        cis_judul = str(vars_data.get("CIS_JUDUL") or "")
+        
+        # Penanganan multiline string deskripsi yang aman dari None
+        deskripsi_raw = vars_data.get("DESKRIPSI") or ""
+        deskripsi = str(deskripsi_raw).strip()
+        
+        resiko = str(vars_data.get("RISIKO") or "")
+        kategori = str(vars_data.get("KATEGORI") or "")
+        
+        # Konversi fleksibel untuk boolean AUDIT_ONLY
+        audit_only_val = vars_data.get("AUDIT_ONLY", False)
+        if isinstance(audit_only_val, str):
+            audit_only = audit_only_val.lower() == "true"
+        else:
+            audit_only = bool(audit_only_val)
 
         return CatalogMetadata(
-            id=meta["id"],
-            nama=meta["nama"],
-            kode_cis=meta["kode_cis"],
-            cis_judul=meta["cis_judul"],
-            resiko=meta["risiko"],
-            kategori=meta["kategori"],
-            audit_only=meta["audit_only"],
+            id=catalog_id,
+            nama=nama,
+            kode_cis=kode_cis,
+            cis_judul=cis_judul,
+            deskripsi=deskripsi,
+            resiko=resiko,
+            kategori=kategori,
+            audit_only=audit_only,
         )
     except Exception:
         return None

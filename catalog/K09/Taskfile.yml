@@ -10,6 +10,12 @@ vars:
   NAMA: "Memastikan Layanan UFW Aktif"
   KODE_CIS: "4.2.3"
   CIS_JUDUL: "4.2.3 Ensure ufw service is enabled"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan UFW (Uncomplicated Firewall) 
+    aktif pada sistem dan berjalan sebagai firewall. Fungsinya 
+    untuk mengontrol lalu lintas jaringan masuk dan keluar 
+    berdasarkan aturan yang ditentukan, sehingga dapat membatasi 
+    akses yang tidak diperlukan ke server.
   RISIKO: "BERISIKO"
   KATEGORI: "Firewall"
   AUDIT_ONLY: true
