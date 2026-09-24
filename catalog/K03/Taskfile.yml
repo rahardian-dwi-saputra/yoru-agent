@@ -30,13 +30,15 @@ tasks:
     desc: "Menampilkan perintah pengecekan LoginGraceTime sesuai standar CIS 5.1.13"
     silent: true
     cmds:
-      - echo "=================================================="
-      - echo " Perintah Pengecekan LoginGraceTime:"
-      - echo "   sshd -T | grep -i logingracetime"
-      - echo "   grep -i '^LoginGraceTime' /etc/ssh/sshd_config*"
-      - echo " Standar Nilai:"
-      - echo "   LoginGraceTime harus diatur ke 60 detik atau kurang (misal: 60)."
-      - echo "=================================================="
+    - |
+      printf '%s\n' \
+        '==================================================' \
+        ' Perintah Pengecekan LoginGraceTime:' \
+        '   sshd -T | grep -i logingracetime' \
+        '   grep -i "^LoginGraceTime" /etc/ssh/sshd_config*' \
+        ' Standar Nilai:' \
+        '   LoginGraceTime harus diatur ke 60 detik atau kurang (misal: 60).' \
+        '=================================================='
 
   audit:
     desc: "Menjalankan audit untuk CIS 5.1.13 LoginGraceTime"

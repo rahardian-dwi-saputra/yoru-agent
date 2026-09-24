@@ -29,13 +29,15 @@ tasks:
     desc: "Menampilkan perintah pengecekan MaxAuthTries sesuai standar CIS 5.1.16"
     silent: true
     cmds:
-      - echo "=================================================="
-      - echo " Perintah Pengecekan MaxAuthTries:"
-      - echo "   sshd -T | grep -i maxauthtries"
-      - echo "   grep -i '^MaxAuthTries' /etc/ssh/sshd_config*"
-      - echo " Standar Nilai:"
-      - echo "   MaxAuthTries harus diatur ke 4 atau kurang (misal: MaxAuthTries 4)."
-      - echo "=================================================="
+    - |
+      printf '%s\n' \
+        '==================================================' \
+        ' Perintah Pengecekan MaxAuthTries:' \
+        '   sshd -T | grep -i maxauthtries' \
+        '   grep -i "^MaxAuthTries" /etc/ssh/sshd_config*' \
+        ' Standar Nilai:' \
+        '   MaxAuthTries harus diatur ke 4 atau kurang (misal: MaxAuthTries 4).' \
+        '=================================================='
 
   audit:
     desc: "Menjalankan audit untuk CIS 5.1.16 MaxAuthTries"

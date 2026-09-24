@@ -31,8 +31,25 @@ tasks:
   check-ssh-keys:
     desc: "Mengecek apakah user non-root sudah memiliki SSH public key di authorized_keys"
     cmds:
-      - echo "=== User dengan authorized_keys (Bisa Login SSH Key) ==="
-      - ls -la /home/*/.ssh/authorized_keys 2>/dev/null || echo "WARNING: Tidak ditemukan authorized_keys di /home/*!"
+    - |
+      echo "=== User dengan authorized_keys (Bisa Login SSH Key) ==="
+      found=0
+
+      for user_home in /home/*; do
+        [ -d "$user_home" ] || continue
+
+        user="$(basename "$user_home")"
+        key_file="$user_home/.ssh/authorized_keys"
+
+        if [ -f "$key_file" ]; then
+          echo "OK: $user memiliki $key_file"
+          found=1
+        fi
+      done
+
+      if [ "$found" -eq 0 ]; then
+        echo "WARNING: Tidak ditemukan authorized_keys pada user non-root!"
+      fi
 
   # 2. Audit SSH Password Authentication
   audit:
