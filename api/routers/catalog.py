@@ -106,14 +106,14 @@ async def audit_agent_task(request: Request, payload: AuditRequest):
 # 1. Init Hardening Plan
 @router.post(
     "/agent/hardening/init",
-    response_model=HardeningInitResponse,
+    response_model=ActionPlanInitResponse,
     summary="Inisialisasi Action Plan Hardening",
 )
 @limiter.limit("20/minute")
 async def init_hardening_plan(request: Request, payload: HardeningInitRequest):
     requested_catalogs = payload.catalogs
 
-    # 1. Resolusi Katalog
+    # Resolusi Katalog
     all_catalogs_list = get_available_catalogs()
     available_catalogs_map: Dict[str, CatalogMetadata] = {
         cat.id.upper(): cat for cat in all_catalogs_list
@@ -136,36 +136,53 @@ async def init_hardening_plan(request: Request, payload: HardeningInitRequest):
             detail="Tidak ada katalog valid yang ditentukan.",
         )
 
-    # 2. Proteksi AUDIT_ONLY
-    blocked_catalogs = [
+    # Identifikasi katalog AUDIT_ONLY
+    audit_only_catalogs = [
         cat_id
         for cat_id in target_catalog_ids
         if available_catalogs_map[cat_id].audit_only
     ]
-    if blocked_catalogs:
+
+    # Filter: Hanya ambil katalog yang BUKAN audit_only
+    executable_catalogs = [
+        cat_id
+        for cat_id in target_catalog_ids
+        if not available_catalogs_map[cat_id].audit_only
+    ]
+
+    # Jika spesifik memilih katalog (bukan ALL) dan SEMUA yang dipilih ternyata AUDIT_ONLY
+    if not is_all and not executable_catalogs:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Katalog berikut berstatus AUDIT_ONLY dan tidak bisa di-hardening: {blocked_catalogs}",
+            detail=f"Katalog yang dipilih berstatus AUDIT_ONLY dan tidak dapat di-hardening: {audit_only_catalogs}",
         )
 
-    plans_result: List[HardeningPlanItem] = []
+    plans_result: List[ActionPlanItem] = []
 
-    # 3. Alur untuk Mode 'ALL'
+    # Mode 'ALL'
     if is_all:
-        plan_data = create_hardening_plan(catalogs=target_catalog_ids)
-        plans_result.append(HardeningPlanItem(**plan_data))
-        msg = "Action plan untuk seluruh katalog berhasil dibuat. Silakan lakukan konfirmasi."
+        plan_data = create_action_plan(
+            action="hardening", catalogs=executable_catalogs
+        )
+        plans_result.append(ActionPlanItem(**plan_data))
 
-    # 4. Alur untuk Single / Specific Catalogs
+        msg = f"Action plan hardening untuk {len(executable_catalogs)} katalog berhasil dibuat."
+        if audit_only_catalogs:
+            msg += f" Katalog {audit_only_catalogs} dilewati (skipped) karena berstatus AUDIT_ONLY / bersifat destruktif."
+
+    # Mode Single / Specific Catalogs
     else:
-        for cat_id in target_catalog_ids:
-            plan_data = create_hardening_plan(
-                catalogs=[cat_id], catalog_single=cat_id
+        for cat_id in executable_catalogs:
+            plan_data = create_action_plan(
+                action="hardening", catalogs=[cat_id], catalog_single=cat_id
             )
-            plans_result.append(HardeningPlanItem(**plan_data))
-        msg = f"Action plan untuk {len(plans_result)} katalog berhasil dibuat. Konfirmasi diperlukan per katalog."
+            plans_result.append(ActionPlanItem(**plan_data))
 
-    return HardeningInitResponse(
+        msg = f"Action plan hardening untuk {len(plans_result)} katalog berhasil dibuat. Konfirmasi diperlukan per katalog."
+        if audit_only_catalogs:
+            msg += f" Katalog {audit_only_catalogs} dilewati karena berstatus AUDIT_ONLY."
+
+    return ActionPlanInitResponse(
         status="PENDING_APPROVAL",
         message=msg,
         is_all_mode=is_all,
@@ -245,6 +262,7 @@ async def confirm_hardening_plan(
     )
 
 
+# 1. Init Rollback Plan
 @router.post(
     "/agent/rollback/init",
     response_model=ActionPlanInitResponse,
@@ -254,7 +272,7 @@ async def confirm_hardening_plan(
 async def init_rollback_plan(request: Request, payload: RollbackInitRequest):
     requested_catalogs = payload.catalogs
 
-    # 1. Resolusi Katalog
+    # Resolusi Katalog
     all_catalogs_list = get_available_catalogs()
     available_catalogs_map: Dict[str, CatalogMetadata] = {
         cat.id.upper(): cat for cat in all_catalogs_list
@@ -277,46 +295,14 @@ async def init_rollback_plan(request: Request, payload: RollbackInitRequest):
             detail="Tidak ada katalog valid yang ditentukan.",
         )
 
-    # 2. Proteksi AUDIT_ONLY
-    blocked_catalogs = [
+    # Identifikasi katalog AUDIT_ONLY
+    audit_only_catalogs = [
         cat_id
         for cat_id in target_catalog_ids
         if available_catalogs_map[cat_id].audit_only
     ]
-    if blocked_catalogs:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Katalog berikut berstatus AUDIT_ONLY dan tidak bisa di-rollback: {blocked_catalogs}",
-        )
 
-    plans_result: List[ActionPlanItem] = []
-
-    # 3. Alur untuk Mode 'ALL'
-    if is_all:
-        plan_data = create_action_plan(action="rollback", catalogs=target_catalog_ids)
-        plans_result.append(ActionPlanItem(**plan_data))
-        msg = "Action plan rollback untuk seluruh katalog berhasil dibuat. Silakan lakukan konfirmasi."
-
-    # 4. Alur untuk Single / Specific Catalogs
-    else:
-        for cat_id in target_catalog_ids:
-            plan_data = create_action_plan(
-                action="rollback", catalogs=[cat_id], catalog_single=cat_id
-            )
-            plans_result.append(ActionPlanItem(**plan_data))
-        msg = f"Action plan rollback untuk {len(plans_result)} katalog berhasil dibuat. Konfirmasi diperlukan per katalog."
-
-    return ActionPlanInitResponse(
-        status="PENDING_APPROVAL",
-        message=msg,
-        is_all_mode=is_all,
-        plans=plans_result,
-    )
-
-
-# -------------------------------------------------------------------
-# 2. CONFIRM & EXECUTE ROLLBACK
-# -------------------------------------------------------------------
+# 2. Confirm & Execute Rollback
 @router.post(
     "/agent/rollback/confirm",
     response_model=ExecutionResponse,

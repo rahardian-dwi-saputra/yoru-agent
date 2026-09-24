@@ -45,6 +45,29 @@ def create_action_plan(
 
     return plan_data
 
+def create_hardening_plan(
+    catalogs: List[str], catalog_single: Optional[str] = None
+) -> Dict[str, Any]:
+    """Membuat file JSON hardening plan dan menyimpannya ke storage/plans/"""
+    plan_id = generate_plan_id()
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+
+    plan_data = {
+        "plan_id": plan_id,
+        "status": "pending_approval",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": expires_at.isoformat(),
+        "catalogs": catalogs,
+    }
+
+    if catalog_single:
+        plan_data["catalog"] = catalog_single
+
+    file_path = PLANS_DIR / f"{plan_id}.json"
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(plan_data, f, indent=2)
+
+    return plan_data
 
 def get_plan(plan_id: str) -> Optional[Dict[str, Any]]:
     """Membaca isi file plan dari disk"""
@@ -58,13 +81,13 @@ def get_plan(plan_id: str) -> Optional[Dict[str, Any]]:
         return None
 
 
-def update_and_expire_plan(plan_id: str, new_status: str) -> None:
+def update_and_expire_plan(plan_id: str, status: str) -> None:
     """Mengubah status plan dan membuat statusnya langsung expired"""
     plan_data = get_plan(plan_id)
     if not plan_data:
         return
 
-    plan_data["status"] = new_status
+    plan_data["status"] = status
     plan_data["expires_at"] = (
         datetime.now(timezone.utc) - timedelta(seconds=1)
     ).isoformat()
