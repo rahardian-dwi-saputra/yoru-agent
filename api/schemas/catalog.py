@@ -2,6 +2,11 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field
 
 
+class SystemInfoResponse(BaseModel):
+    os_platform: str = Field(..., description="Detail platform lengkap OS / Distribusi Linux")
+    architecture: str = Field(..., description="Arsitektur CPU (misal: x86_64, aarch64)")
+
+
 class CatalogMetadata(BaseModel):
     id: str
     nama: str
@@ -64,19 +69,9 @@ class HardeningConfirmRequest(BaseModel):
     )
 
 
-class HardeningPlanItem(BaseModel):
-    plan_id: str
-    status: str
-    expires_at: str
-    catalogs: List[str]
-    catalog: Optional[str] = None
 
 
-class HardeningInitResponse(BaseModel):
-    status: str
-    message: str
-    is_all_mode: bool
-    plans: List[HardeningPlanItem]
+
 
 
 # Schema Khusus Rollback

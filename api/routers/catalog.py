@@ -1,9 +1,12 @@
+import platform
+
 from typing import Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from api.config import limiter
 from api.dependencies import verify_api_key
 from api.schemas.catalog import (
+    SystemInfoResponse,
     AuditRequest,
     CatalogListResponse,
     CatalogMetadata,
@@ -11,8 +14,6 @@ from api.schemas.catalog import (
     ExecutionResponse,
     HardeningConfirmRequest,
     HardeningInitRequest,
-    HardeningInitResponse,
-    HardeningPlanItem,
     RollbackConfirmRequest,
     RollbackInitRequest,
     ActionPlanInitResponse,
@@ -20,11 +21,11 @@ from api.schemas.catalog import (
 )
 from api.services.catalog_service import get_available_catalogs, run_taskfile
 from api.services.plan_service import (
-    create_hardening_plan,
     get_plan,
     is_plan_valid,
     update_and_expire_plan,
     create_action_plan,
+    has_active_plan,
 )
 
 router = APIRouter(
@@ -35,11 +36,32 @@ router = APIRouter(
 
 
 @router.get(
+    "/system/info",
+    response_model=SystemInfoResponse,
+    summary="Mendapatkan OS Platform dan Arsitektur Server",
+)
+@limiter.limit("10/minute")
+async def get_system_info(request: Request):
+    """
+    Mengembalikan informasi OS Platform dan Arsitektur CPU dari server.
+    """
+    try:
+        os_platform_detail = platform.freedesktop_os_release().get("PRETTY_NAME", platform.platform())
+    except Exception:
+        os_platform_detail = platform.platform()
+
+    return SystemInfoResponse(
+        os_platform=os_platform_detail,  
+        architecture=platform.machine(),
+    )
+
+
+@router.get(
     "/catalogs",
     response_model=CatalogListResponse,
     summary="Mendapatkan Daftar Katalog Tersedia",
 )
-@limiter.limit("20/minute")
+@limiter.limit("10/minute")
 async def list_catalogs(request: Request):
     """Mengembalikan semua katalog yang tersedia di direktori catalog/ secara otomatis."""
     catalogs = get_available_catalogs()
@@ -109,8 +131,21 @@ async def audit_agent_task(request: Request, payload: AuditRequest):
     response_model=ActionPlanInitResponse,
     summary="Inisialisasi Action Plan Hardening",
 )
-@limiter.limit("20/minute")
+@limiter.limit("10/minute")
 async def init_hardening_plan(request: Request, payload: HardeningInitRequest):
+
+    active_plan = has_active_plan(action="hardening")
+    if active_plan:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Masih terdapat Action Plan aktif "
+                f"yang belum dikonfirmasi. Harap konfirmasi atau tunggu hingga expired "
+                f"pada {active_plan['expires_at']} sebelum membuat Action Plan baru."
+            ),
+        )
+    
+    
     requested_catalogs = payload.catalogs
 
     # Resolusi Katalog
@@ -196,7 +231,7 @@ async def init_hardening_plan(request: Request, payload: HardeningInitRequest):
     response_model=ExecutionResponse,
     summary="Eksekusi Hardening Setelah Konfirmasi User",
 )
-@limiter.limit("20/minute")
+@limiter.limit("10/minute")
 async def confirm_hardening_plan(
     request: Request, payload: HardeningConfirmRequest
 ):
@@ -268,8 +303,20 @@ async def confirm_hardening_plan(
     response_model=ActionPlanInitResponse,
     summary="Inisialisasi Action Plan Rollback",
 )
-@limiter.limit("20/minute")
+@limiter.limit("10/minute")
 async def init_rollback_plan(request: Request, payload: RollbackInitRequest):
+
+    active_plan = has_active_plan(action="rollback")
+    if active_plan:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Masih terdapat Action Plan rollback aktif "
+                f"yang belum dikonfirmasi. Harap konfirmasi atau tunggu hingga expired "
+                f"pada {active_plan['expires_at']} sebelum membuat Action Plan rollback baru."
+            ),
+        )
+    
     requested_catalogs = payload.catalogs
 
     # Resolusi Katalog
@@ -302,13 +349,58 @@ async def init_rollback_plan(request: Request, payload: RollbackInitRequest):
         if available_catalogs_map[cat_id].audit_only
     ]
 
+    executable_catalogs = [
+        cat_id
+        for cat_id in target_catalog_ids
+        if not available_catalogs_map[cat_id].audit_only
+    ]
+
+    if not is_all and not executable_catalogs:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Katalog yang dipilih berstatus AUDIT_ONLY dan tidak dapat di-rollback: {audit_only_catalogs}",
+        )
+
+    plans_result: List[ActionPlanItem] = []
+
+    # Mode 'ALL'
+    if is_all:
+        plan_data = create_action_plan(
+            action="rollback", catalogs=executable_catalogs
+        )
+        plans_result.append(ActionPlanItem(**plan_data))
+
+        msg = f"Action plan rollback untuk {len(executable_catalogs)} katalog berhasil dibuat."
+        if audit_only_catalogs:
+            msg += f" Katalog {audit_only_catalogs} dilewati (skipped) karena berstatus AUDIT_ONLY / bersifat destruktif."
+
+
+    # Mode Single / Specific Catalogs
+    else:
+        for cat_id in executable_catalogs:
+            plan_data = create_action_plan(
+                action="rollback", catalogs=[cat_id], catalog_single=cat_id
+            )
+            plans_result.append(ActionPlanItem(**plan_data))
+
+        msg = f"Action plan rollback untuk {len(plans_result)} katalog berhasil dibuat. Konfirmasi diperlukan per katalog."
+        if audit_only_catalogs:
+            msg += f" Katalog {audit_only_catalogs} dilewati karena berstatus AUDIT_ONLY."
+
+    return ActionPlanInitResponse(
+        status="PENDING_APPROVAL",
+        message=msg,
+        is_all_mode=is_all,
+        plans=plans_result,
+    )
+
 # 2. Confirm & Execute Rollback
 @router.post(
     "/agent/rollback/confirm",
     response_model=ExecutionResponse,
     summary="Eksekusi Rollback Setelah Konfirmasi User",
 )
-@limiter.limit("20/minute")
+@limiter.limit("10/minute")
 async def confirm_rollback_plan(
     request: Request, payload: RollbackConfirmRequest
 ):

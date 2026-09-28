@@ -45,29 +45,6 @@ def create_action_plan(
 
     return plan_data
 
-def create_hardening_plan(
-    catalogs: List[str], catalog_single: Optional[str] = None
-) -> Dict[str, Any]:
-    """Membuat file JSON hardening plan dan menyimpannya ke storage/plans/"""
-    plan_id = generate_plan_id()
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
-
-    plan_data = {
-        "plan_id": plan_id,
-        "status": "pending_approval",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "expires_at": expires_at.isoformat(),
-        "catalogs": catalogs,
-    }
-
-    if catalog_single:
-        plan_data["catalog"] = catalog_single
-
-    file_path = PLANS_DIR / f"{plan_id}.json"
-    with open(file_path, "w", encoding="utf-8") as f:
-        json.dump(plan_data, f, indent=2)
-
-    return plan_data
 
 def get_plan(plan_id: str) -> Optional[Dict[str, Any]]:
     """Membaca isi file plan dari disk"""
@@ -108,3 +85,36 @@ def is_plan_valid(plan_data: Dict[str, Any]) -> bool:
 
     expires_at = datetime.fromisoformat(expires_at_str)
     return datetime.now(timezone.utc) < expires_at
+
+
+def has_active_plan(action: str) -> Optional[Dict[str, Any]]:
+    """
+    Memeriksa apakah terdapat action plan untuk aksi tertentu ('hardening' / 'rollback')
+    yang masih berstatus 'pending_approval' dan belum kadaluwarsa (expired).
+    Mengembalikan data plan jika ditemukan, atau None jika tidak ada.
+    """
+    if not PLANS_DIR.exists():
+        return None
+
+    now = datetime.now(timezone.utc)
+
+    for file_path in PLANS_DIR.glob("*.json"):
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                plan_data = json.load(f)
+
+            # Filter berdasarkan jenis aksi dan status pending_approval
+            if (
+                plan_data.get("action") == action.lower()
+                and plan_data.get("status") == "pending_approval"
+            ):
+                expires_at_str = plan_data.get("expires_at")
+                if expires_at_str:
+                    expires_at = datetime.fromisoformat(expires_at_str)
+                    # Jika belum expired, berarti masih ada plan aktif
+                    if now < expires_at:
+                        return plan_data
+        except Exception:
+            continue
+
+    return None
