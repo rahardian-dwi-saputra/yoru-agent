@@ -19,6 +19,7 @@ from api.schemas.catalog import (
     ActionPlanInitResponse,
     ActionPlanItem,
 )
+from api.services.os_service import get_linux_distro_pretty_name
 from api.services.catalog_service import get_available_catalogs, run_taskfile
 from api.services.plan_service import (
     get_plan,
@@ -43,15 +44,10 @@ router = APIRouter(
 @limiter.limit("10/minute")
 async def get_system_info(request: Request):
     """
-    Mengembalikan informasi OS Platform dan Arsitektur CPU dari server.
+    Mengembalikan nama OS/Distribusi (contoh: Ubuntu 22.04.4 LTS) dan Arsitektur CPU.
     """
-    try:
-        os_platform_detail = platform.freedesktop_os_release().get("PRETTY_NAME", platform.platform())
-    except Exception:
-        os_platform_detail = platform.platform()
-
     return SystemInfoResponse(
-        os_platform=os_platform_detail,  
+        os_platform=get_linux_distro_pretty_name(),
         architecture=platform.machine(),
     )
 

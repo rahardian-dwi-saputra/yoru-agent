@@ -70,7 +70,7 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
-        catalog="K08",
+        catalog="K12",
         cis_id="6.1.2.4",
         log_type="hardening",
     )

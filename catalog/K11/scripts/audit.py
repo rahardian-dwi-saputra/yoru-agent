@@ -90,7 +90,7 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K10",
+        catalog="K11",
         cis_id="2.1.22",
         log_type="audit",
     )

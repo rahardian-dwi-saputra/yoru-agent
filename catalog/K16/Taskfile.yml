@@ -1,0 +1,48 @@
+version: '3'
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  # Metadata CIS Benchmark
+  ID: "K16"
+  NAMA: "Pengabaian Permintaan ICMP Broadcast"
+  KODE_CIS: "3.3.4"
+  CIS_JUDUL: "3.3.4 Ensure broadcast icmp requests are ignored"
+  DESKRIPSI: |
+    Aturan keamanan untuk mengonfigurasi parameter kernel agar mengabaikan 
+    permintaan ICMP (ping) yang dikirim ke alamat broadcast atau multicast. 
+    Fungsinya untuk melindungi server agar tidak dimanfaatkan dalam serangan 
+    Smurf Attack atau pemantulan paket ICMP masif ke jaringan lain.
+  RISIKO: "AMAN"
+  KATEGORI: "Network Configuration"
+  AUDIT_ONLY: false
+
+tasks:
+  # Task internal untuk memastikan folder logs/ selalu ada
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  # 1. Audit Konfigurasi ICMP Broadcast
+  audit:
+    desc: "Menjalankan audit parameter kernel untuk pengabaian ICMP broadcast"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
+
+  # 2. Hardening Konfigurasi ICMP Broadcast (Mengaktifkan icmp_echo_ignore_broadcasts)
+  hardening:
+    desc: "Menerapkan konfigurasi pengabaian ICMP broadcast secara permanen via sysctl"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
+
+  # 3. Rollback Konfigurasi ICMP Broadcast (Mengembalikan ke kondisi awal)
+  rollback:
+    desc: "Mengembalikan konfigurasi kernel ICMP broadcast ke kondisi sebelum hardening"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

@@ -1,0 +1,47 @@
+version: '3'
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  # Metadata CIS Benchmark
+  ID: "K17"
+  NAMA: "Penolakan ICMP Redirect"
+  KODE_CIS: "3.3.5"
+  CIS_JUDUL: "3.3.5 Ensure icmp redirects are not accepted"
+  DESKRIPSI: |
+    Aturan keamanan untuk mengonfigurasi parameter kernel agar menolak 
+    paket ICMP redirect. Fungsinya untuk mencegah pihak luar atau entitas 
+    tidak berotoritas memanipulasi tabel routing lokal server (mitm attack).
+  RISIKO: "AMAN"
+  KATEGORI: "Network Configuration"
+  AUDIT_ONLY: false
+
+tasks:
+  # Task internal untuk memastikan folder logs/ selalu ada
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  # 1. Audit Konfigurasi ICMP Redirect
+  audit:
+    desc: "Menjalankan audit parameter kernel untuk penolakan ICMP redirect"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
+
+  # 2. Hardening Konfigurasi ICMP Redirect (Mengatur accept_redirects = 0)
+  hardening:
+    desc: "Menerapkan konfigurasi penolakan ICMP redirect secara permanen via sysctl"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
+
+  # 3. Rollback Konfigurasi ICMP Redirect (Mengembalikan ke kondisi awal)
+  rollback:
+    desc: "Mengembalikan konfigurasi kernel ICMP redirect ke kondisi sebelum hardening"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py
