@@ -18,8 +18,8 @@ Yoru-agent menggunakan katalog berikut untuk melakukan audit dan hardening keama
 | K02 | 5.2.14 | SSH Security | Ensure SSH PasswordAuthentication is disabled |	Audit & Hardening |
 | K03 | 5.1.13 | SSH Security | Ensure sshd LoginGraceTime is configured | Audit & Hardening |
 | K04 | 5.1.16 | SSH Security | Ensure sshd MaxAuthTries is configured | Audit & Hardening |
-| K05 | 5.1.6 | SSH Security | Ensure sshd Ciphers are configured	Audit & Hardening |
-| K06 | 5.1.7 | SSH Security | Ensure sshd MACs are configured  Audit & Hardening |
+| K05 | 5.1.6 | SSH Security | Ensure sshd Ciphers are configured | Audit & Hardening |
+| K06 | 5.1.7 | SSH Security | Ensure sshd MACs are configured | Audit & Hardening |
 | K07 | 5.1.8 | SSH Security | Ensure sshd KexAlgorithms are configured	| Audit & Hardening |
 | K08 | 4.1.1.2 | Audit Logging | Ensure auditd service is enabled and active | Audit Only |
 | K09 | 4.2.3 | Firewall | Ensure ufw service is enabled | Audit Only |
