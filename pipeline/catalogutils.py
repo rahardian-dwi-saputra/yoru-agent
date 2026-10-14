@@ -12,7 +12,7 @@ import uuid
 import shutil
 import filecmp
 
-from config.settings import SSHD_CONFIG, INVALID_SHELLS, SSH_BACKUP_DIR
+from config.settings import SSHD_CONFIG, INVALID_SHELLS, SSH_BACKUP_DIR, JOURNALD_CONFIG, JOURNALD_BACKUP_DIR
 
 class BaseLogger:
     def __init__(
@@ -200,16 +200,6 @@ def acquire_lock(lock_name: str, logger: BaseLogger | None = None) -> Optional[T
         sys.exit(0)
 
 
-def acquire_lock_sshd(logger: BaseLogger | None = None) -> Optional[TextIO]:
-    """Shortcut pengunci untuk proses sshd_config."""
-    return acquire_lock("sshd_config", logger)
-
-
-def acquire_lock_ufw(logger: BaseLogger | None = None) -> Optional[TextIO]:
-    """Shortcut pengunci untuk proses UFW."""
-    return acquire_lock("ufw_audit", logger)
-
-
 def release_lock(lock_file_obj: Optional[TextIO]) -> None:
     """Melepaskan lock dan menutup file handle."""
     if lock_file_obj:
@@ -245,5 +235,129 @@ def is_ufw_installed() -> bool:
             text=True,
         )
         return res.returncode == 0 and "Status: install ok installed" in res.stdout
+    except Exception:
+        return False
+
+
+def check_journald_config_exists(
+    logger: BaseLogger | None = None,
+    config_path: Path = JOURNALD_CONFIG,
+) -> bool:
+    """Mengecek apakah file journald.conf ada dan merupakan file valid."""
+    if not config_path.is_file():
+        if logger:
+            logger.log(
+                "ERROR",
+                "Note",
+                f"File konfigurasi {config_path} tidak ditemukan.",
+            )
+        return False
+    return True
+
+def parse_size_to_bytes(size_str: str) -> int:
+    """
+    Mengubah string ukuran systemd (misal: '500M', '2G', '1024K', '1048576') 
+    menjadi bentuk integer dalam satuan Bytes.
+    """
+    size_str = size_str.strip().upper()
+    multiplier = 1
+    
+    if size_str.endswith('K'):
+        multiplier = 1024
+        size_str = size_str[:-1]
+    elif size_str.endswith('M'):
+        multiplier = 1024 * 1024
+        size_str = size_str[:-1]
+    elif size_str.endswith('G'):
+        multiplier = 1024 * 1024 * 1024
+        size_str = size_str[:-1]
+    elif size_str.endswith('T'):
+        multiplier = 1024 * 1024 * 1024 * 1024
+        size_str = size_str[:-1]
+        
+    try:
+        return int(float(size_str) * multiplier)
+    except ValueError:
+        return 0
+
+
+def check_journald_disk_space_prerequisite(target_max_use_str: str, logger=None) -> bool:
+    """
+    Prasyarat: Memeriksa apakah sisa disk di /var/log minimal 3x dari nilai SystemMaxUse yang akan dipasang.
+    """
+    try:
+        max_bytes = parse_size_to_bytes(target_max_use_str)
+        if max_bytes == 0:
+            return True # Jika parsing gagal, lewati validasi ukuran untuk menghindari false positive
+
+        required_space = max_bytes * 3
+        usage = shutil.disk_usage("/var/log")
+
+        if usage.free < required_space:
+            if logger:
+                logger.log(
+                    "WARNING",
+                    "PreFlightCheck",
+                    f"Peringatan Disk: Sisa ruang /var/log ({usage.free} bytes) kurang dari 3x SystemMaxUse yang diminta ({required_space} bytes)."
+                )
+            return False
+        return True
+    except Exception as e:
+        if logger:
+            logger.log_error("SYSTEM", "disk_check", e)
+        return True
+
+
+def create_journald_backup(logger=None) -> Tuple[bool, str]:
+    """Membuat backup versioned untuk journald.conf mirip dengan skrip SSH."""
+    try:
+        if not JOURNALD_CONFIG.is_file():
+            return False, f"File konfigurasi journald tidak ditemukan di {JOURNALD_CONFIG}"
+
+        JOURNALD_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        backup_file = JOURNALD_BACKUP_DIR / "journald.conf.bak"
+
+        if not backup_file.exists():
+            shutil.copy2(JOURNALD_CONFIG, backup_file)
+            msg = f"Backup awal journald.conf berhasil dibuat di {backup_file}."
+            if logger:
+                logger.log("SUCCESS", "BackupCreated", msg)
+            return True, msg
+
+        # Jika isi file sama persis, gunakan yang sudah ada
+        if filecmp.cmp(JOURNALD_CONFIG, backup_file, shallow=False):
+            return True, "Konfigurasi journald tidak berubah. Menggunakan backup yang sudah ada."
+
+        # Jika berubah, buat versi timestamp historis
+        from datetime import datetime, timezone
+        timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        versioned_backup = JOURNALD_BACKUP_DIR / f"journald.conf_{timestamp_str}.bak"
+        shutil.copy2(JOURNALD_CONFIG, versioned_backup)
+        shutil.copy2(JOURNALD_CONFIG, backup_file)
+
+        msg = f"Perubahan terdeteksi pada journald.conf. Backup historis dibuat: {versioned_backup.name}"
+        if logger:
+            logger.log("SUCCESS", "BackupVersioned", msg)
+        return True, msg
+
+    except Exception as e:
+        err_msg = f"Gagal membuat backup journald: {str(e)}"
+        if logger:
+            logger.log_error("SYSTEM", "backup", e)
+        return False, err_msg
+
+
+def restart_journald_service() -> bool:
+    """
+    Fungsi terpusat untuk merestart service systemd-journald.
+    """
+    try:
+        res = subprocess.run(
+            ["systemctl", "restart", "systemd-journald"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        return res.returncode == 0
     except Exception:
         return False

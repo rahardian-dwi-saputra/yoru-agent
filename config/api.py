@@ -1,9 +1,7 @@
-from pathlib import Path
 from config.settings import PROJECT_ROOT
 
-# Base Path Proyek
-BASE_DIR = Path(__file__).resolve().parent.parent
-CATALOGS_DIR = BASE_DIR / "catalogs"
+
+CATALOGS_DIR = PROJECT_ROOT / "catalog"
 
 API_DIR = PROJECT_ROOT / "api"
 API_KEY_PATH = API_DIR / "key.txt"
@@ -16,6 +14,6 @@ DEBUG_MODE = True
 # CORS Origins yang diizinkan (untuk keamanan dashboard web)
 ALLOWED_ORIGINS = [
     "http://localhost",
-    "http://localhost:3000",  # Contoh port frontend dashboard
+    "http://localhost:3000",
     "http://127.0.0.1:8000"
 ]

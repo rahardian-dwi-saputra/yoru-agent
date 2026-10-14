@@ -10,44 +10,28 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import JOURNALD_SERVICE_NAME, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
     release_lock,
 )
 
-JOURNALD_CONFIG = Path("/etc/systemd/journald.conf")
 
-
-def revert_journald_storage_rollback(config_path: Path) -> bool:
-    """Mengembalikan konfigurasi Storage ke nilai default (dikomentari)."""
-    if not config_path.is_file():
-        return False
-
-    lines = []
-    with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            # Mengubah baris Storage= yang aktif menjadi terkomentar #Storage=auto
-            if line_stripped.lower().startswith("storage="):
-                lines.append("#Storage=auto\n")
-            else:
-                lines.append(line)
-
-    with open(config_path, "w", encoding="utf-8") as f:
-        f.writelines(lines)
-
-    return True
-
-
-def restart_journald_service() -> bool:
-    """Memuat ulang service systemd-journald agar konfigurasi rollback aktif."""
+def disable_journald_service() -> bool:
+    """
+    Mengembalikan konfigurasi dengan menonaktifkan (disable) service systemd-journald.
+    Catatan: Secara CIS benchmark hal ini tidak direkomendasikan, namun disediakan 
+    sebagai fungsi pembalik (rollback) jika diperlukan oleh preferensi sistem.
+    """
     try:
+        # Menjalankan systemctl disable systemd-journald
         res = subprocess.run(
-            ["systemctl", "restart", "systemd-journald"],
+            ["systemctl", "disable", JOURNALD_SERVICE_NAME],
             capture_output=True,
             text=True,
+            check=False,
         )
         return res.returncode == 0
     except Exception:
@@ -59,48 +43,32 @@ def main():
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
         catalog="K12",
-        cis_id="6.1.2.4",
+        cis_id="6.1.1.1",
         log_type="rollback",
     )
 
-    lock_file = acquire_lock("journald_storage_rollback", logger)
+    lock_name = CATALOG_LOCKS.get("K12", "journald_audit")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
-        if not JOURNALD_CONFIG.is_file():
-            logger.log(
-                "FAILED",
-                "Result",
-                f"Hasil Rollback: FAILED - Berkas konfigurasi {JOURNALD_CONFIG} tidak ditemukan.",
-            )
-            return
+        # Terapkan rollback (menonaktifkan autostart service jika dikembalikan ke awal)
+        success = disable_journald_service()
 
-        # 1. Mengembalikan konfigurasi ke kondisi default
-        success = revert_journald_storage_rollback(JOURNALD_CONFIG)
-
-        if not success:
-            logger.log(
-                "FAILED",
-                "Result",
-                "Hasil Rollback: FAILED - Gagal meng-update berkas konfigurasi journald.",
-            )
-            return
-
-        # 2. Restart service systemd-journald
-        if restart_journald_service():
+        if success:
             logger.log(
                 "SUCCESS",
                 "Result",
-                "Hasil Rollback: SUCCESS - Konfigurasi 'Storage' journald berhasil dikembalikan ke nilai default dan service systemd-journald di-restart.",
+                f"Hasil Rollback: SUCCESS - Status auto-start (enabled) untuk service '{JOURNALD_SERVICE_NAME}' berhasil dibatalkan/di-disable.",
             )
         else:
             logger.log(
                 "FAILED",
                 "Result",
-                "Hasil Rollback: FAILED - Konfigurasi berhasil dikembalikan tetapi gagal merestart service systemd-journald.",
+                f"Hasil Rollback: FAILED - Gagal mengubah status service '{JOURNALD_SERVICE_NAME}'.",
             )
 
     except Exception as e:
-        logger.log_error("K08", "rollback", e)
+        logger.log_error("K12", "rollback", e)
 
     finally:
         release_lock(lock_file)

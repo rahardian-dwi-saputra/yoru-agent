@@ -7,14 +7,14 @@ vars:
 
   # Metadata CIS Benchmark
   ID: "K13"
-  NAMA: "Status Layanan Journald"
-  KODE_CIS: "6.1.1.1"
-  CIS_JUDUL: "6.1.1.1 Ensure journald service is enabled and active"
+  NAMA: "Pengaturan Akses File Log Journald"
+  KODE_CIS: "6.1.1.2"
+  CIS_JUDUL: "6.1.1.2 Ensure journald log file access is configured"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan service systemd-journald 
-    selalu aktif dan berjalan secara otomatis saat sistem booting. 
-    Fungsinya untuk memastikan pencatatan log sistem berjalan 
-    terus-menerus tanpa gangguan demi keperluan audit dan pemantauan.
+    Aturan keamanan untuk memastikan direktori dan berkas log systemd-journald 
+    memiliki izin akses yang aman (permissions dan kepemilikan yang tepat) 
+    sehingga tidak dapat dibaca atau dimanipulasi secara sembarangan oleh user 
+    yang tidak berotoritas.
   RISIKO: "AMAN"
   KATEGORI: "Logging and Auditing"
   AUDIT_ONLY: false
@@ -26,23 +26,22 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Status Service Journald
+  # 1. Audit Akses File Log Journald
   audit:
-    desc: "Menjalankan audit status service systemd-journald (enabled dan active)"
+    desc: "Menjalankan audit izin akses dan kepemilikan file log journald"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 2. Hardening Service Journald (Mengaktifkan dan menjalankan journald)
+  # 2. Hardening Akses File Log Journald (Menerapkan izin akses ketat)
   hardening:
-    desc: "Mengaktifkan dan menjalankan service systemd-journald secara permanen"
+    desc: "Menerapkan konfigurasi izin akses dan kepemilikan yang aman pada direktori log journald"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 3. Rollback Service Journald (Mengembalikan ke kondisi awal jika diperlukan)
-  rollback:
-    desc: "Mengembalikan status service systemd-journald ke kondisi sebelum hardening"
+  # 3. Rollback Akses File Log Journald (Mengembalikan izin akses ke kondisi awal)
+    desc: "Mengembalikan izin akses file log journald ke kondisi sebelum hardening"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/rollback.py

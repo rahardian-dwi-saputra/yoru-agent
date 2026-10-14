@@ -12,19 +12,13 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import APPROVED_SERVICES_SET, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
     BaseLogger,
-    acquire_lock_ufw,
+    acquire_lock,
     release_lock
 )
-
-# Daftar layanan / port / proses yang disetujui (dapat disesuaikan dengan kebutuhan lingkungan)
-APPROVED_SERVICES = {
-    "sshd",
-    "systemd-resolve",
-    "chronyd",
-    "ntpd"
-}
 
 
 def get_listening_services() -> List[Dict[str, Any]]:
@@ -95,7 +89,8 @@ def main():
         log_type="audit",
     )
 
-    lock_file = acquire_lock_ufw(logger)
+    lock_name = CATALOG_LOCKS.get("K11", "network_audit")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
         listening_services = get_listening_services()
@@ -113,7 +108,7 @@ def main():
         for svc in listening_services:
             process_name = svc["process"].lower()
             # Cek apakah nama proses mengandung salah satu dari daftar approved services
-            is_approved = any(approved in process_name for approved in APPROVED_SERVICES)
+            is_approved = any(approved in process_name for approved in APPROVED_SERVICES_SET)
             
             # Khusus loopback (127.0.0.1 atau ::1), biasanya diperbolehkan kecuali kebijakan mewajibkan sebaliknya
             is_loopback = svc["address"].startswith("127.") or svc["address"].startswith("[::1]") or svc["address"].startswith("::1")

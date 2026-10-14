@@ -17,34 +17,35 @@ from pipeline.catalogutils import (
 )
 
 JOURNALD_CONFIG = Path("/etc/systemd/journald.conf")
+JOURNAL_LOG_DIR = Path("/var/log/journal")
 
 
-def apply_journald_compress_hardening(config_path: Path) -> bool:
-    """Mengatur directive 'Compress=yes' pada file journald.conf."""
+def apply_journald_storage_hardening(config_path: Path) -> bool:
+    """Mengatur directive 'Storage=persistent' pada file journald.conf."""
     if not config_path.is_file():
         return False
 
     lines = []
-    compress_found = False
+    storage_found = False
 
     with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             line_stripped = line.strip()
 
-            # Jika menemukan baris Compress= (baik aktif maupun terkomentar)
-            if line_stripped.lower().startswith("compress=") or (
+            # Jika menemukan baris Storage= (baik aktif maupun terkomentar)
+            if line_stripped.lower().startswith("storage=") or (
                 (line_stripped.startswith("#") or line_stripped.startswith(";"))
-                and "compress=" in line_stripped.lower()
+                and "storage=" in line_stripped.lower()
             ):
-                if not compress_found:
-                    lines.append("Compress=yes\n")
-                    compress_found = True
+                if not storage_found:
+                    lines.append("Storage=persistent\n")
+                    storage_found = True
             else:
                 lines.append(line)
 
-    # Jika directive Compress= belum ada sama sekali di dalam file
-    if not compress_found:
-        lines.append("\nCompress=yes\n")
+    # Jika directive Storage= belum ada sama sekali di dalam file
+    if not storage_found:
+        lines.append("\nStorage=persistent\n")
 
     with open(config_path, "w", encoding="utf-8") as f:
         f.writelines(lines)
@@ -59,7 +60,6 @@ def restart_journald_service() -> bool:
             ["systemctl", "restart", "systemd-journald"],
             capture_output=True,
             text=True,
-            check=False,
         )
         return res.returncode == 0
     except Exception:
@@ -70,12 +70,12 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
-        catalog="K15",
-        cis_id="6.1.2.3",
+        catalog="K12",
+        cis_id="6.1.2.4",
         log_type="hardening",
     )
 
-    lock_file = acquire_lock("journald_compress_hardening", logger)
+    lock_file = acquire_lock("journald_storage_hardening", logger)
 
     try:
         if not JOURNALD_CONFIG.is_file():
@@ -86,7 +86,17 @@ def main():
             )
             return
 
-        success = apply_journald_compress_hardening(JOURNALD_CONFIG)
+        # 1. Buat direktori /var/log/journal jika belum ada
+        if not JOURNAL_LOG_DIR.is_dir():
+            JOURNAL_LOG_DIR.mkdir(parents=True, exist_ok=True)
+            logger.log(
+                "SUCCESS",
+                "Step",
+                f"Direktori penyimpanan log {JOURNAL_LOG_DIR} berhasil dibuat.",
+            )
+
+        # 2. Terapkan konfigurasi Storage=persistent
+        success = apply_journald_storage_hardening(JOURNALD_CONFIG)
 
         if not success:
             logger.log(
@@ -96,11 +106,12 @@ def main():
             )
             return
 
+        # 3. Restart service systemd-journald
         if restart_journald_service():
             logger.log(
                 "SUCCESS",
                 "Result",
-                "Hasil Hardening: SUCCESS - Parameter 'Compress=yes' berhasil diterapkan dan service systemd-journald berhasil di-restart.",
+                "Hasil Hardening: SUCCESS - Parameter 'Storage=persistent' berhasil diterapkan dan service systemd-journald berhasil di-restart.",
             )
         else:
             logger.log(
@@ -110,7 +121,7 @@ def main():
             )
 
     except Exception as e:
-        logger.log_error("K15", "hardening", e)
+        logger.log_error("K08", "hardening", e)
 
     finally:
         release_lock(lock_file)

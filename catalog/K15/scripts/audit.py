@@ -19,16 +19,18 @@ from pipeline.catalogutils import (
 
 JOURNALD_CONFIG = Path("/etc/systemd/journald.conf")
 JOURNALD_DROPIN_DIR = Path("/etc/systemd/journald.conf.d")
+JOURNAL_LOG_DIR = Path("/var/log/journal")
 
 
-def parse_journald_compress() -> Tuple[str, Optional[str]]:
-    """Memeriksa dan meng-extract nilai directive 'Compress' dari journald.conf
+def parse_journald_storage() -> Tuple[str, Optional[str]]:
+    """Memeriksa dan meng-extract nilai directive 'Storage' dari journald.conf
+
     serta berkas drop-in di /etc/systemd/journald.conf.d/*.conf.
 
     Return:
         Tuple[state, value]
         - state: 'not_found', 'commented', 'active'
-        - value: Nilai konfigurasi Compress (contoh: 'yes', 'no')
+        - value: Nilai konfigurasi Storage (contoh: 'persistent', 'auto', dll)
     """
     config_files = []
     if JOURNALD_CONFIG.is_file():
@@ -53,14 +55,14 @@ def parse_journald_compress() -> Tuple[str, Optional[str]]:
                     # 1. Baris Terkomentar (# atau ;)
                     if line_stripped.startswith("#") or line_stripped.startswith(";"):
                         uncommented = line_stripped[1:].lstrip()
-                        if uncommented.lower().startswith("compress="):
+                        if uncommented.lower().startswith("storage="):
                             parts = uncommented.split("=", 1)
                             if len(parts) == 2:
                                 last_state = "commented"
                                 last_value = parts[1].strip()
 
                     # 2. Baris Aktif
-                    elif line_stripped.lower().startswith("compress="):
+                    elif line_stripped.lower().startswith("storage="):
                         parts = line_stripped.split("=", 1)
                         if len(parts) == 2:
                             last_state = "active"
@@ -75,16 +77,17 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K15",
-        cis_id="6.1.2.3",
+        catalog="K12",
+        cis_id="6.1.2.4",
         log_type="audit",
     )
 
-    lock_file = acquire_lock("journald_compress_audit", logger)
+    lock_file = acquire_lock("journald_storage_audit", logger)
 
     try:
-        state, compress_val = parse_journald_compress()
+        state, storage_val = parse_journald_storage()
 
+        # Skenario 1: Parameter Storage tidak ditemukan sama sekali
         if state == "not_found":
             logger.log(
                 "NON_COMPLIANT",
@@ -93,32 +96,43 @@ def main():
             )
             return
 
-        if state == "commented" or not compress_val:
+        # Skenario 2: Parameter Storage dikomentari / default (belum diatur eksplisit)
+        if state == "commented" or not storage_val:
             logger.log(
                 "NON_COMPLIANT",
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Parameter 'Compress' belum dikonfigurasi secara eksplisit (State: {state}).",
+                f"Hasil Audit: NON_COMPLIANT - Parameter 'Storage' belum dikonfigurasi secara eksplisit (State: {state}).",
             )
             return
 
-        compress_val_lower = compress_val.lower()
+        storage_val_lower = storage_val.lower()
 
-        # Standar CIS: Compress harus bernilai 'yes'
-        if compress_val_lower == "yes":
-            logger.log(
-                "COMPLIANT",
-                "Result",
-                f"Hasil Audit: COMPLIANT - Parameter 'Compress' journald telah dikonfigurasi dengan benar (Compress={compress_val}).",
-            )
+        # Standar CIS: Storage harus bernilai 'persistent' atau 'auto'
+        # Jika 'persistent', direktori /var/log/journal harus ada
+        is_storage_ok = storage_val_lower in ("persistent", "auto")
+
+        if is_storage_ok:
+            if storage_val_lower == "persistent" and not JOURNAL_LOG_DIR.is_dir():
+                logger.log(
+                    "NON_COMPLIANT",
+                    "Result",
+                    f"Hasil Audit: NON_COMPLIANT - Parameter Storage diatur 'persistent', namun direktori {JOURNAL_LOG_DIR} belum dibuat.",
+                )
+            else:
+                logger.log(
+                    "COMPLIANT",
+                    "Result",
+                    f"Hasil Audit: COMPLIANT - Parameter 'Storage' journald telah dikonfigurasi dengan benar (Storage={storage_val}).",
+                )
         else:
             logger.log(
                 "NON_COMPLIANT",
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Parameter 'Compress' diatur ke '{compress_val}' (Seharusnya 'yes').",
+                f"Hasil Audit: NON_COMPLIANT - Parameter 'Storage' diatur ke '{storage_val}' (Seharusnya 'persistent' atau 'auto').",
             )
 
     except Exception as e:
-        logger.log_error("K15", "audit", e)
+        logger.log_error("K08", "audit", e)
 
     finally:
         release_lock(lock_file)

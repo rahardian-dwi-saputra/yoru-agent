@@ -10,23 +10,14 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import SSHD_CONFIG, APPROVED_CIPHERS_LIST, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
-    SSHD_CONFIG,
     BaseLogger,
-    acquire_lock_sshd,
+    acquire_lock,
     check_sshd_config_exists,
     release_lock,
 )
-
-# Daftar Ciphers yang diizinkan sesuai standar CIS 5.1.6
-APPROVED_CIPHERS = {
-    "chacha20-poly1305@openssh.com",
-    "aes256-gcm@openssh.com",
-    "aes128-gcm@openssh.com",
-    "aes256-ctr",
-    "aes192-ctr",
-    "aes128-ctr",
-}
 
 
 def parse_ciphers_from_config(config_path: Path) -> Tuple[str, Optional[List[str]]]:
@@ -75,7 +66,8 @@ def main():
         log_type="audit",
     )
 
-    lock_file = acquire_lock_sshd(logger)
+    lock_name = CATALOG_LOCKS.get("K05", "sshd_config")
+    lock_file = acquire_lock(lock_name, logger)
     
     try:
         if not check_sshd_config_exists(logger):
@@ -100,7 +92,7 @@ def main():
         # Skenario 2: Parameter Ciphers aktif -> Cek apakah ada cipher lemah
         if state == "active" and configured_ciphers:
             configured_set = set(configured_ciphers)
-            weak_ciphers = configured_set - APPROVED_CIPHERS
+            weak_ciphers = configured_set - set(APPROVED_CIPHERS_LIST)
 
             if weak_ciphers:
                 logger.log(

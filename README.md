@@ -25,10 +25,10 @@ Yoru-agent menggunakan katalog berikut untuk melakukan audit dan hardening keama
 | K09 | 4.2.3 | Firewall | Ensure ufw service is enabled | Audit Only |
 | K10 | 4.2.7 | Firewall | Ensure ufw default deny firewall policy | Audit Only |
 | K11 | 2.1.22 | Network Security | Ensure only approved services are listening on a network interface | Audit Only |
-| K12 | 6.1.2.4	| System Logging | Ensure journald Storage is configured | Audit & Hardening |
-| K13 | 6.1.1.1 | System Logging | Ensure journald service is enabled and active | Audit & Hardening |
-| K14 | 6.1.1.2 | System Logging | Ensure journald log file access is configured | Audit & Hardening |
-| K15 | 6.1.2.3 | System Logging | Ensure journald Compress is configured | Audit & Hardening |
+| K12 | 6.1.1.1 | System Logging | Ensure journald service is enabled and active | Audit & Hardening |
+| K13 | 6.1.1.2 | System Logging | Ensure journald log file access is configured | Audit & Hardening |
+| K14 | 6.1.2.3 | System Logging | Ensure journald Compress is configured | Audit & Hardening |
+| K15 | 6.1.2.4	| System Logging | Ensure journald Storage is configured | Audit & Hardening |
 | K16 | 3.3.4 | Network Security | Ensure broadcast icmp requests are ignored |	Audit & Hardening |
 | K17 | 3.3.5 | Network Security | Ensure icmp redirects are not accepted | Audit & Hardening |
 | K18 | 3.3.8 | Network Security | Ensure source routed packets are not accepted | Audit & Hardening |

@@ -4,7 +4,8 @@ import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from api.config import CATALOG_DIR
+from config.api import CATALOGS_DIR
+
 from api.schemas.catalog import CatalogMetadata, CatalogResult
 
 
@@ -54,7 +55,7 @@ def parse_taskfile_metadata(taskfile_path: Path) -> Optional[CatalogMetadata]:
 
 def get_available_catalogs() -> List[CatalogMetadata]:
     """Mengambil daftar folder katalog beserta metadatanya dari file Taskfile.yml."""
-    if not CATALOG_DIR.exists():
+    if not CATALOGS_DIR.exists():
         return []
 
     results: List[CatalogMetadata] = []
@@ -62,7 +63,7 @@ def get_available_catalogs() -> List[CatalogMetadata]:
     catalog_dirs = sorted(
         [
             d
-            for d in CATALOG_DIR.iterdir()
+            for d in CATALOGS_DIR.iterdir()
             if d.is_dir() and d.name.upper().startswith("K")
         ],
         key=lambda x: x.name,
@@ -120,7 +121,7 @@ def read_latest_log(target_path: Path, action: str) -> Optional[Dict[str, Any]]:
 
 def run_taskfile(catalog_id: str, action: str) -> CatalogResult:
     """Mengeksekusi Taskfile.yml pada katalog tertentu dan membaca log hasilnya."""
-    target_path = CATALOG_DIR / catalog_id
+    target_path = CATALOGS_DIR / catalog_id
     taskfile_path = target_path / "Taskfile.yml"
 
     # Validasi keberadaan direktori & Taskfile

@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-import subprocess
+import os
 import sys
 
 # Import modul catalogutils via sys.path
@@ -10,47 +10,45 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import JOURNAL_LOG_DIR, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
     release_lock,
 )
 
-SERVICE_NAME = "systemd-journald"
 
+def check_journald_access() -> tuple[bool, str]:
+    """Memeriksa apakah direktori dan berkas log journald memiliki izin akses yang aman.
 
-def check_journald_service_status() -> tuple[bool, bool, str]:
-    """Memeriksa apakah service systemd-journald aktif dan enabled.
-
-    Return:
-        tuple[is_active, is_enabled, detail_msg]
+    Berdasarkan CIS 6.1.1.2: Direktori dan file log tidak boleh memiliki izin
+    yang terlalu longgar (world-writable atau group-writable yang tidak sah).
     """
+    if not JOURNAL_LOG_DIR.exists():
+        return (
+            True,
+            "Direktori /var/log/journal belum ada (volatile mode aktif), tidak ada file persisten untuk diperiksa.",
+        )
+
     try:
-        # Cek apakah service aktif (running)
-        active_res = subprocess.run(
-            ["systemctl", "is-active", SERVICE_NAME],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
-        is_active = active_res.stdout.strip() == "active"
+        # Periksa direktori utama /var/log/journal
+        st = JOURNAL_LOG_DIR.stat()
+        # Cek apakah other memiliki write permission (bit o+w / 0o002)
+        if st.st_mode & 0o002:
+            return False, f"Direktori {JOURNAL_LOG_DIR} memiliki izin world-writable."
 
-        # Cek apakah service enabled (auto-start saat booting)
-        enabled_res = subprocess.run(
-            ["systemctl", "is-enabled", SERVICE_NAME],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True,
-            check=False,
-        )
-        enabled_status = enabled_res.stdout.strip()
-        is_enabled = enabled_status in ("enabled", "static", "linked")
+        # Periksa file-file di dalam direktori log
+        for path in JOURNAL_LOG_DIR.glob("**/*"):
+            if path.is_file():
+                p_st = path.stat()
+                # Cek apakah group atau other memiliki write permission (g+w atau o+w)
+                if p_st.st_mode & 0o022:
+                    return False, f"File log ditemukan memiliki izin group/world-writable: {path}"
 
-        detail = f"Active status: {active_res.stdout.strip()}, Enabled status: {enabled_status}"
-        return is_active, is_enabled, detail
+        return True, "Izin akses direktori dan file log journald sudah aman dan sesuai standar CIS."
     except Exception as e:
-        return False, False, str(e)
+        return False, f"Gagal memeriksa izin akses: {str(e)}"
 
 
 def main():
@@ -58,27 +56,27 @@ def main():
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
         catalog="K13",
-        cis_id="6.1.1.1",
+        cis_id="6.1.1.2",
         log_type="audit",
     )
 
-    lock_file = acquire_lock("journald_service_audit", logger)
+    lock_name = CATALOG_LOCKS.get("K13", "journald_audit")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
-        is_active, is_enabled, detail = check_journald_service_status()
+        is_secure, detail = check_journald_access()
 
-        # Skenario: Service tidak aktif atau tidak enabled
-        if not is_active or not is_enabled:
+        if not is_secure:
             logger.log(
                 "NON_COMPLIANT",
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Service systemd-journald tidak memenuhi syarat standar CIS. ({detail})",
+                f"Hasil Audit: NON_COMPLIANT - {detail}",
             )
         else:
             logger.log(
                 "COMPLIANT",
                 "Result",
-                f"Hasil Audit: COMPLIANT - Service systemd-journald aktif dan terkonfigurasi dengan benar. ({detail})",
+                f"Hasil Audit: COMPLIANT - {detail}",
             )
 
     except Exception as e:

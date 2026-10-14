@@ -4,9 +4,9 @@ from datetime import datetime, timedelta, timezone
 import random
 from typing import Any, Dict, List, Optional
 
-from api.config import PROJECT_ROOT
+from config.settings import PLANS_DIR
 
-PLANS_DIR = PROJECT_ROOT / "storage" / "plans"
+
 PLANS_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -15,27 +15,17 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import SSHD_CONFIG, APPROVED_KEX_LIST, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
-    SSHD_CONFIG,
     BaseLogger,
-    acquire_lock_sshd,
+    acquire_lock,
     check_sshd_config_exists,
+    create_ssh_backup,
     release_lock,
     restart_ssh_service,
 )
 
-# Daftar KexAlgorithms kuat standar CIS 5.1.8
-APPROVED_KEX_LIST = [
-    "curve25519-sha256",
-    "curve25519-sha256@libssh.org",
-    "diffie-hellman-group14-sha256",
-    "diffie-hellman-group16-sha512",
-    "diffie-hellman-group18-sha512",
-    "ecdh-sha2-nistp256",
-    "ecdh-sha2-nistp384",
-    "ecdh-sha2-nistp521",
-    "sntrup761x25519-sha512@openssh.com",
-]
 HARDENED_KEX_VALUE = ",".join(APPROVED_KEX_LIST)
 APPROVED_KEX_SET = set(APPROVED_KEX_LIST)
 
@@ -100,7 +90,8 @@ def main():
         log_type="hardening",
     )
 
-    lock_file = acquire_lock_sshd(logger)
+    lock_name = CATALOG_LOCKS.get("K07", "sshd_config")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
         # 1. Cek keberadaan file sshd_config
@@ -110,6 +101,11 @@ def main():
                 "Result",
                 "Hasil Hardening: FAILED - File sshd_config tidak ditemukan.",
             )
+            sys.exit(1)
+
+        success_backup, backup_msg = create_ssh_backup(logger)
+        if not success_backup:
+            logger.log("FAILED", "BackupFailed", backup_msg)
             sys.exit(1)
 
         # 2. Cek status KexAlgorithms saat ini

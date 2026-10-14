@@ -15,25 +15,18 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import SSHD_CONFIG, APPROVED_MACS_LIST, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
-    SSHD_CONFIG,
     BaseLogger,
-    acquire_lock_sshd,
+    acquire_lock,
     check_sshd_config_exists,
     release_lock,
     restart_ssh_service,
 )
 
-# Daftar MACs hasil hardening K06
-HARDENED_MACS_LIST = [
-    "hmac-sha2-512-etm@openssh.com",
-    "hmac-sha2-256-etm@openssh.com",
-    "umac-128-etm@openssh.com",
-    "hmac-sha2-512",
-    "hmac-sha2-256",
-    "umac-128@openssh.com",
-]
-HARDENED_MACS_SET = set(HARDENED_MACS_LIST)
+
+HARDENED_MACS_SET = set(APPROVED_MACS_LIST)
 
 
 def parse_macs_from_config(config_path: Path) -> Tuple[str, Optional[List[str]]]:
@@ -84,7 +77,8 @@ def main():
         log_type="rollback",
     )
 
-    lock_file = acquire_lock_sshd(logger)
+    lock_name = CATALOG_LOCKS.get("K06", "sshd_config")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
         if not check_sshd_config_exists(logger):

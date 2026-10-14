@@ -1,14 +1,9 @@
 import os
 import secrets
-from pathlib import Path
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 
-# Root direktori proyek
-API_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = API_DIR.parent
-CATALOG_DIR = PROJECT_ROOT / "catalog"
-KEY_FILE = API_DIR / "key.txt"
+from config.api import API_KEY_PATH
 
 # Rate Limiter Instance
 limiter = Limiter(key_func=get_remote_address)
@@ -16,9 +11,9 @@ limiter = Limiter(key_func=get_remote_address)
 def get_api_key() -> str:
     """Membaca API Key dari file key.txt, environment variable, atau auto-generate temp key."""
     # 1. Coba baca dari file key.txt
-    if KEY_FILE.is_file():
+    if API_KEY_PATH.is_file():
         try:
-            key = KEY_FILE.read_text(encoding="utf-8").strip()
+            key = API_KEY_PATH.read_text(encoding="utf-8").strip()
             if key:
                 return key
         except Exception as e:

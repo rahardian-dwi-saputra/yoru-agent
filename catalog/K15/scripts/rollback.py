@@ -19,8 +19,8 @@ from pipeline.catalogutils import (
 JOURNALD_CONFIG = Path("/etc/systemd/journald.conf")
 
 
-def revert_journald_compress(config_path: Path) -> bool:
-    """Mengembalikan konfigurasi Compress (misalnya diubah menjadi no atau dikomentari)."""
+def revert_journald_storage_rollback(config_path: Path) -> bool:
+    """Mengembalikan konfigurasi Storage ke nilai default (dikomentari)."""
     if not config_path.is_file():
         return False
 
@@ -28,9 +28,10 @@ def revert_journald_compress(config_path: Path) -> bool:
     with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             line_stripped = line.strip()
-            # Ubah Compress=yes menjadi Compress=no atau komentari
-            if line_stripped.lower().startswith("compress="):
-                lines.append("#Compress=no\n")
+
+            # Mengubah baris Storage= yang aktif menjadi terkomentar #Storage=auto
+            if line_stripped.lower().startswith("storage="):
+                lines.append("#Storage=auto\n")
             else:
                 lines.append(line)
 
@@ -41,12 +42,12 @@ def revert_journald_compress(config_path: Path) -> bool:
 
 
 def restart_journald_service() -> bool:
+    """Memuat ulang service systemd-journald agar konfigurasi rollback aktif."""
     try:
         res = subprocess.run(
             ["systemctl", "restart", "systemd-journald"],
             capture_output=True,
             text=True,
-            check=False,
         )
         return res.returncode == 0
     except Exception:
@@ -57,12 +58,12 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
-        catalog="K15",
-        cis_id="6.1.2.3",
+        catalog="K12",
+        cis_id="6.1.2.4",
         log_type="rollback",
     )
 
-    lock_file = acquire_lock("journald_compress_rollback", logger)
+    lock_file = acquire_lock("journald_storage_rollback", logger)
 
     try:
         if not JOURNALD_CONFIG.is_file():
@@ -73,31 +74,33 @@ def main():
             )
             return
 
-        success = revert_journald_compress(JOURNALD_CONFIG)
+        # 1. Mengembalikan konfigurasi ke kondisi default
+        success = revert_journald_storage_rollback(JOURNALD_CONFIG)
 
         if not success:
             logger.log(
                 "FAILED",
                 "Result",
-                "Hasil Rollback: FAILED - Gagal mengubah konfigurasi journald.",
+                "Hasil Rollback: FAILED - Gagal meng-update berkas konfigurasi journald.",
             )
             return
 
+        # 2. Restart service systemd-journald
         if restart_journald_service():
             logger.log(
                 "SUCCESS",
                 "Result",
-                "Hasil Rollback: SUCCESS - Konfigurasi 'Compress' berhasil di-rollback dan service journald di-restart.",
+                "Hasil Rollback: SUCCESS - Konfigurasi 'Storage' journald berhasil dikembalikan ke nilai default dan service systemd-journald di-restart.",
             )
         else:
             logger.log(
                 "FAILED",
                 "Result",
-                "Hasil Rollback: FAILED - Konfigurasi diubah tetapi gagal merestart service systemd-journald.",
+                "Hasil Rollback: FAILED - Konfigurasi berhasil dikembalikan tetapi gagal merestart service systemd-journald.",
             )
 
     except Exception as e:
-        logger.log_error("K15", "rollback", e)
+        logger.log_error("K08", "rollback", e)
 
     finally:
         release_lock(lock_file)

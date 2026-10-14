@@ -15,25 +15,18 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SSHD_CONFIG, CATALOG_LOCKS
+from config.settings import SSHD_CONFIG, APPROVED_CIPHERS_LIST, CATALOG_LOCKS
 
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
     check_sshd_config_exists,
+    create_ssh_backup,
     release_lock,
     restart_ssh_service,
 )
 
-# Daftar Ciphers kuat standar CIS 5.1.6
-APPROVED_CIPHERS_LIST = [
-    "chacha20-poly1305@openssh.com",
-    "aes256-gcm@openssh.com",
-    "aes128-gcm@openssh.com",
-    "aes256-ctr",
-    "aes192-ctr",
-    "aes128-ctr",
-]
+
 HARDENED_CIPHERS_VALUE = ",".join(APPROVED_CIPHERS_LIST)
 APPROVED_CIPHERS_SET = set(APPROVED_CIPHERS_LIST)
 
@@ -108,6 +101,11 @@ def main():
                 "Result",
                 "Hasil Hardening: FAILED - File sshd_config tidak ditemukan.",
             )
+            sys.exit(1)
+
+        success_backup, backup_msg = create_ssh_backup(logger)
+        if not success_backup:
+            logger.log("FAILED", "BackupFailed", backup_msg)
             sys.exit(1)
 
         # 2. Cek status Ciphers saat ini
