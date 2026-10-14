@@ -1,5 +1,8 @@
 from pathlib import Path
 
+AGENT_NAME = "Yoru-Agent"
+VERSION = "1.0.0"
+
 # Direktori utama
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -15,14 +18,10 @@ SSH_BACKUP_DIR = Path("/var/backups/yoru-agent/ssh")
 # Daftar layanan yang disetujui (Approved Services) untuk Katalog K11
 APPROVED_SERVICES = [
     "ssh",
-    "nginx",
+    "ntpd",
     "uwsgi",
-    "postgresql"
+    "systemd-resolve"
 ]
-
-# Konfigurasi global lainnya
-AGENT_NAME = "Yoru-Agent"
-VERSION = "1.0.0"
 
 # Pemetaan nama Lock File untuk setiap Katalog (K01 - K19)
 CATALOG_LOCKS = {

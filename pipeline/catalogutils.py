@@ -9,12 +9,9 @@ import pwd
 import subprocess
 import sys
 import uuid
+import shutil
 
-
-# Path Konfigurasi sistem
-SSHD_CONFIG = Path("/etc/ssh/sshd_config")
-INVALID_SHELLS = {"/bin/false", "/usr/sbin/nologin", "/sbin/nologin", "/bin/sync"}
-
+from config.settings import SSHD_CONFIG, INVALID_SHELLS, SSH_BACKUP_DIR
 
 class BaseLogger:
     def __init__(
@@ -89,6 +86,48 @@ def check_sshd_config_exists(
             )
         return False
     return True
+
+
+def create_ssh_backup(logger=None) -> tuple[bool, str]:
+    """
+    Membuat file backup untuk sshd_config di dalam SSH_BACKUP_DIR.
+    Memanfaatkan check_sshd_config_exists untuk validasi awal.
+    Jika file backup sudah ada, fungsi akan langsung mengembalikan status True 
+    tanpa membuat duplikasi file baru.
+    """
+    try:
+        # Validasi keberadaan file sshd_config menggunakan fungsi yang ada
+        if not check_sshd_config_exists(logger=logger, config_path=SSHD_CONFIG):
+            msg = f"File konfigurasi SSH utama tidak ditemukan di {SSHD_CONFIG}"
+            return False, msg
+
+        # Pastikan direktori backup tersedia
+        SSH_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        
+        # Target path untuk file backup utama (misal: sshd_config.bak)
+        backup_file = SSH_BACKUP_DIR / "sshd_config.bak"
+
+        # Jika backup sudah ada, jangan buat duplikasi (kembalikan True)
+        if backup_file.exists():
+            msg = f"Backup sshd_config sudah tersedia di {backup_file} (menggunakan file yang ada)."
+            return True, msg
+
+        # Lakukan penyalinan file sebagai backup awal
+        shutil.copy2(SSHD_CONFIG, backup_file)
+        
+        # Tambahan timestamp versioning opsional jika ingin rekam jejak historis
+        timestamp_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp_backup = SSH_BACKUP_DIR / f"sshd_config_{timestamp_str}.bak"
+        shutil.copy2(SSHD_CONFIG, timestamp_backup)
+
+        msg = f"Backup sshd_config berhasil dibuat di {backup_file}."
+        return True, msg
+
+    except Exception as e:
+        err_msg = f"Gagal membuat backup SSH: {str(e)}"
+        if logger:
+            logger.log_error("SYSTEM", "backup", e)
+        return False, err_msg
 
 
 def restart_ssh_service() -> bool:

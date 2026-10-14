@@ -2,6 +2,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from api.routers import catalog
+from config.api import API_HOST, API_PORT, ALLOWED_ORIGINS, DEBUG_MODE
 
 app = FastAPI(
     title="Yoru Agent API",
@@ -13,4 +14,4 @@ app = FastAPI(
 app.include_router(catalog.router)
 
 if __name__ == "__main__":
-    uvicorn.run("api.main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("api.main:app", host=API_HOST, port=API_PORT, reload=DEBUG_MODE)
