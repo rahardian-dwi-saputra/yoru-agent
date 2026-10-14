@@ -11,10 +11,11 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import SSHD_CONFIG, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
-    SSHD_CONFIG,
     BaseLogger,
-    acquire_lock_sshd,
+    acquire_lock,
     check_sshd_config_exists,
     release_lock,
 )
@@ -84,7 +85,8 @@ def main():
         log_type="audit",
     )
 
-    lock_file = acquire_lock_sshd(logger)
+    lock_name = CATALOG_LOCKS.get("K03", "sshd_config")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
         if not check_sshd_config_exists(logger):

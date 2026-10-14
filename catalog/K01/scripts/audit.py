@@ -44,7 +44,7 @@ def main():
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K01", "default_lock")
+    lock_name = CATALOG_LOCKS.get("K01", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
 
     try:

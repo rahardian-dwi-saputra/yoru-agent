@@ -11,6 +11,8 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import CATALOG_LOCKS
+
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
@@ -77,7 +79,8 @@ def main():
         log_type="audit",
     )
 
-    lock_file = acquire_lock("auditid", logger)
+    lock_name = CATALOG_LOCKS.get("K08", "auditid")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
         if not is_auditd_installed():

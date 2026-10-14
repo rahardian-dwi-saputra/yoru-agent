@@ -1,0 +1,17 @@
+version: '3'
+
+tasks:
+  install:
+    desc: "Instalasi penuh Yoru-Agent (User, Sudoers, Venv, & API Key)"
+    cmds:
+      - sudo bash ./install.sh
+
+  setup-env:
+    desc: "Hanya setup user sistem dan sudoers"
+    cmds:
+      - sudo bash ./deploy/setup-environment.sh
+
+  setup-api:
+    desc: "Hanya setup Virtual Environment dan API Key"
+    cmds:
+      - bash ./deploy/setup-api.sh

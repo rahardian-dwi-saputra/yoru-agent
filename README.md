@@ -55,23 +55,33 @@ Sebelum menjalankan proyek pastikan di komputer anda sudah terinstall:
 
 ---
 
-## Cara Instalasi & Penggunaan
-Ikuti langkah-langkah di bawah ini untuk menjalankan proyek di komputer lokal:
+## 🚀 Panduan Instalasi (Quick Start)
+Ikuti langkah-langkah berikut untuk memasang dan menjalankan **Yoru-Agent** di server Ubuntu/Debian Anda.
+
+### Prasyarat Sistem
+* Python 3.10 atau versi di atasnya
+* Task CLI (`taskfile`) terinstal di sistem
+* Hak akses `sudo` (root)
+
 ### 1. Unduh Proyek (Clone Repository)
 Salin (clone) repository ini ke komputer Anda, lalu masuk ke direktori proyek:
 ```bash
 git clone https://github.com/rahardian-dwi-saputra/yoru-agent.git
 cd yoru-agent
 ```
-### 2. Jalankan Script Setup
-Masuk ke folder setup, berikan izin eksekusi pada skrip, lalu jalankan untuk menyiapkan virtual environment dan memasang `hermes-agent`:
+### 2. Jalankan Instalasi Otomatis
+Yoru-Agent menyediakan skrip instalasi otomatis untuk menyiapkan system user khusus (`yoru-agent`), konfigurasi keamanan sudoers berbasis prinsip least privilege, pembuatan Python virtual environment, serta generation API Key secara aman.
 ```bash
-cd setup
-chmod +x setup.sh
-./setup.sh
-chmod +x setup_hermes_agent
-sudo ./setup_hermes_agent
+sudo bash install.sh
 ```
+Skrip ini akan secara otomatis:
+1. Membuat dan mengkonfigurasi system user `yoru-agent`.
+2. Mendaftarkan hak akses sudoers terbatas untuk utilitas kernel, firewall, dan system service.
+3. Membuat Python virtual environment di dalam folder `api/venv/`.
+4. Men-generate dan mengamankan API Key rahasia (`api/key.txt`) dengan izin akses ketat (`chmod 600`).
+
+
+
 ### 3. Masuk sebagai User `yoru-agent`
 Skrip setup otomatis membuat pengguna sistem baru bernama `yoru-agent`. Beralihlah ke pengguna tersebut untuk menjalankan aplikasi:
 ```bash
@@ -91,4 +101,26 @@ Aktifkan environment Python dan jalankan server FastAPI menggunakan `uvicorn`:
 source venv/bin/activate
 uvicorn main:app --host 0.0.0.0 --port 8000
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+```
+
+## ⚙️ Cara Menjalankan Agen & API
+### Menjalankan FastAPI Server
+Setelah instalasi selesai, Anda dapat mengaktifkan virtual environment dan menjalankan server FastAPI:
+```bash
+source api/venv/bin/activate
+python3 api/main.py
+```
+
+### Memantau Log Aktivitas Sistem (OS-Level Audit Trail)
+Yoru-Agent terintegrasi secara langsung dengan Linux System Journal (journalctl). Anda dapat memantau seluruh aktivitas audit, hardening, atau rollback secara real-time menggunakan perintah:
+```bash
+journalctl -t yoru-agent -f
+```
+Untuk melihat 20 log terakhir yang dicatat oleh Yoru-Agent gunakan perintah berikut:
+```bash
+journalctl -t yoru-agent -n 20 --no-pager
+```
+Melihat log khusus yang berstatus FAILED atau ERROR saja:
+```bash
+journalctl -t yoru-agent -p warning
 ```

@@ -4,10 +4,13 @@ set -e
 
 echo "=== Pembuatan Virtual Environment FastAPI ==="
 
+PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
 # Script berada di project/setup/, venv & key akan dibuat di project/api/
-API_DIR="$(cd "$(dirname "$0")/../api" && pwd)"
+API_KEY_PATH=$(python3 -c "import sys; sys.path.insert(0, '$PROJECT_DIR'); from config.settings import API_KEY_PATH; print(API_KEY_PATH)")
+
+API_DIR="$(dirname "$API_KEY_PATH")"
 VENV_DIR="$API_DIR/venv"
-KEY_FILE="$API_DIR/key.txt"
 
 # Buat folder project/api jika belum ada
 mkdir -p "$API_DIR"
@@ -31,8 +34,8 @@ pip install fastapi uvicorn slowapi pyyaml
 echo ""
 echo "=== Konfigurasi API Key ==="
 
-if [ -f "$KEY_FILE" ]; then
-    echo "API Key sudah ada di: $KEY_FILE"
+if [ -f "$API_KEY_PATH" ]; then
+    echo "API Key sudah ada di: $API_KEY_PATH"
 else
     echo "Meng-generate API Key baru..."
     
@@ -44,17 +47,17 @@ else
     fi
 
     # Simpan API Key ke file key.txt
-    echo "$GENERATED_KEY" > "$KEY_FILE"
+    echo "$GENERATED_KEY" > "$API_KEY_PATH"
     
     # Set hak akses file agar hanya pengguna/owner yang bisa membaca (Security Best Practice)
-    chmod 600 "$KEY_FILE"
+    chmod 600 "$API_KEY_PATH"
     
-    echo "API Key berhasil digenerate dan disimpan ke: $KEY_FILE"
+    echo "API Key berhasil digenerate dan disimpan ke: $API_KEY_PATH"
 fi
 
 echo ""
 echo "=================================================================="
-echo " API KEY ANDA : $(cat "$KEY_FILE")"
+echo " API KEY ANDA : $(cat "$API_KEY_PATH")"
 echo " (Simpan API Key ini untuk mengakses endpoint API)"
 echo "=================================================================="
 

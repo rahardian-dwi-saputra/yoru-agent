@@ -10,6 +10,7 @@ import subprocess
 import sys
 import uuid
 import shutil
+import filecmp
 
 from config.settings import SSHD_CONFIG, INVALID_SHELLS, SSH_BACKUP_DIR
 
@@ -34,6 +35,41 @@ class BaseLogger:
         self.log_type = log_type
         self.execution_id = f"exec-{uuid.uuid4().hex[:8]}"
 
+    def _send_to_journal(self, level: str, step: str, message: str) -> None:
+        """
+        Fungsi internal untuk mengirim log ke Linux System Journal via utilitas 'logger'.
+        Tag diset ke 'yoru-agent' agar mudah difilter nanti.
+        """
+        try:
+            # Bersihkan pesan dari baris baru agar format syslog rapi
+            clean_msg = message.replace("\n", " ").strip()
+            
+            # Format pesan yang akan dikirim ke journal
+            syslog_msg = f"[{self.catalog} | CIS {self.cis_id}] Type: {self.log_type.upper()} | Level: {level} | Step: {step} | {clean_msg}"
+            
+            # Pemetaan prioritas syslog yang mencakup seluruh status (Audit, Hardening, Rollback)
+            priority = "daemon.info"
+            
+            if level in ["ERROR", "FAILED"]:
+                priority = "daemon.err"     # Menggunakan daemon.err untuk kesalahan fatal / kegagalan
+            elif level in ["WARNING"]:
+                priority = "daemon.warning" # Untuk peringatan
+            elif level in ["SUCCESS", "COMPLIANT"]:
+                priority = "daemon.notice"  # Untuk hasil sukses atau compliant yang positif
+            elif level in ["NON_COMPLIANT"]:
+                priority = "daemon.warning" # Non-compliant pada audit berarti butuh perhatian (warning)
+            elif level in ["SKIPPED"]:
+                priority = "daemon.info"    # Dilewati secara normal/aman
+
+            # Eksekusi perintah bawaan Linux: logger -t yoru-agent -p [prioritas] [pesan]
+            subprocess.run(
+                ["logger", "-t", "yoru-agent", "-p", priority, syslog_msg],
+                capture_output=True,
+                check=False
+            )
+        except Exception:
+            pass
+        
     def log(self, level: str, step: str, message: str) -> None:
         now = datetime.now().astimezone()
         unique_log_id = f"log-{now.strftime('%Y%m%d%H%M%S%f')}-{os.getpid()}-{uuid.uuid4().hex[:4]}"
@@ -91,36 +127,42 @@ def check_sshd_config_exists(
 def create_ssh_backup(logger=None) -> tuple[bool, str]:
     """
     Membuat file backup untuk sshd_config di dalam SSH_BACKUP_DIR.
-    Memanfaatkan check_sshd_config_exists untuk validasi awal.
-    Jika file backup sudah ada, fungsi akan langsung mengembalikan status True 
-    tanpa membuat duplikasi file baru.
+    Hanya membuat backup baru (ber-timestamp) jika file asli mengalami perubahan 
+    dibandingkan backup terakhir.
     """
     try:
-        # Validasi keberadaan file sshd_config menggunakan fungsi yang ada
         if not check_sshd_config_exists(logger=logger, config_path=SSHD_CONFIG):
             msg = f"File konfigurasi SSH utama tidak ditemukan di {SSHD_CONFIG}"
             return False, msg
 
-        # Pastikan direktori backup tersedia
         SSH_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-        
-        # Target path untuk file backup utama (misal: sshd_config.bak)
         backup_file = SSH_BACKUP_DIR / "sshd_config.bak"
 
-        # Jika backup sudah ada, jangan buat duplikasi (kembalikan True)
-        if backup_file.exists():
-            msg = f"Backup sshd_config sudah tersedia di {backup_file} (menggunakan file yang ada)."
+        # Jika backup utama belum ada sama sekali, buat baru
+        if not backup_file.exists():
+            shutil.copy2(SSHD_CONFIG, backup_file)
+            msg = f"Backup awal sshd_config berhasil dibuat di {backup_file}."
+            if logger:
+                logger.log("SUCCESS", "BackupCreated", msg)
             return True, msg
 
-        # Lakukan penyalinan file sebagai backup awal
-        shutil.copy2(SSHD_CONFIG, backup_file)
-        
-        # Tambahan timestamp versioning opsional jika ingin rekam jejak historis
-        timestamp_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
-        timestamp_backup = SSH_BACKUP_DIR / f"sshd_config_{timestamp_str}.bak"
-        shutil.copy2(SSHD_CONFIG, timestamp_backup)
+        # Jika backup sudah ada, bandingkan apakah file asli sudah berubah (diff)
+        # filecmp.cmp mengembalikan True jika isi kedua file persis sama
+        if filecmp.cmp(SSHD_CONFIG, backup_file, shallow=False):
+            msg = "Konfigurasi SSH tidak berubah. Menggunakan backup yang sudah ada."
+            return True, msg
 
-        msg = f"Backup sshd_config berhasil dibuat di {backup_file}."
+        # Jika isi file BERUBAH, buat versioning timestamp baru sebagai arsip historis
+        timestamp_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        versioned_backup = SSH_BACKUP_DIR / f"sshd_config_{timestamp_str}.bak"
+        shutil.copy2(SSHD_CONFIG, versioned_backup)
+        
+        # Perbarui juga file backup utama
+        shutil.copy2(SSHD_CONFIG, backup_file)
+
+        msg = f"Perubahan terdeteksi pada sshd_config. Backup historis dibuat: {versioned_backup.name}"
+        if logger:
+            logger.log("SUCCESS", "BackupVersioned", msg)
         return True, msg
 
     except Exception as e:

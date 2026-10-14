@@ -15,11 +15,13 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import SSHD_CONFIG, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
-    SSHD_CONFIG,
     BaseLogger,
-    acquire_lock_sshd,
+    acquire_lock,
     check_sshd_config_exists,
+    create_ssh_backup,
     release_lock,
     restart_ssh_service,
 )
@@ -117,7 +119,8 @@ def main():
         log_type="hardening",
     )
 
-    lock_file = acquire_lock_sshd(logger)
+    lock_name = CATALOG_LOCKS.get("K03", "sshd_config")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
         if not check_sshd_config_exists(logger):
@@ -126,6 +129,11 @@ def main():
                 "Result", 
                 "Hasil Hardening: FAILED - File sshd_config tidak ditemukan."
             )
+            sys.exit(1)
+
+        success_backup, backup_msg = create_ssh_backup(logger)
+        if not success_backup:
+            logger.log("FAILED", "BackupFailed", backup_msg)
             sys.exit(1)
 
         # Cek status LoginGraceTime saat ini

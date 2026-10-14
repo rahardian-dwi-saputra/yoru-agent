@@ -1,0 +1,23 @@
+# Konfigurasi Sudoers untuk Yoru-Agent
+# Membatasi user yoru-agent hanya pada utilitas sistem keamanan yang diizinkan
+
+# 1. Izinkan menjalankan skrip Python proyek dan Taskfile
+yoru-agent ALL=(root) NOPASSWD: /usr/bin/python3 /opt/yoru-agent/*.py
+yoru-agent ALL=(root) NOPASSWD: /usr/bin/python3 -m *
+
+# 2. Izinkan utilitas kernel sysctl (untuk K16 - K19)
+yoru-agent ALL=(root) NOPASSWD: /usr/sbin/sysctl
+
+# 3. Izinkan manajemen service systemd (untuk auditd, ufw, journald, sshd)
+yoru-agent ALL=(root) NOPASSWD: /bin/systemctl restart sshd, \
+                                    /bin/systemctl reload sshd, \
+                                    /bin/systemctl enable *, \
+                                    /bin/systemctl start *, \
+                                    /bin/systemctl stop *, \
+                                    /bin/systemctl status *
+
+# 4. Izinkan manajemen firewall UFW (untuk K09, K10)
+yoru-agent ALL=(root) NOPASSWD: /usr/sbin/ufw
+
+# 5. Izinkan pencatatan audit ke Linux Journal / Syslog
+yoru-agent ALL=(root) NOPASSWD: /usr/bin/logger
