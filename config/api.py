@@ -7,7 +7,7 @@ API_DIR = PROJECT_ROOT / "api"
 API_KEY_PATH = API_DIR / "key.txt"
 
 # Konfigurasi Server FastAPI
-API_HOST = "127.0.0.1"
+API_HOST = "0.0.0.0"
 API_PORT = 8000
 DEBUG_MODE = True
 

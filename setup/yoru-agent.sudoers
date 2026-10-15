@@ -1,7 +1,7 @@
 # Konfigurasi Sudoers untuk Yoru-Agent
 # Membatasi user yoru-agent hanya pada utilitas sistem keamanan yang diizinkan
 
-# 1. Izinkan menjalankan skrip Python proyek
+# 1. Izinkan menjalankan skrip Python proyek dan Taskfile
 yoru-agent ALL=(root) NOPASSWD: /usr/bin/python3 /opt/yoru-agent/*.py
 yoru-agent ALL=(root) NOPASSWD: /usr/bin/python3 -m *
 
