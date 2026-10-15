@@ -18,6 +18,3 @@ yoru-agent ALL=(root) NOPASSWD: /usr/bin/systemctl status *
 
 # 4. Izinkan manajemen firewall UFW (untuk K09, K10)
 yoru-agent ALL=(root) NOPASSWD: /usr/sbin/ufw
-
-# 5. Izinkan pencatatan audit ke Linux Journal / Syslog
-yoru-agent ALL=(root) NOPASSWD: /usr/bin/logger
