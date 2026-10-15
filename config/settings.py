@@ -14,6 +14,7 @@ SSHD_CONFIG = Path("/etc/ssh/sshd_config")
 JOURNALD_CONFIG = Path("/etc/systemd/journald.conf")
 JOURNALD_DROPIN_DIR = Path("/etc/systemd/journald.conf.d")
 JOURNAL_LOG_DIR = Path("/var/log/journal")
+SYSCTL_CONF = Path("/etc/sysctl.d/60-cis-icmp-broadcast.conf")
 
 # Daftar Layanan
 JOURNALD_SERVICE_NAME = "systemd-journald"
@@ -69,6 +70,32 @@ APPROVED_SERVICES_SET = {
 
 # Target nilai SystemMaxUse untuk Katalog K14
 TARGET_SYSTEM_MAX_USE = "500M"
+
+# Konfigurasi Hardening Kernel SYSCTL untuk Katalog K16
+SYSCTL_KEY_ICMP_ECHO_BROADCASTS = "net.ipv4.icmp_echo_ignore_broadcasts"
+SYSCTL_TARGET_ICMP_ECHO_BROADCASTS = "1"
+SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS = "0"
+
+# Konfigurasi Hardening Kernel SYSCTL untuk Katalog K17
+SYSCTL_KEYS_ACCEPT_REDIRECTS = [
+    "net.ipv4.conf.all.accept_redirects",
+    "net.ipv4.conf.default.accept_redirects",
+]
+SYSCTL_TARGET_ACCEPT_REDIRECTS = "0"
+SYSCTL_DEFAULT_ACCEPT_REDIRECTS = "1"
+
+# Konfigurasi Hardening Kernel SYSCTL untuk Katalog K18
+SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE = [
+    "net.ipv4.conf.all.accept_source_route",
+    "net.ipv4.conf.default.accept_source_route",
+]
+SYSCTL_TARGET_ACCEPT_SOURCE_ROUTE = "0"
+SYSCTL_DEFAULT_ACCEPT_SOURCE_ROUTE = "1"
+
+# Konfigurasi Hardening Kernel SYSCTL untuk Katalog K19
+SYSCTL_KEY_TCP_SYNCOOKIES = "net.ipv4.tcp_syncookies"
+SYSCTL_TARGET_TCP_SYNCOOKIES = "1"
+SYSCTL_DEFAULT_TCP_SYNCOOKIES = "0"
 
 # Pemetaan nama Lock File untuk setiap Katalog (K01 - K19)
 CATALOG_LOCKS = {

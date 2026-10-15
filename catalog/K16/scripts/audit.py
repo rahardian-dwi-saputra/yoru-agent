@@ -10,13 +10,13 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import SYSCTL_KEY_ICMP_ECHO_BROADCASTS, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
     release_lock,
 )
-
-SYSCTL_KEY = "net.ipv4.icmp_echo_ignore_broadcasts"
 
 
 def check_sysctl_value() -> tuple[bool, str]:
@@ -24,19 +24,19 @@ def check_sysctl_value() -> tuple[bool, str]:
     try:
         # 1. Cek nilai runtime via sysctl
         res = subprocess.run(
-            ["sysctl", "-n", SYSCTL_KEY],
+            ["sysctl", "-n", SYSCTL_KEY_ICMP_ECHO_BROADCASTS],
             capture_output=True,
             text=True,
             check=False,
         )
         if res.returncode != 0:
-            return False, f"Parameter sysctl {SYSCTL_KEY} tidak ditemukan pada kernel."
+            return False, f"Parameter sysctl {SYSCTL_KEY_ICMP_ECHO_BROADCASTS} tidak ditemukan pada kernel."
 
         val = res.stdout.strip()
         if val == "1":
-            return True, f"Runtime sysctl {SYSCTL_KEY} sudah bernilai 1 (Compliant)."
+            return True, f"Runtime sysctl {SYSCTL_KEY_ICMP_ECHO_BROADCASTS} sudah bernilai 1 (Compliant)."
         else:
-            return False, f"Runtime sysctl {SYSCTL_KEY} bernilai {val} (Seharusnya 1)."
+            return False, f"Runtime sysctl {SYSCTL_KEY_ICMP_ECHO_BROADCASTS} bernilai {val} (Seharusnya 1)."
     except Exception as e:
         return False, f"Gagal mengecek sysctl: {str(e)}"
 
@@ -50,8 +50,9 @@ def main():
         log_type="audit",
     )
 
-    lock_file = acquire_lock("icmp_broadcast_audit", logger)
-
+    lock_name = CATALOG_LOCKS.get("K16", "icmp_broadcast_audit")
+    lock_file = acquire_lock(lock_name, logger)
+    
     try:
         is_compliant, detail = check_sysctl_value()
 

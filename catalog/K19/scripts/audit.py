@@ -10,32 +10,32 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import SYSCTL_KEY_TCP_SYNCOOKIES, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
     release_lock,
 )
 
-SYSCTL_KEY = "net.ipv4.tcp_syncookies"
-
 
 def check_sysctl_value() -> tuple[bool, str]:
     """Memeriksa nilai parameter sysctl net.ipv4.tcp_syncookies."""
     try:
         res = subprocess.run(
-            ["sysctl", "-n", SYSCTL_KEY],
+            ["sysctl", "-n", SYSCTL_KEY_TCP_SYNCOOKIES],
             capture_output=True,
             text=True,
             check=False,
         )
         if res.returncode != 0:
-            return False, f"Parameter sysctl {SYSCTL_KEY} tidak ditemukan pada kernel."
+            return False, f"Parameter sysctl {SYSCTL_KEY_TCP_SYNCOOKIES} tidak ditemukan pada kernel."
 
         val = res.stdout.strip()
         if val == "1":
-            return True, f"Runtime sysctl {SYSCTL_KEY} sudah bernilai 1 (Compliant)."
+            return True, f"Runtime sysctl {SYSCTL_KEY_TCP_SYNCOOKIES} sudah bernilai 1 (Compliant)."
         else:
-            return False, f"Runtime sysctl {SYSCTL_KEY} bernilai {val} (Seharusnya 1)."
+            return False, f"Runtime sysctl {SYSCTL_KEY_TCP_SYNCOOKIES} bernilai {val} (Seharusnya 1)."
     except Exception as e:
         return False, f"Gagal mengecek sysctl: {str(e)}"
 
@@ -49,7 +49,8 @@ def main():
         log_type="audit",
     )
 
-    lock_file = acquire_lock("tcp_syncookies_audit", logger)
+    lock_name = CATALOG_LOCKS.get("K19", "tcp_syncookies_audit")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
         is_compliant, detail = check_sysctl_value()

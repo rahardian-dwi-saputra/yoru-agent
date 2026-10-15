@@ -1,128 +1,120 @@
 from __future__ import annotations
 from pathlib import Path
-import subprocess
 import sys
+import os
+import tempfile
+import shutil
 
-# Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
+PROJECT_ROOT = SCRIPT_DIR.parents[2]
 
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
+
+from config.settings import JOURNALD_CONFIG, JOURNALD_BACKUP_DIR, CATALOG_LOCKS
 
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
     release_lock,
+    check_journald_config_exists,
+    create_journald_backup,
+    restart_journald_service,
 )
 
-JOURNALD_CONFIG = Path("/etc/systemd/journald.conf")
-JOURNAL_LOG_DIR = Path("/var/log/journal")
 
-
-def apply_journald_storage_hardening(config_path: Path) -> bool:
-    """Mengatur directive 'Storage=persistent' pada file journald.conf."""
+def check_storage_status(config_path: Path) -> bool:
+    """Mengecek apakah Storage=persistent sudah aktif secara eksplisit."""
     if not config_path.is_file():
         return False
-
-    lines = []
-    storage_found = False
-
     with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
-            line_stripped = line.strip()
+            if line.strip().lower() == "storage=persistent":
+                return True
+    return False
 
-            # Jika menemukan baris Storage= (baik aktif maupun terkomentar)
+
+def apply_storage_hardening(src_path: Path, dst_file_obj) -> None:
+    """Memastikan Storage=persistent diatur pada journald.conf."""
+    storage_found = False
+    with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
+        for line in f:
+            line_stripped = line.strip()
             if line_stripped.lower().startswith("storage=") or (
                 (line_stripped.startswith("#") or line_stripped.startswith(";"))
                 and "storage=" in line_stripped.lower()
             ):
                 if not storage_found:
-                    lines.append("Storage=persistent\n")
+                    dst_file_obj.write("Storage=persistent\n")
                     storage_found = True
             else:
-                lines.append(line)
-
-    # Jika directive Storage= belum ada sama sekali di dalam file
+                dst_file_obj.write(line)
+    
     if not storage_found:
-        lines.append("\nStorage=persistent\n")
-
-    with open(config_path, "w", encoding="utf-8") as f:
-        f.writelines(lines)
-
-    return True
-
-
-def restart_journald_service() -> bool:
-    """Memuat ulang service systemd-journald agar konfigurasi baru aktif."""
-    try:
-        res = subprocess.run(
-            ["systemctl", "restart", "systemd-journald"],
-            capture_output=True,
-            text=True,
-        )
-        return res.returncode == 0
-    except Exception:
-        return False
+        dst_file_obj.write("\nStorage=persistent\n")
 
 
 def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
-        catalog="K12",
+        catalog="K15",
         cis_id="6.1.2.4",
         log_type="hardening",
     )
 
-    lock_file = acquire_lock("journald_storage_hardening", logger)
+    lock_name = CATALOG_LOCKS.get("K15", "journald_storage")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
-        if not JOURNALD_CONFIG.is_file():
+        if not check_journald_config_exists(logger):
             logger.log(
-                "FAILED",
-                "Result",
-                f"Hasil Hardening: FAILED - Berkas konfigurasi {JOURNALD_CONFIG} tidak ditemukan.",
+                "FAILED", 
+                "Result", 
+                f"Hasil Hardening: FAILED - Berkas {JOURNALD_CONFIG} tidak ditemukan."
             )
-            return
+            sys.exit(1)
 
-        # 1. Buat direktori /var/log/journal jika belum ada
-        if not JOURNAL_LOG_DIR.is_dir():
-            JOURNAL_LOG_DIR.mkdir(parents=True, exist_ok=True)
+        if check_storage_status(JOURNALD_CONFIG):
             logger.log(
-                "SUCCESS",
-                "Step",
-                f"Direktori penyimpanan log {JOURNAL_LOG_DIR} berhasil dibuat.",
+                "SKIPPED", 
+                "Result", 
+                "Hasil Hardening: SKIPPED - Parameter Storage=persistent sudah aktif."
             )
+            sys.exit(0)
 
-        # 2. Terapkan konfigurasi Storage=persistent
-        success = apply_journald_storage_hardening(JOURNALD_CONFIG)
-
-        if not success:
+        success_backup, backup_msg = create_journald_backup(JOURNALD_CONFIG, JOURNALD_BACKUP_DIR, logger)
+        if not success_backup:
             logger.log(
-                "FAILED",
-                "Result",
-                "Hasil Hardening: FAILED - Gagal meng-update berkas konfigurasi journald.",
+                "FAILED", 
+                "BackupFailed", 
+                backup_msg
             )
-            return
+            sys.exit(1)
 
-        # 3. Restart service systemd-journald
+        with tempfile.NamedTemporaryFile("w+", delete=False, prefix="journald_storage_") as tmp_file:
+            tmp_config_path = Path(tmp_file.name)
+            apply_storage_hardening(JOURNALD_CONFIG, tmp_file)
+
+        shutil.move(str(tmp_config_path), str(JOURNALD_CONFIG))
+        os.chmod(JOURNALD_CONFIG, 0o644)
+
         if restart_journald_service():
             logger.log(
-                "SUCCESS",
-                "Result",
-                "Hasil Hardening: SUCCESS - Parameter 'Storage=persistent' berhasil diterapkan dan service systemd-journald berhasil di-restart.",
+                "SUCCESS", 
+                "Result", 
+                "Hasil Hardening: SUCCESS - Storage=persistent berhasil diterapkan."
             )
         else:
             logger.log(
-                "FAILED",
-                "Result",
-                "Hasil Hardening: FAILED - Konfigurasi diperbarui tetapi gagal merestart service systemd-journald.",
+                "WARNING", 
+                "Result", 
+                "Hasil Hardening: WARNING - Konfigurasi diubah tapi gagal restart service."
             )
 
     except Exception as e:
-        logger.log_error("K08", "hardening", e)
-
+        logger.log_error("K15", "hardening", e)
+        
     finally:
         release_lock(lock_file)
 

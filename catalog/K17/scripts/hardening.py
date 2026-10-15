@@ -2,6 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 import sys
+import os
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -10,27 +11,76 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import (
+    SYSCTL_CONF,
+    SYSCTL_KEYS_ACCEPT_REDIRECTS,
+    SYSCTL_TARGET_ACCEPT_REDIRECTS,
+    CATALOG_LOCKS,
+)
+
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
     release_lock,
 )
 
-SYSCTL_CONF = Path("/etc/sysctl.d/60-cis-icmp-redirects.conf")
-SYSCTL_CONTENT = """# CIS 3.3.5: Ensure icmp redirects are not accepted
-net.ipv4.conf.all.accept_redirects = 0
-net.ipv4.conf.default.accept_redirects = 0
-"""
 
-
-def apply_sysctl_hardening() -> tuple[bool, str]:
-    """Menerapkan konfigurasi penolakan ICMP redirects secara permanen dan runtime."""
+def apply_sysctl_hardening_list(sysctl_keys: list[str], target_value: str, comment: str) -> tuple[bool, str]:
+    """
+    Menerapkan konfigurasi sysctl untuk daftar kunci (list of keys) secara cerdas:
+    - Jika file belum ada, buat baru.
+    - Untuk setiap kunci dalam list: jika kunci sudah ada, update nilainya; jika belum, append ke file.
+    """
     try:
-        # 1. Tulis konfigurasi ke file drop-in sysctl.d
         SYSCTL_CONF.parent.mkdir(parents=True, exist_ok=True)
-        SYSCTL_CONF.write_text(SYSCTL_CONTENT, encoding="utf-8")
+        
+        # 1. Baca seluruh baris file yang sudah ada (jika ada)
+        existing_lines = []
+        if SYSCTL_CONF.is_file():
+            with open(SYSCTL_CONF, "r", encoding="utf-8", errors="ignore") as f:
+                existing_lines = f.readlines()
 
-        # 2. Terapkan langsung via sysctl --system
+        # 2. Proses pembaruan atau penambahan untuk setiap key dalam target list
+        processed_keys = set()
+        new_lines = []
+
+        # Jika file belum ada sama sekali, buat dengan header komentar awal
+        if not SYSCTL_CONF.is_file():
+            new_lines.append(f"# {comment}\n")
+            for key in sysctl_keys:
+                new_lines.append(f"{key} = {target_value}\n")
+                processed_keys.add(key)
+        else:
+            # Periksa baris demi baris untuk meng-update key yang sudah ada
+            for line in existing_lines:
+                line_stripped = line.strip()
+                updated = False
+                if not line_stripped.startswith("#") and "=" in line_stripped:
+                    current_key = line_stripped.split("=")[0].strip()
+                    for key in sysctl_keys:
+                        if current_key == key:
+                            new_lines.append(f"{key} = {target_value}\n")
+                            processed_keys.add(key)
+                            updated = True
+                            break
+                if not updated:
+                    new_lines.append(line)
+
+            # Tambahkan key yang belum ada sama sekali di dalam file
+            for key in sysctl_keys:
+                if key not in processed_keys:
+                    if new_lines and not new_lines[-1].endswith("\n"):
+                        new_lines.append("\n")
+                    new_lines.append(f"{key} = {target_value}\n")
+
+        # 3. Tulis ulang file konfigurasi
+        with open(SYSCTL_CONF, "w", encoding="utf-8") as f:
+            f.writelines(new_lines)
+
+        # 4. Amankan izin akses file (0o644)
+        os.chmod(SYSCTL_CONF, 0o644)
+
+        # 5. Terapkan langsung via sysctl --system
         res = subprocess.run(
             ["sysctl", "--system"],
             capture_output=True,
@@ -40,7 +90,8 @@ def apply_sysctl_hardening() -> tuple[bool, str]:
         if res.returncode != 0:
             return False, f"Gagal menerapkan sysctl system: {res.stderr.strip()}"
 
-        return True, "Parameter penolakan ICMP redirects berhasil diterapkan dan disimpan permanen."
+        keys_str = ", ".join(sysctl_keys)
+        return True, f"Parameter [{keys_str}] = {target_value} berhasil diterapkan di {SYSCTL_CONF.name}."
     except Exception as e:
         return False, f"Gagal menerapkan hardening sysctl: {str(e)}"
 
@@ -50,14 +101,19 @@ def main():
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
         catalog="K17",
-        cis_id="3.3.5",
+        cis_id="3.3.5",  
         log_type="hardening",
     )
 
-    lock_file = acquire_lock("icmp_redirects_hardening", logger)
+    lock_name = CATALOG_LOCKS.get("K17", "accept_redirects_audit")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
-        success, detail = apply_sysctl_hardening()
+        success, detail = apply_sysctl_hardening_list(
+            sysctl_keys=SYSCTL_KEYS_ACCEPT_REDIRECTS,
+            target_value=SYSCTL_TARGET_ACCEPT_REDIRECTS,
+            comment="CIS: Ensure accept source/icmp redirects are disabled",
+        )
 
         if success:
             logger.log(

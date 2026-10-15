@@ -10,16 +10,13 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
+from config.settings import SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE, CATALOG_LOCKS
+
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
     release_lock,
 )
-
-SYSCTL_KEYS = [
-    "net.ipv4.conf.all.accept_source_route",
-    "net.ipv4.conf.default.accept_source_route",
-]
 
 
 def check_sysctl_values() -> tuple[bool, str]:
@@ -28,7 +25,7 @@ def check_sysctl_values() -> tuple[bool, str]:
         failed_keys = []
         details = []
 
-        for key in SYSCTL_KEYS:
+        for key in SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE:
             res = subprocess.run(
                 ["sysctl", "-n", key],
                 capture_output=True,
@@ -63,7 +60,8 @@ def main():
         log_type="audit",
     )
 
-    lock_file = acquire_lock("source_route_audit", logger)
+    lock_name = CATALOG_LOCKS.get("K18", "source_route_audit")
+    lock_file = acquire_lock(lock_name, logger)
 
     try:
         is_compliant, detail = check_sysctl_values()
