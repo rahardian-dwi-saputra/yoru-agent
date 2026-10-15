@@ -7,7 +7,7 @@ echo "=== Pembuatan Virtual Environment FastAPI ==="
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Script berada di project/setup/, venv & key akan dibuat di project/api/
-API_KEY_PATH=$(python3 -c "import sys; sys.path.insert(0, '$PROJECT_DIR'); from config.settings import API_KEY_PATH; print(API_KEY_PATH)")
+API_KEY_PATH=$(python3 -c "import sys; sys.path.insert(0, '$PROJECT_DIR'); from config.api import API_KEY_PATH; print(API_KEY_PATH)")
 
 API_DIR="$(dirname "$API_KEY_PATH")"
 VENV_DIR="$API_DIR/venv"
