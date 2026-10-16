@@ -23,7 +23,7 @@ bash "$PROJECT_DIR/setup/setup-environment.sh"
 echo ""
 echo "[Langkah 2/2] Menyiapkan Python Virtual Environment & API Key..."
 # Jalankan skrip setup API (pastikan dijalankan agar kepemilikan tetap aman)
-bash "$PROJECT_DIR/setup/setup-api.sh"
+bash "$PROJECT_DIR/setup/setup-dependencies.sh"
 
 # Pastikan ulang kepemilikan folder proyek dipegang oleh yoru-agent setelah venv terbuat
 chown -R yoru-agent:yoru-agent "$PROJECT_DIR"

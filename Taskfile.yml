@@ -9,9 +9,14 @@ tasks:
   setup-env:
     desc: "Hanya setup user sistem dan sudoers"
     cmds:
-      - sudo bash ./deploy/setup-environment.sh
+      - sudo bash ./setup/setup-environment.sh
 
-  setup-api:
+  setup-dependency:
     desc: "Hanya setup Virtual Environment dan API Key"
     cmds:
-      - bash ./deploy/setup-api.sh
+      - bash ./setup/setup-dependencies.sh
+
+  uninstall:
+    desc: "Pencopotan Yoru-Agent (Hapus Sudoers, Venv, & System User)"
+    cmds:
+      - sudo bash ./setup/uninstall.sh

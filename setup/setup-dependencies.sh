@@ -2,33 +2,33 @@
 
 set -e
 
-echo "=== Pembuatan Virtual Environment FastAPI ==="
+echo "=== Pembuatan Virtual Environment Terpusat (Root Proyek) ==="
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
-# Script berada di project/setup/, venv & key akan dibuat di project/api/
+VENV_DIR="$PROJECT_DIR/venv"
+
+# Lokasi API Key tetap diatur via config.api (biasanya di dalam folder api/)
 API_KEY_PATH=$(python3 -c "import sys; sys.path.insert(0, '$PROJECT_DIR'); from config.api import API_KEY_PATH; print(API_KEY_PATH)")
-
 API_DIR="$(dirname "$API_KEY_PATH")"
-VENV_DIR="$API_DIR/venv"
 
-# Buat folder project/api jika belum ada
+# Buat folder api jika belum ada (untuk tempat penyimpanan key/database)
 mkdir -p "$API_DIR"
 
 if [ -d "$VENV_DIR" ]; then
     echo "Virtual environment sudah ada di: $VENV_DIR"
 else
-    echo "Membuat virtual environment di: $VENV_DIR ..."
+    echo "Membuat virtual environment di root proyek: $VENV_DIR ..."
     python3 -m venv "$VENV_DIR"
     echo "Virtual environment berhasil dibuat."
 fi
 
-# Aktivasi venv dan perbarui pip/instal FastAPI
-echo "Mengaktifkan venv dan menginstal packages dasar..."
+# Aktivasi venv dan perbarui pip/instal packages (FastAPI, Uvicorn, Streamlit, dll)
+echo "Mengaktifkan venv dan menginstal packages (Backend & Web Dashboard)..."
 source "$VENV_DIR/bin/activate"
 
 pip install --upgrade pip
-pip install fastapi uvicorn slowapi pyyaml
+pip install fastapi uvicorn slowapi pyyaml streamlit requests
 
 # === GENERATE API KEY ===
 echo ""
@@ -63,5 +63,6 @@ echo "=================================================================="
 
 echo ""
 echo "=== Selesai! ==="
-echo "Untuk mengaktifkan virtual environment secara manual, jalankan:"
-echo "source $VENV_DIR/bin/activate"
+echo "Virtual environment terpusat siap digunakan."
+echo "Untuk mengaktifkan secara manual, jalankan:"
+echo "source venv/bin/activate"
