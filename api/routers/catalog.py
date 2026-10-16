@@ -46,10 +46,25 @@ async def get_system_info(request: Request):
     """
     Mengembalikan nama OS/Distribusi (contoh: Ubuntu 22.04.4 LTS) dan Arsitektur CPU.
     """
-    return SystemInfoResponse(
-        os_platform=get_linux_distro_pretty_name(),
-        architecture=platform.machine(),
-    )
+    try:
+        os_name = get_linux_distro_pretty_name()
+        arch = platform.machine()
+
+        # Fallback jika fungsi pembaca sistem mengembalikan nilai kosong
+        if not os_name:
+            os_name = "Unknown Linux Distribution"
+
+        if not arch:
+            arch = "x86_64"
+
+        return SystemInfoResponse(os_platform=os_name, architecture=arch)
+
+    except Exception as e:
+        # Mengembalikan HTTP Exception yang rapi alih-alih Internal Server Error mentah
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Gagal mengambil informasi sistem: {str(e)}",
+        )
 
 
 @router.get(

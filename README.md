@@ -111,6 +111,7 @@ Setelah instalasi selesai, Anda dapat mengaktifkan virtual environment dan menja
 ```bash
 source api/venv/bin/activate
 python3 api/main.py
+streamlit run app.py
 ```
 
 ### Memantau Log Aktivitas Sistem (OS-Level Audit Trail)

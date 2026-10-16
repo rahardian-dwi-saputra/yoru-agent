@@ -1,0 +1,250 @@
+import math
+import streamlit as st
+
+def render_styles():
+    """Memuat kustomisasi CSS tema Grafana."""
+    st.markdown(
+        """
+        <style>
+            .stApp {
+                background-color: #111217;
+                color: #d8d9db;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            }
+            .grafana-panel {
+                background-color: #1e1f2b;
+                border: 1px solid #2d2f3d;
+                border-radius: 4px;
+                padding: 16px;
+                margin-bottom: 16px;
+                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            }
+            .metric-title {
+                font-size: 12px;
+                color: #8e8f99;
+                text-transform: uppercase;
+                letter-spacing: 0.5px;
+                margin-bottom: 4px;
+            }
+            .metric-value {
+                font-size: 20px;
+                font-weight: 600;
+                color: #f7f8f9;
+            }
+            #MainMenu {visibility: hidden;}
+            footer {visibility: hidden;}
+        </style>
+    """,
+        unsafe_allow_html=True,
+    )
+
+def render_metrics_row(sys_info, metrics_data):
+    """Baris pertama: Kotak Informasi Sistem & Total Rules."""
+
+    audit_ratio = metrics_data.get("audit_ratio", "0 / 0")
+    hardening_ratio = metrics_data.get("hardening_ratio", "0 / 0")
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown(
+            f"""
+            <div class="grafana-panel">
+                <div class="metric-title">Informasi Sistem Operasi</div>
+                <div class="metric-value">{sys_info.get('os_platform', '')}</div>
+                <div style="font-size: 11px; color: #8e8f99; margin-top: 4px;">Arch: {sys_info.get('architecture', 'x86_64')}</div>
+            </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    with col2:
+        st.markdown(
+            f"""
+            <div class="grafana-panel">
+                <div class="metric-title">Total Audit (Berhasil / Total)</div>
+                <div class="metric-value">{audit_ratio} <span style="font-size:13px; color:#36a2eb;">(Compliant)</span></div>
+                <div style="font-size: 11px; color: #8e8f99; margin-top: 4px;">Status: Berdasarkan Katalog</div>
+            </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+    with col3:
+        st.markdown(
+            f"""
+            <div class="grafana-panel">
+                <div class="metric-title">Total Hardening (Berhasil / Total)</div>
+                <div class="metric-value">{hardening_ratio} <span style="font-size:13px; color:#4bc0c0;">(Applied)</span></div>
+                <div style="font-size: 11px; color: #8e8f99; margin-top: 4px;">Status: Standar CIS Benchmark</div>
+            </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
+def render_control_bar():
+    """Baris kedua: Tombol Refresh & Aksi Global."""
+    c_left, c_right = st.columns([1, 2])
+    
+    action_triggered = None
+
+    with c_left:
+        if st.button("🔄 Refresh Katalog", use_container_width=True):
+            st.cache_data.clear()
+            st.success("Katalog berhasil direfresh!")
+            st.rerun()
+
+    with c_right:
+        btn_col1, btn_col2, btn_col3 = st.columns(3)
+        with btn_col1:
+            if st.button("🚀 Audit All", use_container_width=True, type="primary"):
+                st.toast("Menjalankan seluruh prosedur Audit...", icon="ℹ️")
+        with btn_col2:
+            if st.button("🔒 Hardening All", use_container_width=True):
+                st.toast("Menerapkan seluruh konfigurasi Hardening...", icon="⚠️")
+        with btn_col3:
+            if st.button("🔄 Rollback All", use_container_width=True):
+                st.toast("Mengembalikan konfigurasi sistem (Rollback)...", icon="🔄")
+
+    st.markdown("<br>", unsafe_allow_html=True)
+
+
+def render_catalog_table(catalog_list, total_items):
+  """Merender tabel katalog interaktif dengan pagination, tata letak kolom kustom,
+
+  dan tombol aksi bersyarat (Audit, Hardening, Rollback, Detail) berdasarkan nilai audit_only.
+  """
+  st.markdown("#### 📋 Katalog Rules Keamanan Sistem & Aksi Eksekusi")
+
+  items_per_page = 10
+  total_pages = math.ceil(total_items / items_per_page) if total_items > 0 else 1
+
+  if "page_num" not in st.session_state:
+    st.session_state.page_num = 1
+
+  # Navigasi Pagination di Bagian Atas
+  nav_col1, _, nav_col3 = st.columns([2, 6, 2])
+  with nav_col1:
+    current_page = st.number_input(
+        "Halaman",
+        min_value=1,
+        max_value=max(1, total_pages),
+        value=st.session_state.page_num,
+        step=1,
+    )
+    st.session_state.page_num = current_page
+
+  with nav_col3:
+    st.markdown(
+        f"<div style='text-align: right; padding-top: 28px; color: #8e8f99;"
+        f" font-size: 13px;'>Total: {total_items} rules</div>",
+        unsafe_allow_html=True,
+    )
+
+  st.markdown("---")
+
+  if not catalog_list:
+    st.info(
+        "Belum ada data katalog. Pastikan backend API aktif atau lakukan sinkronisasi."
+    )
+    return
+
+  # Render Header Tabel Kustom (Agar selaras dengan kolom data di bawahnya)
+  header_cols = st.columns([1, 1.2, 3, 1.2, 1.2, 2.5])
+  with header_cols[0]:
+    st.markdown("**ID**")
+  with header_cols[1]:
+    st.markdown("**Kode CIS**")
+  with header_cols[2]:
+    st.markdown("**Judul & Nama Rule**")
+  with header_cols[3]:
+    st.markdown("**Kategori**")
+  with header_cols[4]:
+    st.markdown("**Status Audit**")
+  with header_cols[5]:
+    st.markdown("**Aksi**")
+
+  st.markdown("---")
+
+  # Render Baris Data Katalog Secara Interaktif
+  for idx, item in enumerate(catalog_list):
+    rule_id = item.get("id")
+    kode_cis = item.get("kode_cis")
+    cis_judul = item.get("cis_judul", "-")
+    nama_rule = item.get("nama", "-")
+    kategori = item.get("kategori", "-")
+    status_audit = item.get("status_audit", "Pending")
+    audit_only = bool(item.get("audit_only", False))
+
+    row_cols = st.columns([1, 1.2, 3, 1.2, 1.2, 2.5])
+
+    # Kolom 1: ID
+    with row_cols[0]:
+      st.markdown(f"<p style='padding-top: 10px;'>{rule_id}</p>", unsafe_allow_html=True)
+
+    # Kolom 2: Kode CIS
+    with row_cols[1]:
+      st.markdown(f"<p style='padding-top: 10px;'>{kode_cis}</p>", unsafe_allow_html=True)
+
+    # Kolom 3: CIS Judul [enter] Nama Rule
+    with row_cols[2]:
+      st.markdown(
+          f"<div style='font-size: 13px; font-weight: 600; color: #f7f8f9;'>{cis_judul}</div>"
+          f"<div style='font-size: 12px; color: #8e8f99; margin-top: 2px;'>{nama_rule}</div>",
+          unsafe_allow_html=True,
+      )
+
+    # Kolom 4: Kategori
+    with row_cols[3]:
+      st.markdown(f"<p style='padding-top: 10px;'>{kategori}</p>", unsafe_allow_html=True)
+
+    # Kolom 5: Status Audit dalam bentuk label (Badge warna dinamis)
+    with row_cols[4]:
+      color_map = {
+          "COMPLIANT": "#28a745",
+          "NON_COMPLIANT": "#dc3545",
+          "PENDING": "#ffc107",
+          "SKIPPED": "#17a2b8",
+      }
+      badge_color = color_map.get(status_audit.upper(), "#6c757d")
+      st.markdown(
+          f"<div style='padding-top: 8px;'><span style='background-color: {badge_color}; color: white; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;'>{status_audit}</span></div>",
+          unsafe_allow_html=True,
+      )
+
+    # Kolom 6: Tombol Aksi (Audit, Hardening, Rollback, Detail / Audit & Detail jika audit_only)
+    with row_cols[5]:
+      if audit_only:
+        # Jika audit_only = true, tampilkan 2 tombol saja
+        b_col1, b_col2 = st.columns(2)
+        with b_col1:
+          if st.button("🔍 Audit", key=f"audit_{rule_id}_{idx}", use_container_width=True):
+            st.toast(f"Menjalankan Audit untuk {rule_id}...", icon="ℹ️")
+            # Tambahkan logika request ke API audit single rule di sini
+        with b_col2:
+          if st.button("📄 Detail", key=f"detail_{rule_id}_{idx}", use_container_width=True):
+            st.toast(f"Melihat detail untuk {rule_id}...", icon="📋")
+            # Tambahkan logika modal/ekspansi detail di sini
+      else:
+        # Jika audit_only = false, tampilkan 4 tombol lengkap
+        b_col1, b_col2, b_col3, b_col4 = st.columns(4)
+        with b_col1:
+          if st.button("🔍", key=f"audit_{rule_id}_{idx}", use_container_width=True, help="Audit"):
+            st.toast(f"Audit {rule_id}", icon="ℹ️")
+        with b_col2:
+          if st.button("🔒", key=f"hard_{rule_id}_{idx}", use_container_width=True, help="Hardening"):
+            st.toast(f"Hardening {rule_id}", icon="⚠️")
+        with b_col3:
+          if st.button("🔄", key=f"roll_{rule_id}_{idx}", use_container_width=True, help="Rollback"):
+            st.toast(f"Rollback {rule_id}", icon="🔄")
+        with b_col4:
+          if st.button("📄", key=f"det_{rule_id}_{idx}", use_container_width=True, help="Detail"):
+            st.toast(f"Detail {rule_id}", icon="📋")
+
+    st.markdown("<hr style='margin: 4px 0px; border-color: #2d2f3d;'>", unsafe_allow_html=True)
+
+  # Indikator Halaman di Bawah
+  st.markdown(
+      f"<p style='text-align: center; color: #8e8f99; font-size: 12px; margin-top: 15px;'>Halaman {st.session_state.page_num} dari {total_pages}</p>",
+      unsafe_allow_html=True,
+  )
