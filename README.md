@@ -68,6 +68,7 @@ Salin (clone) repository ini ke komputer Anda, lalu masuk ke direktori proyek:
 ```bash
 git clone https://github.com/rahardian-dwi-saputra/yoru-agent.git
 cd yoru-agent
+mv setup/yoru-agent.txt setup/yoru-agent.sudoers
 ```
 ### 2. Jalankan Instalasi Otomatis
 Yoru-Agent menyediakan skrip instalasi otomatis untuk menyiapkan system user khusus (`yoru-agent`), konfigurasi keamanan sudoers berbasis prinsip least privilege, pembuatan Python virtual environment, serta generation API Key secara aman.
