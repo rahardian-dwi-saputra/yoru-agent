@@ -16,7 +16,8 @@ JOURNALD_DROPIN_DIR = Path("/etc/systemd/journald.conf.d")
 JOURNAL_LOG_DIR = Path("/var/log/journal")
 SYSCTL_CONF = Path("/etc/sysctl.d/60-cis-icmp-broadcast.conf")
 
-# Daftar Layanan
+# Daftar Nama Layanan
+SSH_SERVICE_NAME = "ssh"
 JOURNALD_SERVICE_NAME = "systemd-journald"
 
 # Daftar shell yang tidak valid / dibatasi untuk akses login

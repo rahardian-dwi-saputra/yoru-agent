@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import List, Optional, TextIO, Tuple, Union
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import fcntl
 import json
@@ -12,7 +12,16 @@ import uuid
 import shutil
 import filecmp
 
-from config.settings import SSHD_CONFIG, INVALID_SHELLS, SSH_BACKUP_DIR, JOURNALD_CONFIG, JOURNALD_BACKUP_DIR
+from config.settings import (
+    SSHD_CONFIG,
+    SSH_SERVICE_NAME, 
+    INVALID_SHELLS, 
+    SSH_BACKUP_DIR, 
+    JOURNALD_CONFIG, 
+    JOURNALD_BACKUP_DIR,
+    JOURNALD_SERVICE_NAME
+)
+
 
 class BaseLogger:
     def __init__(
@@ -51,9 +60,9 @@ class BaseLogger:
             priority = "daemon.info"
             
             if level in ["ERROR", "FAILED"]:
-                priority = "daemon.err"     # Menggunakan daemon.err untuk kesalahan fatal / kegagalan
+                priority = "daemon.err"
             elif level in ["WARNING"]:
-                priority = "daemon.warning" # Untuk peringatan
+                priority = "daemon.warning" 
             elif level in ["SUCCESS", "COMPLIANT"]:
                 priority = "daemon.notice"  # Untuk hasil sukses atau compliant yang positif
             elif level in ["NON_COMPLIANT"]:
@@ -108,6 +117,33 @@ class BaseLogger:
         )
 
 
+def acquire_lock(lock_name: str, logger: BaseLogger | None = None) -> Optional[TextIO]:
+    """Mengambil lock eksklusif non-blocking berdasarkan nama lock."""
+    lock_path = Path(f"/tmp/{lock_name}.lock")
+    try:
+        lock_file = open(lock_path, "w")
+        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return lock_file
+    except (BlockingIOError, OSError):
+        if logger:
+            logger.log(
+                "SKIPPED",
+                "Result",
+                f"Proses audit/remediasi '{lock_name}' sedang berjalan di proses lain. Eksekusi dibatalkan.",
+            )
+        sys.exit(0)
+
+
+def release_lock(lock_file_obj: Optional[TextIO]) -> None:
+    """Melepaskan lock dan menutup file handle."""
+    if lock_file_obj:
+        try:
+            fcntl.flock(lock_file_obj, fcntl.LOCK_UN)
+            lock_file_obj.close()
+        except Exception:
+            pass
+
+
 def check_sshd_config_exists(
     logger: BaseLogger | None = None,
     config_path: Path = SSHD_CONFIG,
@@ -153,7 +189,7 @@ def create_ssh_backup(logger=None) -> tuple[bool, str]:
             return True, msg
 
         # Jika isi file BERUBAH, buat versioning timestamp baru sebagai arsip historis
-        timestamp_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         versioned_backup = SSH_BACKUP_DIR / f"sshd_config_{timestamp_str}.bak"
         shutil.copy2(SSHD_CONFIG, versioned_backup)
         
@@ -174,40 +210,16 @@ def create_ssh_backup(logger=None) -> tuple[bool, str]:
 
 def restart_ssh_service() -> bool:
     """Mencoba merestart service sshd atau ssh."""
-    for service in ["sshd", "ssh"]:
+    services_to_try = [SSH_SERVICE_NAME, "sshd", "ssh"]
+    services_to_try = list(dict.fromkeys(services_to_try))
+
+    for service in services_to_try:
         result = subprocess.run(
             ["systemctl", "restart", service], capture_output=True
         )
         if result.returncode == 0:
             return True
     return False
-
-
-def acquire_lock(lock_name: str, logger: BaseLogger | None = None) -> Optional[TextIO]:
-    """Mengambil lock eksklusif non-blocking berdasarkan nama lock."""
-    lock_path = Path(f"/tmp/{lock_name}.lock")
-    try:
-        lock_file = open(lock_path, "w")
-        fcntl.flock(lock_file, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return lock_file
-    except (BlockingIOError, OSError):
-        if logger:
-            logger.log(
-                "SKIPPED",
-                "Result",
-                f"Proses audit/remediasi '{lock_name}' sedang berjalan di proses lain. Eksekusi dibatalkan.",
-            )
-        sys.exit(0)
-
-
-def release_lock(lock_file_obj: Optional[TextIO]) -> None:
-    """Melepaskan lock dan menutup file handle."""
-    if lock_file_obj:
-        try:
-            fcntl.flock(lock_file_obj, fcntl.LOCK_UN)
-            lock_file_obj.close()
-        except Exception:
-            pass
 
 
 def get_non_root_users(
@@ -253,6 +265,7 @@ def check_journald_config_exists(
             )
         return False
     return True
+
 
 def parse_size_to_bytes(size_str: str) -> int:
     """
@@ -353,7 +366,7 @@ def restart_journald_service() -> bool:
     """
     try:
         res = subprocess.run(
-            ["systemctl", "restart", "systemd-journald"],
+            ["systemctl", "restart", JOURNALD_SERVICE_NAME],
             capture_output=True,
             text=True,
             check=False,

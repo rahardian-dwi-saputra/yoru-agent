@@ -37,8 +37,9 @@ if [ ! -f "$TEMPLATE_FILE" ]; then
   exit 1
 fi
 
-# Mengganti path placeholder /opt/yoru-agent dengan path asli proyek secara dinamis
-sed "s|/opt/yoru-agent|$PROJECT_DIR|g" "$TEMPLATE_FILE" > "$TARGET_FILE"
+# Mengganti path placeholder /opt/yoru-agent dengan path asli proyek secara dinamis,
+# sekaligus membersihkan karakter tersembunyi \r (CRLF format Windows) menggunakan tr/sed.
+sed "s|/opt/yoru-agent|$PROJECT_DIR|g" "$TEMPLATE_FILE" | tr -d '\r' > "$TARGET_FILE"
 
 # Atur perizinan file sudoers ke 440 (wajib agar dibaca oleh sudo)
 chmod 440 "$TARGET_FILE"

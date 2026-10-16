@@ -3,9 +3,7 @@ import json
 import subprocess
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-
 from config.api import CATALOGS_DIR
-
 from api.schemas.catalog import CatalogMetadata, CatalogResult
 
 

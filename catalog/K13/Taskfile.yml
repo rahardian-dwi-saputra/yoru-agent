@@ -41,6 +41,7 @@ tasks:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
   # 3. Rollback Akses File Log Journald (Mengembalikan izin akses ke kondisi awal)
+  rollback:
     desc: "Mengembalikan izin akses file log journald ke kondisi sebelum hardening"
     deps: [init-log-dir]
     cmds:

@@ -69,11 +69,6 @@ class HardeningConfirmRequest(BaseModel):
     )
 
 
-
-
-
-
-
 # Schema Khusus Rollback
 class RollbackInitRequest(BaseModel):
     catalogs: List[str] = Field(
