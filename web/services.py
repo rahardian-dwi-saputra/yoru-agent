@@ -1,6 +1,7 @@
 import sys
 import os
 import requests
+from datetime import datetime
 
 
 CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -11,10 +12,10 @@ if PROJECT_DIR not in sys.path:
 from config.api import API_HOST, API_PORT, API_KEY_PATH
 
 from database import (
-    DB_PATH,
     init_db,
     get_paginated_catalogs,
     save_or_update_catalogs,
+    update_execution_status,
     get_dashboard_metrics,
 )
 
@@ -120,6 +121,7 @@ def fetch_dashboard_metrics():
     return {
         "audit_ratio": "0 / 0",
         "hardening_ratio": "0 / 0",
+        "rollback_ratio": "0 / 0",
         "raw": {}
     }
 
@@ -147,3 +149,88 @@ def refresh_catalog_data():
     except Exception:
         pass
     return False
+
+
+def trigger_audit_all():
+    """Mengirim request POST /agent/audit untuk seluruh katalog ('ALL'),
+
+    lalu memperbarui status audit dan waktu audit menggunakan update_execution_status.
+    """
+    api_key = get_api_key()
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
+    payload = {"catalogs": ["ALL"]}
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/agent/audit", headers=headers, json=payload, timeout=30
+        )
+        if response.status_code == 200:
+            data = response.json()
+            results = data.get("results", [])
+
+            if results:
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                for res in results:
+                    catalog_id = res.get("catalog")
+                    log_data = res.get("log_data", {})
+                    
+                    if catalog_id and log_data:
+                        audit_level = log_data.get("level", "PENDING")
+                        
+                        # Memanggil fungsi database yang sudah ada
+                        update_execution_status(
+                            rule_id=catalog_id,
+                            action_type="audit",
+                            status=audit_level,
+                            timestamp=current_time
+                        )
+
+            return True, data.get("message", "Audit selesai diproses.")
+    except Exception as e:
+        pass
+    
+    return False, "Gagal menghubungi endpoint /agent/audit."
+
+
+def trigger_single_audit(rule_id: str):
+    """Mengirim request POST /agent/audit untuk satu katalog tertentu,
+
+    lalu memperbarui status audit dan waktu audit menggunakan update_execution_status.
+    """
+    api_key = get_api_key()
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
+    payload = {"catalogs": [rule_id]}
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/agent/audit", headers=headers, json=payload, timeout=30
+        )
+        if response.status_code == 200:
+            data = response.json()
+            results = data.get("results", [])
+
+            if results:
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+                for res in results:
+                    catalog_id = res.get("catalog")
+                    log_data = res.get("log_data", {})
+                    
+                    if catalog_id and log_data:
+                        audit_level = log_data.get("level", "PENDING")
+                        
+                        update_execution_status(
+                            rule_id=catalog_id,
+                            action_type="audit",
+                            status=audit_level,
+                            timestamp=current_time
+                        )
+
+            return True, data.get(
+                "message", f"Audit untuk rule {rule_id} selesai diproses."
+            )
+    except Exception:
+        pass
+    
+    return False, f"Gagal menjalankan audit untuk rule {rule_id}."

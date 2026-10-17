@@ -1,6 +1,6 @@
 import math
 import streamlit as st
-from services import refresh_catalog_data
+from services import refresh_catalog_data, trigger_audit_all, trigger_single_audit
 
 
 def render_styles():
@@ -101,29 +101,39 @@ def render_control_bar():
     """Baris kedua: Tombol Refresh & Aksi Global."""
     c_left, c_right = st.columns([1, 2])
     
-    action_triggered = None
+    
 
     with c_left:
-        if st.button("🔄 Refresh Katalog", use_container_width=True):
-            st.cache_data.clear()
+      if st.button("🔄 Refresh Katalog", use_container_width=True):
+        st.cache_data.clear()
 
-            success = refresh_catalog_data()
+        success = refresh_catalog_data()
 
-            if success:
-              st.success("Data katalog berhasil diperbarui")
-            else:
-              st.warning("Gagal memperbarui dari API (menggunakan data lokal)")
+        if success:
+          st.success("Data katalog berhasil diperbarui")
+        else:
+          st.warning("Gagal memperbarui dari API (menggunakan data lokal)")
             
-            st.rerun()
+        st.rerun()
 
     with c_right:
         btn_col1, btn_col2, btn_col3 = st.columns(3)
+
         with btn_col1:
-            if st.button("🚀 Audit All", use_container_width=True, type="primary"):
-                st.toast("Menjalankan seluruh prosedur Audit...", icon="ℹ️")
+          if st.button("🚀 Audit All", use_container_width=True, type="primary"):
+            with st.spinner("Menjalankan seluruh prosedur Audit pada server..."):
+              success, message = trigger_audit_all()
+
+              if success:
+                st.success(f"Audit All Berhasil! {message}")
+                st.rerun()
+              else:
+                st.error(f"Gagal menjalankan Audit All: {message}")
+
         with btn_col2:
-            if st.button("🔒 Hardening All", use_container_width=True):
-                st.toast("Menerapkan seluruh konfigurasi Hardening...", icon="⚠️")
+          if st.button("🔒 Hardening All", use_container_width=True):
+            st.toast("Menerapkan seluruh konfigurasi Hardening...", icon="⚠️")
+
         with btn_col3:
             if st.button("🔄 Rollback All", use_container_width=True):
                 st.toast("Mengembalikan konfigurasi sistem (Rollback)...", icon="🔄")
@@ -244,8 +254,13 @@ def render_catalog_table(catalog_list, total_items):
         b_col1, b_col2 = st.columns(2)
         with b_col1:
           if st.button("🔍 Audit", key=f"audit_{rule_id}_{idx}", use_container_width=True):
-            st.toast(f"Menjalankan Audit untuk {rule_id}...", icon="ℹ️")
-            # Tambahkan logika request ke API audit single rule di sini
+            with st.spinner(f"Menjalankan Audit {rule_id}..."):
+              success, message = trigger_single_audit(rule_id)
+              if success:
+                st.success(f"Berhasil: {message}")
+                st.rerun()
+              else:
+                st.error(f"Gagal: {message}")
         with b_col2:
           if st.button("📄 Detail", key=f"detail_{rule_id}_{idx}", use_container_width=True):
             st.toast(f"Melihat detail untuk {rule_id}...", icon="📋")
@@ -255,7 +270,14 @@ def render_catalog_table(catalog_list, total_items):
         b_col1, b_col2, b_col3, b_col4 = st.columns(4)
         with b_col1:
           if st.button("🔍", key=f"audit_{rule_id}_{idx}", use_container_width=True, help="Audit"):
-            st.toast(f"Audit {rule_id}", icon="ℹ️")
+            with st.spinner(f"Menjalankan Audit {rule_id}..."):
+              from services import trigger_single_audit
+              success, message = trigger_single_audit(rule_id)
+              if success:
+                st.success(f"Berhasil: {message}")
+                st.rerun()
+              else:
+                st.error(f"Gagal: {message}")
         with b_col2:
           if st.button("🔒", key=f"hard_{rule_id}_{idx}", use_container_width=True, help="Hardening"):
             st.toast(f"Hardening {rule_id}", icon="⚠️")
