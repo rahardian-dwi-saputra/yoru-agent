@@ -64,7 +64,7 @@ def fetch_system_info():
     }
 
 
-def fetch_catalog_data():
+def fetch_catalog_data(page: int = 1, per_page: int = 10):
     """Menarik daftar katalog dari endpoint /catalogs dan menyimpannya ke database lokal."""
 
     api_key = get_api_key()
@@ -81,12 +81,13 @@ def fetch_catalog_data():
             data = response.json()
             catalogs_list = data.get("catalogs", [])
 
-            save_or_update_catalogs(catalogs_list)
+            if catalogs_list:
+                save_or_update_catalogs(catalogs_list)
 
     except Exception:
         pass
 
-    return get_paginated_catalogs()
+    return get_paginated_catalogs(page=page, per_page=per_page)
 
 def fetch_dashboard_metrics():
     """Mengambil metrik statistik dari database lokal dan memformatnya
@@ -116,3 +117,27 @@ def fetch_dashboard_metrics():
         "hardening_ratio": "0 / 0",
         "raw": {}
     }
+
+def refresh_catalog_data():
+    """Memaksa penarikan data katalog terbaru dari endpoint /catalogs
+
+    dan memperbarui database lokal SQLite. Mengembalikan True jika berhasil.
+    """
+    api_key = get_api_key()
+    headers = {}
+    if api_key:
+        headers["X-API-Key"] = api_key
+
+    try:
+        response = requests.get(
+            f"{API_BASE_URL}/catalogs", headers=headers, timeout=5
+        )
+        if response.status_code == 200:
+            data = response.json()
+            catalogs_list = data.get("catalogs", [])
+            if catalogs_list:
+                save_or_update_catalogs(catalogs_list)
+                return True
+    except Exception:
+        pass
+    return False

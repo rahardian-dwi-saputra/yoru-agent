@@ -1,5 +1,7 @@
 import math
 import streamlit as st
+from services import refresh_catalog_data
+
 
 def render_styles():
     """Memuat kustomisasi CSS tema Grafana."""
@@ -43,8 +45,9 @@ def render_metrics_row(sys_info, metrics_data):
 
     audit_ratio = metrics_data.get("audit_ratio", "0 / 0")
     hardening_ratio = metrics_data.get("hardening_ratio", "0 / 0")
+    rollback_ratio = metrics_data.get("rollback_ratio", "0 / 0")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         st.markdown(
@@ -82,6 +85,18 @@ def render_metrics_row(sys_info, metrics_data):
             unsafe_allow_html=True,
         )
 
+    with col4:
+        st.markdown(
+            f"""
+            <div class="grafana-panel">
+                <div class="metric-title">Total Rollback (Berhasil / Total)</div>
+                <div class="metric-value">{rollback_ratio} <span style="font-size:13px; color:#ff6384;">(Restored)</span></div>
+                <div style="font-size: 11px; color: #8e8f99; margin-top: 4px;">Status: Pemulihan Sistem</div>
+            </div>
+        """,
+            unsafe_allow_html=True,
+        )
+
 def render_control_bar():
     """Baris kedua: Tombol Refresh & Aksi Global."""
     c_left, c_right = st.columns([1, 2])
@@ -91,7 +106,14 @@ def render_control_bar():
     with c_left:
         if st.button("🔄 Refresh Katalog", use_container_width=True):
             st.cache_data.clear()
-            st.success("Katalog berhasil direfresh!")
+
+            success = refresh_catalog_data()
+
+            if success:
+              st.success("Data katalog berhasil diperbarui")
+            else:
+              st.warning("Gagal memperbarui dari API (menggunakan data lokal)")
+            
             st.rerun()
 
     with c_right:
@@ -131,8 +153,11 @@ def render_catalog_table(catalog_list, total_items):
         max_value=max(1, total_pages),
         value=st.session_state.page_num,
         step=1,
+        key="page_input_num",
     )
-    st.session_state.page_num = current_page
+    if current_page != st.session_state.page_num:
+      st.session_state.page_num = current_page
+      st.rerun()
 
   with nav_col3:
     st.markdown(

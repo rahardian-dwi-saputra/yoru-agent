@@ -7,7 +7,7 @@ from components import (
 )
 from services import fetch_catalog_data, fetch_system_info, fetch_dashboard_metrics
 
-# 1. Konfigurasi Halaman
+
 st.set_page_config(
     page_title="Yoru-Agent Security Dashboard",
     page_icon="🛡️",
@@ -15,23 +15,22 @@ st.set_page_config(
     initial_sidebar_state="collapsed",
 )
 
-# 2. Muat Kustomisasi Tema Grafana
 render_styles()
 
-# 3. Header Dashboard
 st.markdown("### 🛡️ Yoru-Agent Dashboard — Infrastructure Hardening Control Plane")
 st.markdown("---")
 
-# 4. Ambil Data (Cached via Services)
+if "page_num" not in st.session_state:
+  st.session_state.page_num = 1
+
 sys_info = fetch_system_info()
-catalog_list = fetch_catalog_data()
+catalog_list, total_items = fetch_catalog_data(
+    page=st.session_state.page_num, per_page=10
+)
 dashboard_metrics = fetch_dashboard_metrics()
 
-# 5. Render Baris 1: Informasi Sistem & Metrics
 render_metrics_row(sys_info, dashboard_metrics)
 
-# 6. Render Baris 2: Tombol Kontrol & Aksi
 render_control_bar()
 
-# 7. Render Baris 3: Tabel Katalog dengan Pagination
-render_catalog_table(catalog_list)
+render_catalog_table(catalog_list, total_items)
