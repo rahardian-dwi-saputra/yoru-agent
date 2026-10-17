@@ -102,6 +102,8 @@ sequenceDiagram
     Web->>Admin: Render Dashboard & Tabel dengan Badge Status Presisi
 ```
 
+---
+
 ### 3. 🛠️ Core Components & Responsibilities
 
 | Komponen | Teknologi | Tanggung Jawab Utama |
@@ -111,43 +113,40 @@ sequenceDiagram
 | Execution Engine | Hermes Agent, Taskfile, Python | Mengeksekusi source code modular yang telah didefinisikan sebelumnya untuk setiap rule CIS Benchmark secara langsung di Ubuntu Server. |
 | Security & Compliance | CIS Benchmarks, SQLite | Menjaga integritas sistem dengan mekanisme Two-Step Execution (Init Plan -> Konfirmasi) khusus untuk aksi perubahan sistem (Hardening dan Rollback). |
 
+---
 
-## Requirement
-Sebelum menjalankan proyek pastikan di komputer anda sudah terinstall:
-- [Hermes Agent](https://github.com/nousresearch/hermes-agent)
-- Open SSH Server
-- Dependensi: `python3-venv`
+## 📋 Persyaratan
+Sebelum memulai, pastikan komputer atau server Anda memenuhi persyaratan berikut:
+- **Sistem operasi:** Ubuntu atau Debian.
+- **Python:** Versi 3.10 atau lebih baru.
+- **Hermes Agent:** Sudah terpasang. Ikuti panduan di repositori [Hermes Agent](https://github.com/nousresearch/hermes-agent).
+- **Task CLI (Taskfile):** Sudah terpasang jika diperlukan oleh proyek.
+- **Dependensi Python:** `python3-venv`, untuk membuat lingkungan Python terpisah.
+- **Hak akses administrator:** Akun dengan akses sudo untuk memasang dan mengonfigurasi sistem.
+
+**Catatan:** Pastikan Anda memahami perintah yang dijalankan dengan sudo, karena perintah tersebut dapat mengubah konfigurasi sistem.
 
 ---
 
 ## 🚀 Panduan Instalasi (Quick Start)
 Ikuti langkah-langkah berikut untuk memasang dan menjalankan **Yoru-Agent** di server Ubuntu/Debian Anda.
 
-### Prasyarat Sistem
-* Python 3.10 atau versi di atasnya
-* Task CLI (`taskfile`) terinstal di sistem
-* Hak akses `sudo` (root)
-
 ### 1. Unduh Proyek (Clone Repository)
 Salin (clone) repository ini ke komputer Anda, lalu masuk ke direktori proyek:
 ```bash
 git clone https://github.com/rahardian-dwi-saputra/yoru-agent.git
 cd yoru-agent
-mv setup/yoru-agent.txt setup/yoru-agent.sudoers
-sudo bash setup/uninstall.sh
 ```
 ### 2. Jalankan Instalasi Otomatis
-Yoru-Agent menyediakan skrip instalasi otomatis untuk menyiapkan system user khusus (`yoru-agent`), konfigurasi keamanan sudoers berbasis prinsip least privilege, pembuatan Python virtual environment, serta generation API Key secara aman.
+Jalankan perintah berikut untuk memulai instalasi otomatis:
 ```bash
 sudo bash install.sh
 ```
 Skrip ini akan secara otomatis:
 1. Membuat dan mengkonfigurasi system user `yoru-agent`.
 2. Mendaftarkan hak akses sudoers terbatas untuk utilitas kernel, firewall, dan system service.
-3. Membuat Python virtual environment di dalam folder `api/venv/`.
+3. Membuat Python virtual environment di dalam folder `venv/`.
 4. Men-generate dan mengamankan API Key rahasia (`api/key.txt`) dengan izin akses ketat (`chmod 600`).
-
-
 
 ### 3. Masuk sebagai User `yoru-agent`
 Skrip setup otomatis membuat pengguna sistem baru bernama `yoru-agent`. Beralihlah ke pengguna tersebut untuk menjalankan aplikasi:
@@ -158,8 +157,7 @@ sudo su - yoru-agent
 Pindah ke direktori api yang berada di dalam folder proyek Anda:
 > Catatan: Ganti (nama-user-lama) dengan nama username utama komputer Anda sebelumnya tempat folder proyek diunduh.
 ```bash
-sudo chown -R yoru-agent:yoru-agent /home/(nam-user-lama)/yoru-agent
-cd /home/(nama-user-lama)/yoru-agent/api
+cd /home/(nama-user-lama)/yoru-agent
 ```
 
 ### 5. Aktifkan Virtual Environment & Jalankan Server API
@@ -170,25 +168,64 @@ uvicorn main:app --host 0.0.0.0 --port 8000
 python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
 ```
 
-## ⚙️ Cara Menjalankan Agen & API
-### Menjalankan FastAPI Server
-Setelah instalasi selesai, Anda dapat mengaktifkan virtual environment dan menjalankan server FastAPI:
+## ⚙️ Menjalankan Yoru-Agent
+Yoru-Agent memiliki dua komponen yang perlu dibedakan: server API dan antarmuka aplikasi.
+
+### 1. Menjalankan Server API
+Server API menggunakan FastAPI untuk menangani permintaan dari aplikasi. Pastikan Anda berada di direktori proyek dan lingkungan Python sudah aktif. Jalankan server sesuai struktur aplikasi Anda.
+
 ```bash
 source api/venv/bin/activate
 python3 api/main.py
 streamlit run app.py
 ```
 
-### Memantau Log Aktivitas Sistem (OS-Level Audit Trail)
-Yoru-Agent terintegrasi secara langsung dengan Linux System Journal (journalctl). Anda dapat memantau seluruh aktivitas audit, hardening, atau rollback secara real-time menggunakan perintah:
+### 2. Menjalankan Antarmuka Aplikasi
+Jika proyek menggunakan Streamlit sebagai antarmuka pengguna, buka terminal lain, masuk ke direktori proyek, lalu aktifkan virtual environment yang sama. Jalankan:
+```bash
+streamlit run app.py
+```
+
+---
+
+## 📊 Memantau Log Aktivitas (OS-Level Audit Trail)
+Yoru-Agent menggunakan journalctl untuk membaca catatan aktivitas sistem yang dikirim ke Linux System Journal (journalctl). 
+
+### 1. Memantau Log Secara Langsung
+Anda dapat memantau seluruh aktivitas audit, hardening, atau rollback secara real-time menggunakan perintah:
 ```bash
 journalctl -t yoru-agent -f
 ```
+Perintah ini akan terus menampilkan log saat ada aktivitas baru. Untuk berhenti memantau, tekan `Ctrl + C`.
+
+### 2. Melihat 20 Log Terakhir
 Untuk melihat 20 log terakhir yang dicatat oleh Yoru-Agent gunakan perintah berikut:
 ```bash
 journalctl -t yoru-agent -n 20 --no-pager
 ```
+
+### 3. Melihat Log Peringatan dan Kesalahan
 Melihat log khusus yang berstatus FAILED atau ERROR saja:
 ```bash
 journalctl -t yoru-agent -p warning
 ```
+
+---
+
+## 🗑️ Menghapus Yoru-Agent
+Jika ingin menghapus Yoru-Agent, ikuti langkah berikut.
+
+### 1. Jalankan Skrip Uninstall
+Skrip uninstall berada di folder setup. Dari direktori utama proyek, jalankan:
+```bash
+sudo bash setup/uninstall.sh
+```
+Skrip ini digunakan untuk menghapus konfigurasi yang dikelola oleh proses instalasi.
+
+### 2. Hapus Folder Proyek
+Setelah proses uninstall selesai, Anda dapat menghapus folder proyek jika sudah tidak diperlukan. Kembali ke direktori induk proyek terlebih dahulu, kemudian jalankan perintah dengan lokasi folder yang benar. Contohnya:
+```bash
+cd /home/NAMA_USER
+sudo rm -rf yoru-agent
+```
+Ganti NAMA_USER dengan nama pengguna Linux yang sesuai.
