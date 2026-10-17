@@ -89,6 +89,7 @@ def fetch_catalog_data(page: int = 1, per_page: int = 10):
 
     return get_paginated_catalogs(page=page, per_page=per_page)
 
+
 def fetch_dashboard_metrics():
     """Mengambil metrik statistik dari database lokal dan memformatnya
 
@@ -102,10 +103,14 @@ def fetch_dashboard_metrics():
         
         total_hardening_roles = metrics.get("total_hardening_roles", 0)
         total_hardening_berhasil = metrics.get("total_hardening_berhasil", 0)
+
+        total_rollback_roles = metrics.get("total_rollback_roles", 0)
+        total_rollback_berhasil = metrics.get("total_rollback_berhasil", 0)
         
         return {
             "audit_ratio": f"{total_audit_berhasil} / {total_audit_roles}",
             "hardening_ratio": f"{total_hardening_berhasil} / {total_hardening_roles}",
+            "rollback_ratio": f"{total_rollback_berhasil} / {total_rollback_roles}",
             "raw": metrics
         }
     except Exception:
@@ -117,6 +122,7 @@ def fetch_dashboard_metrics():
         "hardening_ratio": "0 / 0",
         "raw": {}
     }
+
 
 def refresh_catalog_data():
     """Memaksa penarikan data katalog terbaru dari endpoint /catalogs

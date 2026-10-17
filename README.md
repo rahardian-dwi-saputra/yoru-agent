@@ -45,6 +45,71 @@ Yoru-agent menggunakan katalog berikut untuk melakukan audit dan hardening keama
 - Audit & Hardening: Sistem memeriksa konfigurasi dan dapat menerapkan perbaikan otomatis sesuai kebijakan.
 - Audit Only: Sistem hanya memeriksa dan melaporkan hasil tanpa mengubah konfigurasi server.
 
+## 📄 Product Requirement Document (PRD): Yoru-Agent
+> **Automated Ubuntu Server Hardening, Auditing & Rollback Platform with Human-in-the-Loop & Local Persistence**
+
+---
+
+### 1. 🎯 Overview & Objectives
+**Yoru-Agent** adalah sistem otomatisasi keamanan berbasis *CIS Benchmarks* untuk sistem operasi Ubuntu Server. Sistem ini dirancang secara modular menggunakan arsitektur pemisahan layanan antara **FastAPI Backend**, **Streamlit Web Dashboard** (dengan *local SQLite caching*), dan **Hermes Agent** sebagai *executor* di level sistem.
+
+---
+
+### 2. 🔄 System Architecture & Workflow Diagram
+
+Berikut adalah alur proses (*Workflow*) dari interaksi pengguna melalui web dashboard hingga eksekusi perintah oleh Hermes Agent di server:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as Administrator (Web UI)
+    participant Web as Streamlit Dashboard (web_cache.db)
+    participant API as FastAPI Backend (/api/v1)
+    participant Hermes as Hermes Agent (Executor)
+    participant OS as Ubuntu Server (CIS Benchmarks)
+
+    Note over Admin, OS: 1. Inisialisasi & Sinkronisasi Katalog
+    Admin->>Web: Akses Dashboard / Klik "Refresh Katalog"
+    Web->>API: GET /catalogs (with X-API-Key)
+    API-->>Web: Return JSON Katalog Rules & Metadata
+    Web->>Web: Upsert Data ke SQLite Lokal (web_cache.db)
+
+    Note over Admin, OS: 2. Eksekusi Aksi (Audit / Hardening / Rollback)
+    alt Aksi Audit (Direct Execution)
+        Admin->>Web: Klik Tombol "Audit" (Per Rule / All)
+        Web->>API: POST /audit/rule_id (or /audit/all)
+        API->>Hermes: Trigger Script Audit yang Telah Didefinisikan
+        Hermes->>OS: Jalankan Pemeriksaan CIS Benchmark
+        OS-->>Hermes: Return Status (COMPLIANT / NON_COMPLIANT)
+        Hermes-->>API: Update Status & Timestamp
+        API-->>Web: Response Success
+    else Aksi Hardening / Rollback (Human-in-the-Loop / Plan-Confirm)
+        Admin->>Web: Klik Tombol "Hardening" / "Rollback"
+        Web->>API: POST /hardening/init-plan (Buat Rencana Eksekusi)
+        API-->>Web: Return Execution Plan Preview
+        Admin->>Web: Review & Berikan Konfirmasi
+        Web->>API: POST /hardening/confirm (Eksekusi Nyata)
+        API->>Hermes: Eksekusi Source Code Hardening/Rollback
+        Hermes->>OS: Terapkan / Pulihkan Konfigurasi Sistem
+        OS-->>Hermes: Return Status (SUCCESS / SKIPPED / FAILED)
+        Hermes-->>API: Update Status & Timestamp
+        API-->>Web: Response Success
+    end
+
+    Note over Admin, OS: 3. Pelaporan Hasil Real-Time
+    Web->>API: Fetch Metrics & Status Terbaru
+    API-->>Web: Return Data Statistik (Rasio Audit, Hardening, Rollback)
+    Web->>Admin: Render Dashboard & Tabel dengan Badge Status Presisi
+```
+
+### 3. 🛠️ Core Components & Responsibilities
+
+| Komponen | Teknologi | Tanggung Jawab Utama |
+| --- | --- | --- |
+| Frontend Dashboard | Streamlit, Python | Menampilkan metrik grafana-style (Rasio Audit, Hardening, Rollback), tabel data paginasi, tombol aksi bersyarat (`audit_only`), serta caching lokal via `sqlite3` (`web_cache.db`). |
+| Backend API | FastAPI, Python | Menyediakan RESTful API yang dilindungi otentikasi `X-API-Key`, mengelola endpoint katalog, manajemen plan, dan koordinasi eksekusi. |
+| Execution Engine | Hermes Agent, Taskfile, Python | Mengeksekusi source code modular yang telah didefinisikan sebelumnya untuk setiap rule CIS Benchmark secara langsung di Ubuntu Server. |
+| Security & Compliance | CIS Benchmarks, SQLite | Menjaga integritas sistem dengan mekanisme Two-Step Execution (Init Plan -> Konfirmasi) khusus untuk aksi perubahan sistem (Hardening dan Rollback). |
 
 
 ## Requirement
