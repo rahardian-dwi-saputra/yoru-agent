@@ -1,13 +1,18 @@
 import math
 import streamlit as st
+from datetime import datetime
 from services import (
   refresh_catalog_data, 
   trigger_audit_all, 
   trigger_single_audit,
   init_hardening_all,
   init_single_hardening,
-  confirm_hardening_plan
+  confirm_hardening_plan,
+  init_rollback_all,
+  init_single_rollback,
+  confirm_rollback_plan
 )
+from database import get_catalog_detail
 
 
 def render_styles():
@@ -225,6 +230,162 @@ def show_single_hardening_modal(rule_id, plan_data):
       st.rerun()
 
 
+@st.dialog("🔄 Konfirmasi Rollback All")
+def show_rollback_all_confirmation_modal(plan_data):
+  message = plan_data.get("message", "Apakah Anda yakin ingin menjalankan aksi rollback untuk seluruh katalog?")
+  plans_list = plan_data.get("plans", [])
+    
+  plan_id = plans_list[0].get("plan_id") if plans_list else None
+  expires_at = plans_list[0].get("expires_at") if plans_list else "-"
+  catalogs_affected = plans_list[0].get("catalogs", [])
+
+  st.markdown(f"**Pesan Sistem:**\n> {message}")
+  st.markdown(f"- **Plan ID:** `{plan_id}`")
+  st.markdown(f"- **Total Katalog Terdampak:** `{len(catalogs_affected)} rules`")
+  st.markdown(f"- **Kedaluwarsa:** `{expires_at}`")
+    
+  st.markdown("---")
+  st.warning("Aksi ini akan mengembalikan konfigurasi sistem server ke kondisi semula. Lanjutkan?")
+
+  col_yes, col_no = st.columns(2)
+    
+  with col_yes:
+    if st.button("✅ Iya, Lanjutkan", key="rollback_all_yes", use_container_width=True, type="primary"):
+      if plan_id:        
+        success, response = confirm_rollback_plan(plan_id, approved=True)
+        if success:
+          st.success(response.get("message", "Rollback selesai diproses."))
+          st.rerun()
+        else:
+          st.error(response.get("message", "Gagal mengeksekusi rollback."))
+      else:
+        st.error("Plan ID tidak ditemukan.")
+
+    with col_no:
+      if st.button("❌ Tidak, Batalkan", key="rollback_all_no", use_container_width=True):
+        if plan_id:
+          success, response = confirm_rollback_plan(plan_id, approved=False)
+          if success and response.get("status") == "REJECTED":
+            st.warning(response.get("message", "Permintaan rollback ditolak oleh user."))
+          else:
+            st.warning("Rollback All dibatalkan.")
+        else:
+          st.warning("Rollback All dibatalkan.")
+        st.rerun()
+
+
+@st.dialog("🔄 Konfirmasi Single Rollback")
+def show_single_rollback_modal(rule_id, plan_data):
+  message = plan_data.get("message", f"Apakah Anda yakin ingin melakukan rollback untuk rule {rule_id}?")
+  plans_list = plan_data.get("plans", [])
+    
+  plan_id = plans_list[0].get("plan_id") if plans_list else None
+  expires_at = plans_list[0].get("expires_at") if plans_list else "-"
+
+  st.markdown(f"**Rule ID:** `{rule_id}`")
+  st.markdown(f"**Pesan Sistem:**\n> {message}")
+  st.markdown(f"- **Plan ID:** `{plan_id}`")
+  st.markdown(f"- **Kedaluwarsa:** `{expires_at}`")
+    
+  st.markdown("---")
+  st.warning("Aksi ini akan mengembalikan konfigurasi sistem spesifik ke kondisi semula. Lanjutkan?")
+
+  col_yes, col_no = st.columns(2)
+    
+  with col_yes:
+    if st.button("✅ Iya, Lanjutkan", key=f"rollback_yes_{rule_id}", use_container_width=True, type="primary"):
+      if plan_id:       
+        success, response = confirm_rollback_plan(plan_id=plan_id, approved=True, catalog=rule_id)
+        if success:
+          st.success(response.get("message", f"Rollback rule {rule_id} selesai diproses."))
+          st.rerun()
+        else:
+          st.error(response.get("message", "Gagal mengeksekusi rollback."))
+      else:
+        st.error("Plan ID tidak ditemukan.")
+
+  with col_no:
+    if st.button("❌ Tidak, Batalkan", key=f"rollback_no_{rule_id}", use_container_width=True):
+      if plan_id:       
+        success, response = confirm_rollback_plan(plan_id=plan_id, approved=False, catalog=rule_id)
+        if success and response.get("status") == "REJECTED":
+          st.warning(response.get("message", "Permintaan rollback ditolak oleh user."))
+        else:
+          st.warning("Rollback dibatalkan.")
+      else:
+        st.warning("Rollback dibatalkan.")
+      st.rerun()
+
+
+@st.dialog("📄 Detail Katalog Rule")
+def show_catalog_detail_modal(rule_id):
+    detail = get_catalog_detail(rule_id)
+    
+    if not detail:
+        st.error(f"Data untuk rule {rule_id} tidak ditemukan.")
+        if st.button("Tutup"):
+            st.rerun()
+        return
+
+    raw_desc = detail.get('deskripsi', '-')
+    clean_desc = raw_desc.replace('\n', ' ') if raw_desc else '-'
+
+    audit_only_val = detail.get('audit_only', 0)
+    audit_only_label = "Iya" if audit_only_val in [1, "1", True, "true"] else "Tidak"
+
+    def format_timestamp(ts):
+      if not ts or ts == '-' or ts == 'None':
+        return '-'
+      try:    
+        dt = datetime.strptime(str(ts).split('.')[0], "%Y-%m-%d %H:%M:%S")
+        return dt.strftime("%d-%m-%Y %H:%M:%S")
+      except Exception:
+        return ts
+
+    w_audit = format_timestamp(detail.get('waktu_audit'))
+    w_hard = format_timestamp(detail.get('waktu_hardening'))
+    w_roll = format_timestamp(detail.get('waktu_rollback'))
+
+    st.markdown(f"### `{detail.get('id')}` - {detail.get('nama', '-')}")
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+      st.markdown(f"**Kode CIS:** `{detail.get('kode_cis', '-')}`")
+      st.markdown(f"**Kategori:** {detail.get('kategori', '-')}")
+      st.markdown(f"**Audit Only:** `{audit_only_label}`")
+    with col2:
+      st.markdown(f"**Risiko:** {detail.get('resiko', '-')}")
+      st.markdown(f"**CIS Judul:** {detail.get('cis_judul', '-')}")
+
+    st.markdown("---")
+    st.markdown("**Deskripsi:**")
+    st.markdown(
+        f"""<div style="text-align: justify; color: #cfd0d7; background-color: #1e1e24; padding: 10px; border-radius: 6px; font-size: 13px;">
+            {clean_desc}
+        </div>""",
+        unsafe_allow_html=True
+    )
+    
+    st.markdown("---")
+    st.markdown("**Status & Riwayat Eksekusi:**")
+    
+    status_col1, status_col2, status_col3 = st.columns(3)
+    with status_col1:
+      st.markdown(f"**Audit:** `{detail.get('status_audit', '-')}`")
+      st.markdown(f"<span style='font-size:11px; color:#8e8f99;'>Waktu: {w_audit}</span>", unsafe_allow_html=True)
+    with status_col2:
+      st.markdown(f"**Hardening:** `{detail.get('status_hardening', '-')}`")
+      st.markdown(f"<span style='font-size:11px; color:#8e8f99;'>Waktu: {w_hard}</span>", unsafe_allow_html=True)
+    with status_col3:
+      st.markdown(f"**Rollback:** `{detail.get('status_rollback', '-')}`")
+      st.markdown(f"<span style='font-size:11px; color:#8e8f99;'>Waktu: {w_roll}</span>", unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("Tutup", use_container_width=True):
+      st.rerun()
+
+
 def render_control_bar():
     """Baris kedua: Tombol Refresh & Aksi Global."""
     c_left, c_right = st.columns([1, 2])
@@ -267,8 +428,14 @@ def render_control_bar():
                 st.error(response.get("message", "Gagal menginisialisasi plan hardening."))
 
         with btn_col3:
-            if st.button("🔄 Rollback All", use_container_width=True):
-                st.toast("Mengembalikan konfigurasi sistem (Rollback)...", icon="🔄")
+          if st.button("🔄 Rollback All", use_container_width=True):
+            with st.spinner("Membuat plan rollback (/init)..."):
+              success, response = init_rollback_all()
+
+              if success and response.get("status") == "PENDING_APPROVAL":       
+                show_rollback_all_confirmation_modal(response)
+              else:
+                st.error(response.get("message", "Gagal menginisialisasi plan rollback."))
 
     st.markdown("<br>", unsafe_allow_html=True)
 
@@ -405,8 +572,7 @@ def render_catalog_table(catalog_list, total_items):
                 st.error(f"Gagal: {message}")
         with b_col2:
           if st.button("📄 Detail", key=f"detail_{rule_id}_{idx}", use_container_width=True):
-            st.toast(f"Melihat detail untuk {rule_id}...", icon="📋")
-            # Tambahkan logika modal/ekspansi detail di sini
+            show_catalog_detail_modal(rule_id)
       else:
         # Jika audit_only = false, tampilkan 4 tombol lengkap
         b_col1, b_col2, b_col3, b_col4 = st.columns(4)
@@ -431,10 +597,16 @@ def render_catalog_table(catalog_list, total_items):
 
         with b_col3:
           if st.button("🔄", key=f"roll_{rule_id}_{idx}", use_container_width=True, help="Rollback"):
-            st.toast(f"Rollback {rule_id}", icon="🔄")
+            with st.spinner(f"Membuat plan rollback untuk {rule_id}..."):
+              success, response = init_single_rollback(rule_id)
+              if success and response.get("status") == "PENDING_APPROVAL":
+                show_single_rollback_modal(rule_id, response)
+              else:
+                st.error(response.get("message", "Gagal menginisialisasi plan rollback."))
+
         with b_col4:
           if st.button("📄", key=f"det_{rule_id}_{idx}", use_container_width=True, help="Detail"):
-            st.toast(f"Detail {rule_id}", icon="📋")
+            show_catalog_detail_modal(rule_id)
 
     st.markdown("<hr style='margin: 4px 0px; border-color: #2d2f3d;'>", unsafe_allow_html=True)
 

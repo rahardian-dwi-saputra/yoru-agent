@@ -202,3 +202,19 @@ def get_dashboard_metrics():
       "total_rollback_roles": total_role_rollback,
       "total_rollback_berhasil": total_rollback_berhasil,
   }
+
+
+def get_catalog_detail(rule_id: str):
+    """Mengambil detail lengkap satu katalog berdasarkan ID rule."""
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    cursor = conn.cursor()
+    
+    cursor.execute("SELECT * FROM catalogs WHERE id = ?", (rule_id,))
+    row = cursor.fetchone()
+    
+    conn.close()
+    
+    if row:
+        return dict(row)
+    return None

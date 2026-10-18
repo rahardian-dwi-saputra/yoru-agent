@@ -268,6 +268,26 @@ def init_hardening_all():
     return False, {"message": "Gagal menghubungi endpoint /agent/hardening/init."}
 
 
+def init_single_hardening(rule_id: str):
+    """Meminta plan hardening untuk satu katalog tertentu (/agent/hardening/init)."""
+    api_key = get_api_key()
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
+    payload = {"catalogs": [rule_id]}
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/agent/hardening/init", 
+            headers=headers, 
+            json=payload, 
+            timeout=30
+        )
+        if response.status_code == 200:
+            return True, response.json()
+    except Exception:
+        pass
+    return False, {"message": f"Gagal menginisialisasi plan hardening untuk rule {rule_id}."}
+
+
 def confirm_hardening_plan(plan_id: str, approved: bool, catalog: str = None):
     """Mengirim konfirmasi persetujuan atau pembatalan plan hardening (/agent/hardening/confirm)."""
     api_key = get_api_key()
@@ -312,21 +332,76 @@ def confirm_hardening_plan(plan_id: str, approved: bool, catalog: str = None):
     return False, {"message": "Gagal menghubungi endpoint /agent/hardening/confirm."}
 
 
-def init_single_hardening(rule_id: str):
-    """Meminta plan hardening untuk satu katalog tertentu (/agent/hardening/init)."""
+def init_rollback_all():
+    """Meminta plan rollback untuk seluruh katalog (/agent/rollback/init)."""
+    api_key = get_api_key()
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
+    payload = {"catalogs": ["ALL"]}
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/agent/rollback/init", headers=headers, json=payload, timeout=30
+        )
+        if response.status_code == 200:
+            return True, response.json()
+    except Exception:
+        pass
+    return False, {"message": "Gagal menghubungi endpoint /agent/rollback/init."}
+
+
+def init_single_rollback(rule_id: str):
+    """Meminta plan rollback untuk satu katalog tertentu (/agent/rollback/init)."""
     api_key = get_api_key()
     headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
     payload = {"catalogs": [rule_id]}
 
     try:
         response = requests.post(
-            f"{API_BASE_URL}/agent/hardening/init", 
-            headers=headers, 
-            json=payload, 
-            timeout=30
+            f"{API_BASE_URL}/agent/rollback/init", headers=headers, json=payload, timeout=30
         )
         if response.status_code == 200:
             return True, response.json()
     except Exception:
         pass
-    return False, {"message": f"Gagal menginisialisasi plan hardening untuk rule {rule_id}."}
+    return False, {"message": f"Gagal menginisialisasi plan rollback untuk rule {rule_id}."}
+
+
+def confirm_rollback_plan(plan_id: str, approved: bool, catalog: str = None):
+    """Mengirim konfirmasi persetujuan atau pembatalan plan rollback (/agent/rollback/confirm)."""
+    api_key = get_api_key()
+    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
+    payload = {"plan_id": plan_id, "approved": approved}
+
+    if catalog:
+        payload["catalog"] = catalog
+
+    try:
+        response = requests.post(
+            f"{API_BASE_URL}/agent/rollback/confirm", headers=headers, json=payload, timeout=60
+        )
+        if response.status_code == 200:
+            data = response.json()
+            
+            # Jika disetujui (approved=True), update status rollback ke database lokal
+            if approved and "results" in data:
+                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                for res in data.get("results", []):
+                    catalog_id = res.get("catalog")
+                    log_data = res.get("log_data", {})
+                    
+                    if catalog_id and log_data:
+                        rollback_level = log_data.get("level", "PENDING") # Contoh: SUCCESS / FAILED
+                        
+                        # Memanggil fungsi database yang sudah ada
+                        update_execution_status(
+                            rule_id=catalog_id,
+                            action_type="rollback",
+                            status=rollback_level,
+                            timestamp=current_time
+                        )
+                        
+            return True, data
+    except Exception:
+        pass
+    
+    return False, {"message": "Gagal menghubungi endpoint /agent/rollback/confirm."}
