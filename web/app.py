@@ -5,7 +5,12 @@ from components import (
     render_metrics_row,
     render_styles,
 )
-from services import fetch_catalog_data, fetch_system_info, fetch_dashboard_metrics
+
+from services import (
+    fetch_catalog_data, 
+    fetch_system_info, 
+    fetch_dashboard_metrics
+)
 
 
 st.set_page_config(
