@@ -1,5 +1,6 @@
 import math
 import streamlit as st
+import os
 from datetime import datetime
 from services import (
   refresh_catalog_data, 
@@ -12,7 +13,8 @@ from services import (
   init_single_rollback,
   confirm_rollback_plan
 )
-from database import get_catalog_detail
+from database import get_catalog_detail, get_paginated_catalogs
+from utils_pdf import generate_pentest_pdf
 
 
 def render_styles():
@@ -445,7 +447,32 @@ def render_catalog_table(catalog_list, total_items):
 
   dan tombol aksi bersyarat (Audit, Hardening, Rollback, Detail) berdasarkan nilai audit_only.
   """
-  st.markdown("#### 📋 Katalog Rules Keamanan Sistem & Aksi Eksekusi")
+
+  h_col1, h_col2 = st.columns([3, 1])
+  
+  with h_col1:
+    st.markdown("### 📋 Katalog Rules Keamanan & Aksi Eksekusi")
+  with h_col2:
+    if st.button("📥 Export PDF Report", use_container_width=True, type="secondary"):
+      with st.spinner("Menyiapkan laporan pentest PDF..."):        
+        all_catalogs, _ = get_paginated_catalogs(page=1, per_page=1000)        
+        pdf_path = generate_pentest_pdf(all_catalogs)
+                
+        if os.path.exists(pdf_path):
+          with open(pdf_path, "rb") as f:
+            st.download_button(
+              label="💾 Unduh File PDF",
+              data=f,
+              file_name="Yoru_Agent_Pentest_Report.pdf",
+              mime="application/pdf",
+              key="download_pdf_top_table"
+            )
+          st.success("PDF siap diunduh!")
+        else:
+          st.error("Gagal membuat file PDF.")
+
+    st.markdown("---")
+
 
   items_per_page = 10
   total_pages = math.ceil(total_items / items_per_page) if total_items > 0 else 1

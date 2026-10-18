@@ -28,7 +28,7 @@ echo "Mengaktifkan venv dan menginstal packages (Backend & Web Dashboard)..."
 source "$VENV_DIR/bin/activate"
 
 pip install --upgrade pip
-pip install fastapi uvicorn slowapi pyyaml streamlit requests
+pip install fastapi uvicorn slowapi pyyaml streamlit requests reportlab
 
 # === GENERATE API KEY ===
 echo ""
