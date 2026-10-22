@@ -124,7 +124,6 @@ def main():
                 )
                 sys.exit(1)
 
-            # Sesuai standar CIS 5.1.13: Harus aktif dan bernilai 1-60 detik (misal <= 60 detik dan > 0)
             if 0 < seconds <= 60:
                 logger.log(
                     "COMPLIANT",

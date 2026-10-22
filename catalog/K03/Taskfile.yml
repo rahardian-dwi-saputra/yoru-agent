@@ -7,18 +7,34 @@ vars:
 
   # Metadata CIS
   ID: "K03"
-  NAMA: "Membatasi Waktu Login SSH"
+  NAMA: "Membatasi Waktu Login SSH (LoginGraceTime)"
   KODE_CIS: "5.1.13"
   CIS_JUDUL: "5.1.13 Ensure sshd LoginGraceTime is configured"
+  REGULASI: "Pasal 35"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
     Aturan keamanan untuk mengatur batas waktu yang diberikan 
     kepada pengguna untuk menyelesaikan proses login SSH. 
     Fungsinya untuk mencegah koneksi SSH yang tidak segera melakukan 
     autentikasi tetap terbuka terlalu lama, sehingga mengurangi 
     risiko penyalahgunaan koneksi dan serangan terhadap server.
-  RISIKO: "BERISIKO"
+  RISIKO: "SEDANG"
   KATEGORI: "SSH"
   AUDIT_ONLY: false
+  PESAN_HARDENING: |
+    Aksi ini akan menetapkan parameter 'LoginGraceTime' 
+    (menjadi 1m atau 60 detik) pada file /etc/ssh/sshd_config dan 
+    merestart layanan SSH.
+    ⚠️ DAMPAK OPERASIONAL: Pengguna harus menyelesaikan proses 
+    login SSH dalam batas waktu yang ditentukan. Jika terlalu lama 
+    memasukkan password/kunci, koneksi akan otomatis diputus oleh server.
+  PESAN_ROLLBACK: |
+    Aksi ini akan mengembalikan atau menghapus pengaturan 'LoginGraceTime'
+    ke kondisi default sistem.
+    ⚠️ RISIKO KEAMANAN: Koneksi SSH yang menggantung tanpa autentikasi
+    dapat dibiarkan terbuka lebih lama, meningkatkan risiko serangan 
+    penghabisan sumber daya (connection exhaustion / Denial of Service).
 
 tasks:
   default:

@@ -151,7 +151,11 @@ def main():
 
         success_backup, backup_msg = create_ssh_backup(logger)
         if not success_backup:
-            logger.log("FAILED", "BackupFailed", backup_msg)
+            logger.log(
+                "FAILED",
+                "Result", 
+                f"Hasil Hardening: BackupFailed - {backup_msg}", 
+            )
             sys.exit(1)
 
         # Cek Permission file sshd_config (Harus 600)

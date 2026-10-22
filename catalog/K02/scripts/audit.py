@@ -65,7 +65,7 @@ def main():
     lock_name = CATALOG_LOCKS.get("K02", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
     
-    audit_passed = True
+    prerequisites_met = True
     
     try:
         if not check_sshd_config_exists(logger):
@@ -80,11 +80,11 @@ def main():
         users_with_home = get_non_root_users(include_home=True)
         if not users_with_home:
             logger.log(
-                "WARNING",
+                "FAILED",
                 "Note",
-                "Tidak ditemukan user non-root dengan shell aktif di sistem.",
+                "Hasil Audit: FAILED - Tidak ditemukan user non-root dengan shell aktif di sistem.",
             )
-            audit_passed = False
+            sys.exit(1)
         else:
             user_list_str = ", ".join([u[0] for u in users_with_home])
             logger.log(
@@ -104,7 +104,7 @@ def main():
                     "Note",
                     f"User '{username}' tidak memiliki file authorized_keys yang valid.",
                 )
-                audit_passed = False
+                prerequisites_met = False
                 continue
 
             # Check 3: Validasi format key (ssh-keygen -l)
@@ -115,7 +115,7 @@ def main():
                     "Note",
                     f"File authorized_keys milik user '{username}' corrupt/tidak valid: {err_msg}",
                 )
-                audit_passed = False
+                prerequisites_met = False
 
             # Check 4: Permission file harus 600 (rw-------)
             file_mode = oct(auth_keys_path.stat().st_mode & 0o777)
@@ -125,32 +125,32 @@ def main():
                     "Note",
                     f"Permission file authorized_keys user '{username}' adalah {file_mode} (Wajib 0o600).",
                 )
-                audit_passed = False
+                prerequisites_met = False
 
-       
-        # Cek Konfigurasi PasswordAuthentication saat ini
-        pass_auth_status = check_password_auth_status()
-        if pass_auth_status != "no":
-            logger.log(
-                "WARNING",
-                "Note",
-                f"Parameter PasswordAuthentication bernilai '{pass_auth_status or 'default (yes)'}' (Seharusnya 'no').",
-            )
-            audit_passed = False
 
-        # Kesimpulan Audit
-        if audit_passed:
+        if not prerequisites_met:
             logger.log(
-                "COMPLIANT",
+                "FAILED",
                 "Result",
-                "Hasil Audit: COMPLIANT - Seluruh user non-root memiliki SSH key valid (permission 600) dan PasswordAuthentication di-set ke 'no'.",
+                "Hasil Audit: FAILED - Terdapat syarat pra-kondisi (keberadaan key, format, atau permission authorized_keys) yang belum terpenuhi.",
             )
         else:
-            logger.log(
-                "NON_COMPLIANT",
-                "Result",
-                "Hasil Audit: NON_COMPLIANT - Terdapat syarat SSH Key atau konfigurasi SSHD yang belum terpenuhi.",
-            )
+           
+            pass_auth_status = check_password_auth_status()
+            
+            if pass_auth_status == "no":
+                logger.log(
+                    "COMPLIANT",
+                    "Result",
+                    "Hasil Audit: COMPLIANT - Syarat terpenuhi, PasswordAuthentication di-set ke 'no'.",
+                )
+            else:
+                logger.log(
+                    "NON_COMPLIANT",
+                    "Result",
+                    f"Hasil Audit: NON_COMPLIANT - Syarat terpenuhi, tapi PasswordAuthentication bernilai '{pass_auth_status or 'yes/default'}' (seharusnya 'no').",
+                )
+
 
     except Exception as e:
         logger.log_error("K02", "audit", e)
