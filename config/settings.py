@@ -1,7 +1,13 @@
 from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 AGENT_NAME = "Yoru-Agent"
 VERSION = "1.0.0"
+
+# Timezone untuk pencatatan log
+TIMEZONE_NAME = "Asia/Jakarta"
+APP_TIMEZONE = ZoneInfo(TIMEZONE_NAME)
 
 # Direktori utama
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -120,3 +126,11 @@ CATALOG_LOCKS = {
     "K18": "source_route",
     "K19": "tcp_syncookies",
 }
+
+# Helper function untuk mendapatkan waktu saat ini
+def get_current_time():
+    return datetime.now(APP_TIMEZONE)
+
+def get_current_isoformat():
+    """Mengembalikan string timestamp ISO 8601 dengan offset +07:00."""
+    return datetime.now(APP_TIMEZONE).isoformat()

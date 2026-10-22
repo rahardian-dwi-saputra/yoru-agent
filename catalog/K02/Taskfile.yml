@@ -5,29 +5,41 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS Benchmark
   ID: "K02"
   NAMA: "Login SSH menggunakan Password Dimatikan (Khusus SSH Key)"
   KODE_CIS: "5.2.14"
   CIS_JUDUL: "5.2.14 Ensure SSH PasswordAuthentication is disabled"
+  REGULASI: "Pasal 35, Pasal 36"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
     Aturan keamanan untuk memastikan login ke server melalui SSH tidak 
-    menggunakan password, melainkan metode autentikasi yang lebih aman 
-    seperti SSH key. Fungsinya untuk mengurangi risiko serangan seperti 
-    brute-force atau pencurian password saat seseorang mencoba 
-    mendapatkan akses ke server.
-  RISIKO: "SANGAT BERISIKO"
+    menggunakan password, melainkan metode autentikasi kriptografi yang lebih aman 
+    seperti SSH Public Key. Fungsinya untuk mencegah serangan brute-force, 
+    credential stuffing, dan pencurian password sesuai standar perlindungan data.
+  RISIKO: "TINGGI"
   KATEGORI: "SSH"
   AUDIT_ONLY: false
+  PESAN_HARDENING: |
+    Aksi ini akan mengubah parameter 'PasswordAuthentication' menjadi 'no' 
+    pada file /etc/ssh/sshd_config dan merestart layanan SSH.
+    ⚠️ DAMPAK KRITIS: Anda dan administrator lain TIDAK AKAN BISA 
+    login menggunakan password lagi. Pastikan SSH Public Key Anda 
+    (id_rsa.pub / id_ed25519.pub) sudah terpasang di dalam server 
+    (~/.ssh/authorized_keys) sebelum melanjutkan!
+  PESAN_ROLLBACK: |
+    Aksi ini akan mengembalikan parameter 'PasswordAuthentication' 
+    ke nilai semula ('yes' / default) pada file /etc/ssh/sshd_config 
+    dan merestart layanan SSH.
+    ⚠️ RISIKO KEAMANAN: Login menggunakan password diizinkan kembali, 
+    membuat server rentan terhadap serangan brute-force password.
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Cek ketersediaan SSH Key pada user non-root (Validasi Keamanan)
   check-ssh-keys:
     desc: "Mengecek apakah user non-root sudah memiliki SSH public key di authorized_keys"
     cmds:
@@ -51,21 +63,18 @@ tasks:
         echo "WARNING: Tidak ditemukan authorized_keys pada user non-root!"
       fi
 
-  # 2. Audit SSH Password Authentication
   audit:
     desc: "Menjalankan audit parameter PasswordAuthentication di sshd_config"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 3. Hardening SSH (Matikan Login Password)
   hardening:
     desc: "Menonaktifkan login password via SSH (PasswordAuthentication no)"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 4. Rollback SSH (Aktifkan Kembali Login Password)
   rollback:
     desc: "Mengembalikan parameter PasswordAuthentication via SSH ke nilai 'yes'"
     deps: [init-log-dir]

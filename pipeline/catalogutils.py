@@ -11,8 +11,12 @@ import sys
 import uuid
 import shutil
 import filecmp
+import getpass
+import socket
 
 from config.settings import (
+    TIMEZONE_NAME,
+    APP_TIMEZONE,
     SSHD_CONFIG,
     SSH_SERVICE_NAME, 
     INVALID_SHELLS, 
@@ -44,7 +48,7 @@ class BaseLogger:
         self.log_type = log_type
         self.execution_id = f"exec-{uuid.uuid4().hex[:8]}"
 
-    def _send_to_journal(self, level: str, step: str, message: str) -> None:
+    def _send_to_journal(self, status: str, step: str, message: str) -> None:
         """
         Fungsi internal untuk mengirim log ke Linux System Journal via utilitas 'logger'.
         Tag diset ke 'yoru-agent' agar mudah difilter nanti.
@@ -54,20 +58,20 @@ class BaseLogger:
             clean_msg = message.replace("\n", " ").strip()
             
             # Format pesan yang akan dikirim ke journal
-            syslog_msg = f"[{self.catalog} | CIS {self.cis_id}] Type: {self.log_type.upper()} | Level: {level} | Step: {step} | {clean_msg}"
+            syslog_msg = f"[{self.catalog} | CIS {self.cis_id}] Type: {self.log_type.upper()} | Status: {status} | Step: {step} | {clean_msg}"
             
             # Pemetaan prioritas syslog yang mencakup seluruh status (Audit, Hardening, Rollback)
             priority = "daemon.info"
             
-            if level in ["ERROR", "FAILED"]:
+            if status in ["ERROR", "FAILED"]:
                 priority = "daemon.err"
-            elif level in ["WARNING"]:
+            elif status in ["WARNING"]:
                 priority = "daemon.warning" 
-            elif level in ["SUCCESS", "COMPLIANT"]:
+            elif status in ["SUCCESS", "COMPLIANT"]:
                 priority = "daemon.notice"  # Untuk hasil sukses atau compliant yang positif
-            elif level in ["NON_COMPLIANT"]:
+            elif status in ["NON_COMPLIANT"]:
                 priority = "daemon.warning" # Non-compliant pada audit berarti butuh perhatian (warning)
-            elif level in ["SKIPPED"]:
+            elif status in ["SKIPPED"]:
                 priority = "daemon.info"    # Dilewati secara normal/aman
 
             # Eksekusi perintah bawaan Linux: logger -t yoru-agent -p [prioritas] [pesan]
@@ -79,19 +83,24 @@ class BaseLogger:
         except Exception:
             pass
         
-    def log(self, level: str, step: str, message: str) -> None:
-        now = datetime.now().astimezone()
+    def log(self, status: str, step: str, message: str) -> None:
+        now = datetime.now(APP_TIMEZONE)
         unique_log_id = f"log-{now.strftime('%Y%m%d%H%M%S%f')}-{os.getpid()}-{uuid.uuid4().hex[:4]}"
 
         log_entry = {
             "id": unique_log_id,
             "execution_id": self.execution_id,
-            "pid": os.getpid(),
             "timestamp": now.isoformat(),
+            "timezone": TIMEZONE_NAME,
+            "pid": os.getpid(),
+            "hostname": socket.gethostname(),
+            "executed_by": getpass.getuser(),
+            
             "catalog": self.catalog,
             "cis_id": self.cis_id,
             "type": self.log_type,
-            "level": level,
+
+            "status": status,
             "step": step,
             "message": message,
         }

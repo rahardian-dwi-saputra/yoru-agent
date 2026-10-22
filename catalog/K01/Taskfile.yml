@@ -5,29 +5,38 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS Benchmark
   ID: "K01"
-  NAMA: "Root tidak bisa login lewat SSH"
+  NAMA: "Root Tidak Bisa Login Lewat SSH"
   KODE_CIS: "5.1.20"
   CIS_JUDUL: "5.1.20 Ensure sshd PermitRootLogin is disabled"
+  REGULASI: "Pasal 35, Pasal 36"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan akun root tidak dapat 
-    digunakan untuk login langsung melalui SSH ke server.
-    Fungsinya untuk mengurangi risiko akses tidak sah, sehingga 
-    administrator harus login menggunakan akun biasa terlebih 
-    dahulu lalu menggunakan sudo jika membutuhkan hak akses root.
-  RISIKO: "BERISIKO"
+    Mematikan akses login langsung sebagai akun 'root' melalui SSH. 
+    Mewajibkan pengguna untuk login menggunakan akun biasa terlebih dahulu 
+    sebelum melakukan elevasi hak akses (sudo).
+  RISIKO: "TINGGI"
   KATEGORI: "SSH"
   AUDIT_ONLY: false
+  PESAN_HARDENING: |
+    Aksi ini akan mengubah parameter 'PermitRootLogin' menjadi 'no' 
+    pada file /etc/ssh/sshd_config dan merestart layanan SSH.
+    ⚠️ DAMPAK: Anda TIDAK BISA lagi login SSH secara langsung 
+    menggunakan user 'root'. Pastikan Anda sudah memiliki akun user 
+    biasa dengan hak akses sudo yang aktif sebelum melanjutkan!
+  PESAN_ROLLBACK: |
+    Aksi ini akan mengembalikan parameter 'PermitRootLogin' ke nilai 
+    semula ('yes' / default) pada file /etc/ssh/sshd_config dan merestart layanan SSH.
+    ⚠️ RISIKO: Login root langsung via SSH akan diizinkan kembali. 
+    Server Anda berisiko lebih tinggi terhadap serangan brute-force.
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Cek user lain yang punya akses SSH (Pengecekan Manual Terminal)
   check-users:
     desc: "Mengecek daftar user non-root yang memiliki akses SSH atau sudo"
     cmds:
@@ -36,21 +45,18 @@ tasks:
       - echo "=== User di Group Sudo / Wheel ==="
       - getent group sudo wheel 2>/dev/null || true
 
-  # 2. Audit SSH Root Login
   audit:
     desc: "Menjalankan audit SSH Root login"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 3. Hardening SSH (Nonaktifkan Root Login)
   hardening:
     desc: "Menonaktifkan login Root via SSH"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 4. Rollback SSH (Memulihkan PermitRootLogin ke yes)
   rollback:
     desc: "Mengembalikan parameter PermitRootLogin via SSH ke nilai 'yes'"
     deps: [init-log-dir]

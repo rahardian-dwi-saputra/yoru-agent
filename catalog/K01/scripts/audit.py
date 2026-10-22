@@ -19,21 +19,41 @@ from pipeline.catalogutils import (
 )
 
 
-def get_permit_root_login_val() -> str | None:
-    """Membaca nilai PermitRootLogin yang aktif (non-commented) dari sshd_config."""
+def get_permit_root_login_val() -> tuple[str | None, bool]:
+    """
+    Membaca nilai PermitRootLogin dari sshd_config.
+    Mengembalikan tuple: (nilai_string, apakah_ditemukan_secara_aktif)
+    Jika dikomentari, mengembalikan (nilai_default_atau_none, False)
+    """
     if not SSHD_CONFIG.is_file():
-        return None
+        return None, False
+
+    is_commented = False
 
     with open(SSHD_CONFIG, "r", encoding="utf-8", errors="ignore") as f:
         for line in f:
             clean_line = line.strip()
-            if clean_line.startswith("#") or not clean_line:
+            if not clean_line:
                 continue
             
+            # Cek apakah baris merupakan komentar yang memuat permitrootlogin
+            if clean_line.startswith("#"):
+                uncommented = clean_line.lstrip("#").strip()
+                parts = uncommented.split()
+                if parts and parts[0].lower() == "permitrootlogin" and len(parts) >= 2:
+                    is_commented = True
+                continue
+
+            # Cek baris aktif (non-komentar)
             parts = clean_line.split()
-            if parts[0].lower() == "permitrootlogin" and len(parts) >= 2:
-                return parts[1].lower()
-    return None
+            if parts and parts[0].lower() == "permitrootlogin" and len(parts) >= 2:
+                return parts[1].lower(), True
+
+    # Jika hanya ditemukan dalam bentuk komentar
+    if is_commented:
+        return "commented", False
+
+    return None, False
 
 def main():
     logger = BaseLogger(
@@ -56,8 +76,8 @@ def main():
             )
             sys.exit(1)
 
-        # Log informasi user non-root (opsional/pendukung)
         users = get_non_root_users()
+        
         if users:
             logger.log(
                 "INFO", 
@@ -66,48 +86,47 @@ def main():
             )
         else:
             logger.log(
-                "WARNING", 
-                "Note", 
-                "Tidak ditemukan user non-root aktif."
-            )
-
-        # Evaluasi CIS 5.1.20
-        status = get_permit_root_login_val()
-        
-        # Nilai yang tergolong compliant menurut CIS (biasanya 'no', atau 'prohibit-password' jika diizinkan kebijakan)
-        is_compliant = status in ["no", "prohibit-password", "without-password"]
-
-        if not status:
-            logger.log(
-                "WARNING", 
-                "Note", 
-                "PermitRootLogin tidak diatur secara eksplisit di sshd_config."
-            )
-        elif not is_compliant:
-            logger.log(
-                "WARNING", 
-                "Note", 
-                f"Root BISA login via SSH (PermitRootLogin {status})."
-            )
-        else:
-            logger.log(
-                "INFO", 
-                "Note", 
-                f"Root login SSH dibatasi (PermitRootLogin {status})."
-            )
-
-        # Keputusan Akhir Audit
-        if is_compliant:
-            logger.log(
-                "COMPLIANT", 
+                "FAILED", 
                 "Result", 
-                "Hasil Audit: COMPLIANT - Konfigurasi PermitRootLogin sesuai standar CIS."
+                "Hasil Audit: FAILED - Tidak ada user selain root yang ditemukan di sistem."
             )
-        else:
+            sys.exit(1)
+
+
+        status, is_explicit = get_permit_root_login_val()
+
+        if status is None:
+            logger.log(
+                "FAILED", 
+                "Result", 
+                "Hasil Audit: FAILED - Tidak ditemukan parameter PermitRootLogin di sshd_config."
+            )
+        elif status == "commented":
             logger.log(
                 "NON_COMPLIANT", 
                 "Result", 
-                "Hasil Audit: NON_COMPLIANT - Konfigurasi PermitRootLogin tidak sesuai standar CIS."
+                "Hasil Audit: NON_COMPLIANT - Parameter PermitRootLogin dalam posisi dikomentari (belum diatur secara eksplisit)."
+            )
+        elif status == "no":
+            # Bernilai 'no' (Sesuai CIS)
+            logger.log(
+                "COMPLIANT", 
+                "Result", 
+                "Hasil Audit: COMPLIANT - Konfigurasi PermitRootLogin bernilai 'no' sesuai standar CIS."
+            )
+        elif status == "yes":
+            # Bernilai 'yes' (Tidak aman)
+            logger.log(
+                "NON_COMPLIANT", 
+                "Result", 
+                "Hasil Audit: NON_COMPLIANT - Konfigurasi PermitRootLogin bernilai 'yes' (Root diizinkan login)."
+            )
+        else:
+            # Nilai lain (seperti prohibit-password, dll., tergantung kebijakan)
+            logger.log(
+                "NON_COMPLIANT", 
+                "Result", 
+                f"Hasil Audit: NON_COMPLIANT - Nilai PermitRootLogin '{status}' tidak memenuhi standar mutlak 'no'."
             )
 
     except Exception as e:
