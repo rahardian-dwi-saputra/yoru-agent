@@ -6,18 +6,19 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   # Metadata CIS Benchmark
-  ID: "K13"
-  NAMA: "Pengaturan Akses File Log Journald"
-  KODE_CIS: "6.1.1.2"
-  CIS_JUDUL: "6.1.1.2 Ensure journald log file access is configured"
+  ID: "K09"
+  NAMA: "Memastikan Layanan UFW Aktif"
+  KODE_CIS: "4.2.3"
+  CIS_JUDUL: "4.2.3 Ensure ufw service is enabled"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan direktori dan berkas log systemd-journald 
-    memiliki izin akses yang aman (permissions dan kepemilikan yang tepat) 
-    sehingga tidak dapat dibaca atau dimanipulasi secara sembarangan oleh user 
-    yang tidak berotoritas.
-  RISIKO: "AMAN"
-  KATEGORI: "Logging and Auditing"
-  AUDIT_ONLY: false
+    Aturan keamanan untuk memastikan UFW (Uncomplicated Firewall) 
+    aktif pada sistem dan berjalan sebagai firewall. Fungsinya 
+    untuk mengontrol lalu lintas jaringan masuk dan keluar 
+    berdasarkan aturan yang ditentukan, sehingga dapat membatasi 
+    akses yang tidak diperlukan ke server.
+  RISIKO: "BERISIKO"
+  KATEGORI: "Firewall"
+  AUDIT_ONLY: true
 
 tasks:
   # Task internal untuk memastikan folder logs/ selalu ada
@@ -26,23 +27,9 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Akses File Log Journald
+  # Audit status ufw service (enabled & active)
   audit:
-    desc: "Menjalankan audit izin akses dan kepemilikan file log journald"
+    desc: "Menjalankan audit status layanan ufw"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
-
-  # 2. Hardening Akses File Log Journald (Menerapkan izin akses ketat)
-  hardening:
-    desc: "Menerapkan konfigurasi izin akses dan kepemilikan yang aman pada direktori log journald"
-    deps: [init-log-dir]
-    cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
-
-  # 3. Rollback Akses File Log Journald (Mengembalikan izin akses ke kondisi awal)
-  rollback:
-    desc: "Mengembalikan izin akses file log journald ke kondisi sebelum hardening"
-    deps: [init-log-dir]
-    cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

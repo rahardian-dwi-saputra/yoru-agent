@@ -7,18 +7,17 @@ vars:
 
   # Metadata CIS Benchmark
   ID: "K10"
-  NAMA: "Pengaturan Kebijakan Default UFW Firewall"
-  KODE_CIS: "4.2.7"
-  CIS_JUDUL: "4.2.7 Ensure ufw default deny firewall policy"
+  NAMA: "Pengaturan Akses File Log Journald"
+  KODE_CIS: "6.1.1.2"
+  CIS_JUDUL: "6.1.1.2 Ensure journald log file access is configured"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan UFW secara default menolak 
-    koneksi jaringan yang tidak secara khusus diizinkan oleh 
-    aturan firewall. Fungsinya untuk membatasi akses yang tidak 
-    diperlukan ke server, sehingga hanya koneksi atau layanan 
-    yang telah diizinkan yang dapat mengakses sistem.
-  RISIKO: "BERISIKO"
-  KATEGORI: "Firewall"
-  AUDIT_ONLY: true
+    Aturan keamanan untuk memastikan direktori dan berkas log systemd-journald 
+    memiliki izin akses yang aman (permissions dan kepemilikan yang tepat) 
+    sehingga tidak dapat dibaca atau dimanipulasi secara sembarangan oleh user 
+    yang tidak berotoritas.
+  RISIKO: "AMAN"
+  KATEGORI: "Logging and Auditing"
+  AUDIT_ONLY: false
 
 tasks:
   # Task internal untuk memastikan folder logs/ selalu ada
@@ -27,9 +26,23 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # Audit status kebijakan default UFW
+  # 1. Audit Akses File Log Journald
   audit:
-    desc: "Menjalankan audit kebijakan default UFW firewall"
+    desc: "Menjalankan audit izin akses dan kepemilikan file log journald"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
+
+  # 2. Hardening Akses File Log Journald (Menerapkan izin akses ketat)
+  hardening:
+    desc: "Menerapkan konfigurasi izin akses dan kepemilikan yang aman pada direktori log journald"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
+
+  # 3. Rollback Akses File Log Journald (Mengembalikan izin akses ke kondisi awal)
+  rollback:
+    desc: "Mengembalikan izin akses file log journald ke kondisi sebelum hardening"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

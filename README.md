@@ -21,18 +21,16 @@ Yoru-agent menggunakan katalog berikut untuk melakukan audit dan hardening keama
 | K05 | 5.1.6 | SSH Security | Ensure sshd Ciphers are configured | Audit & Hardening |
 | K06 | 5.1.7 | SSH Security | Ensure sshd MACs are configured | Audit & Hardening |
 | K07 | 5.1.8 | SSH Security | Ensure sshd KexAlgorithms are configured	| Audit & Hardening |
-| K08 | 4.1.1.2 | Audit Logging | Ensure auditd service is enabled and active | Audit Only |
-| K09 | 4.2.3 | Firewall | Ensure ufw service is enabled | Audit Only |
-| K10 | 4.2.7 | Firewall | Ensure ufw default deny firewall policy | Audit Only |
-| K11 | 2.1.22 | Network Security | Ensure only approved services are listening on a network interface | Audit Only |
-| K12 | 6.1.1.1 | System Logging | Ensure journald service is enabled and active | Audit & Hardening |
-| K13 | 6.1.1.2 | System Logging | Ensure journald log file access is configured | Audit & Hardening |
-| K14 | 6.1.2.3 | System Logging | Ensure journald Compress is configured | Audit & Hardening |
-| K15 | 6.1.2.4	| System Logging | Ensure journald Storage is configured | Audit & Hardening |
-| K16 | 3.3.4 | Network Security | Ensure broadcast icmp requests are ignored |	Audit & Hardening |
-| K17 | 3.3.5 | Network Security | Ensure icmp redirects are not accepted | Audit & Hardening |
-| K18 | 3.3.8 | Network Security | Ensure source routed packets are not accepted | Audit & Hardening |
-| K19 | 3.3.10 | Network Security | Ensure tcp syn cookies is enabled | Audit & Hardening |
+| K09 | 4.1.1.2 | Audit Logging | Ensure auditd service is enabled and active | Audit Only |
+| K10 | 6.1.1.2 | System Logging | Ensure journald log file access is configured | Audit & Hardening |
+| K11 | 6.1.2.3 | System Logging | Ensure journald Compress is configured | Audit & Hardening |
+| K13 | 4.2.3 | Firewall | Ensure ufw service is enabled | Audit Only |
+| K14 | 4.2.7 | Firewall | Ensure ufw default deny firewall policy | Audit Only |
+| K15 | 2.1.22 | Network Security | Ensure only approved services are listening on a network interface | Audit Only |
+| K22 | 3.3.4 | Network Security | Ensure broadcast icmp requests are ignored |	Audit & Hardening |
+| K23 | 3.3.5 | Network Security | Ensure icmp redirects are not accepted | Audit & Hardening |
+| K24 | 3.3.8 | Network Security | Ensure source routed packets are not accepted | Audit & Hardening |
+| K25 | 3.3.10 | Network Security | Ensure tcp syn cookies is enabled | Audit & Hardening |
 
 **Keterangan Kategori**
 - SSH Security: Mengamankan akses jarak jauh melalui SSH.

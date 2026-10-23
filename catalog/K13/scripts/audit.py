@@ -1,7 +1,8 @@
 from __future__ import annotations
 from pathlib import Path
-import os
+import subprocess
 import sys
+
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -10,77 +11,91 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import JOURNAL_LOG_DIR, CATALOG_LOCKS
+from config.settings import CATALOG_LOCKS
 
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
-    release_lock,
+    is_ufw_installed,
+    release_lock
 )
 
+def is_ufw_enabled_and_active() -> tuple[bool, bool]:
+    """Mengecek apakah ufw service enabled (systemctl) dan aktif (ufw status).
 
-def check_journald_access() -> tuple[bool, str]:
-    """Memeriksa apakah direktori dan berkas log journald memiliki izin akses yang aman.
-
-    Berdasarkan CIS 6.1.1.2: Direktori dan file log tidak boleh memiliki izin
-    yang terlalu longgar (world-writable atau group-writable yang tidak sah).
+    Returns:
+        tuple[is_enabled, is_active]
     """
-    if not JOURNAL_LOG_DIR.exists():
-        return (
-            True,
-            "Direktori /var/log/journal belum ada (volatile mode aktif), tidak ada file persisten untuk diperiksa.",
-        )
+    is_enabled = False
+    is_active = False
 
+    # 1. Cek systemctl is-enabled ufw
     try:
-        # Periksa direktori utama /var/log/journal
-        st = JOURNAL_LOG_DIR.stat()
-        # Cek apakah other memiliki write permission (bit o+w / 0o002)
-        if st.st_mode & 0o002:
-            return False, f"Direktori {JOURNAL_LOG_DIR} memiliki izin world-writable."
+        res_enabled = subprocess.run(
+            ["systemctl", "is-enabled", "ufw"],
+            capture_output=True,
+            text=True,
+        )
+        is_enabled = res_enabled.stdout.strip() == "enabled"
+    except Exception:
+        is_enabled = False
 
-        # Periksa file-file di dalam direktori log
-        for path in JOURNAL_LOG_DIR.glob("**/*"):
-            if path.is_file():
-                p_st = path.stat()
-                # Cek apakah group atau other memiliki write permission (g+w atau o+w)
-                if p_st.st_mode & 0o022:
-                    return False, f"File log ditemukan memiliki izin group/world-writable: {path}"
+    # 2. Cek ufw status
+    try:
+        res_status = subprocess.run(
+            ["ufw", "status"],
+            capture_output=True,
+            text=True,
+        )
+        is_active = "Status: active" in res_status.stdout
+    except Exception:
+        is_active = False
 
-        return True, "Izin akses direktori dan file log journald sudah aman dan sesuai standar CIS."
-    except Exception as e:
-        return False, f"Gagal memeriksa izin akses: {str(e)}"
+    return is_enabled, is_active
 
 
 def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K13",
-        cis_id="6.1.1.2",
+        catalog="K09",
+        cis_id="4.2.3",
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K13", "journald_audit")
+    lock_name = CATALOG_LOCKS.get("K09", "ufw_audit")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        is_secure, detail = check_journald_access()
-
-        if not is_secure:
+        if not is_ufw_installed():
             logger.log(
-                "NON_COMPLIANT",
+                "FAILED",
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - {detail}",
+                "Hasil Audit: FAILED - Paket 'ufw' belum terinstall pada sistem.",
             )
-        else:
+            sys.exit(0)
+
+        # Cek status service UFW
+        is_enabled, is_active = is_ufw_enabled_and_active()
+
+        if is_enabled and is_active:
             logger.log(
                 "COMPLIANT",
                 "Result",
-                f"Hasil Audit: COMPLIANT - {detail}",
+                "Hasil Audit: COMPLIANT - Layanan 'ufw' dalam status enabled dan active.",
             )
+            sys.exit(0)
+        else:
+            status_details = f"enabled={is_enabled}, active={is_active}"
+            logger.log(
+                "NON_COMPLIANT",
+                "Result",
+                f"Hasil Audit: NON_COMPLIANT - Layanan 'ufw' belum aktif/enabled ({status_details}).",
+            )
+            sys.exit(0)
 
     except Exception as e:
-        logger.log_error("K13", "audit", e)
+        logger.log_error("K09", "audit", e)
 
     finally:
         release_lock(lock_file)

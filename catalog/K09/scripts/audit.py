@@ -2,7 +2,7 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 import sys
-
+import shutil
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -16,12 +16,28 @@ from config.settings import CATALOG_LOCKS
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
-    is_ufw_installed,
-    release_lock
+    release_lock,
 )
 
-def is_ufw_enabled_and_active() -> tuple[bool, bool]:
-    """Mengecek apakah ufw service enabled (systemctl) dan aktif (ufw status).
+
+def is_auditd_installed() -> bool:
+    """Mengecek apakah paket/binary 'auditd' terinstall pada sistem."""
+    if shutil.which("auditd") is not None:
+        return True
+
+    try:
+        res = subprocess.run(
+            ["dpkg-query", "-W", "-f='${Status}'", "auditd"],
+            capture_output=True,
+            text=True,
+        )
+        return "install ok installed" in res.stdout
+    except Exception:
+        return False
+
+
+def is_auditd_enabled_and_active() -> tuple[bool, bool]:
+    """Mengecek apakah auditd service enabled dan active via systemctl.
 
     Returns:
         tuple[is_enabled, is_active]
@@ -29,10 +45,10 @@ def is_ufw_enabled_and_active() -> tuple[bool, bool]:
     is_enabled = False
     is_active = False
 
-    # 1. Cek systemctl is-enabled ufw
+    # 1. Cek systemctl is-enabled auditd
     try:
         res_enabled = subprocess.run(
-            ["systemctl", "is-enabled", "ufw"],
+            ["systemctl", "is-enabled", "auditd"],
             capture_output=True,
             text=True,
         )
@@ -40,14 +56,14 @@ def is_ufw_enabled_and_active() -> tuple[bool, bool]:
     except Exception:
         is_enabled = False
 
-    # 2. Cek ufw status
+    # 2. Cek systemctl is-active auditd
     try:
-        res_status = subprocess.run(
-            ["ufw", "status"],
+        res_active = subprocess.run(
+            ["systemctl", "is-active", "auditd"],
             capture_output=True,
             text=True,
         )
-        is_active = "Status: active" in res_status.stdout
+        is_active = res_active.stdout.strip() == "active"
     except Exception:
         is_active = False
 
@@ -58,31 +74,31 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K09",
-        cis_id="4.2.3",
+        catalog="K08",
+        cis_id="4.1.1.2",
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K09", "ufw_audit")
+    lock_name = CATALOG_LOCKS.get("K08", "auditid")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        if not is_ufw_installed():
+        if not is_auditd_installed():
             logger.log(
                 "FAILED",
                 "Result",
-                "Hasil Audit: FAILED - Paket 'ufw' belum terinstall pada sistem.",
+                "Hasil Audit: FAILED - Paket 'auditd' belum terinstall pada sistem.",
             )
             sys.exit(0)
 
-        # Cek status service UFW
-        is_enabled, is_active = is_ufw_enabled_and_active()
+        # Cek status service auditd
+        is_enabled, is_active = is_auditd_enabled_and_active()
 
         if is_enabled and is_active:
             logger.log(
                 "COMPLIANT",
                 "Result",
-                "Hasil Audit: COMPLIANT - Layanan 'ufw' dalam status enabled dan active.",
+                "Hasil Audit: COMPLIANT - Layanan 'auditd' dalam status enabled dan active.",
             )
             sys.exit(0)
         else:
@@ -90,12 +106,12 @@ def main():
             logger.log(
                 "NON_COMPLIANT",
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Layanan 'ufw' belum aktif/enabled ({status_details}).",
+                f"Hasil Audit: NON_COMPLIANT - Layanan 'auditd' belum aktif/enabled ({status_details}).",
             )
             sys.exit(0)
 
     except Exception as e:
-        logger.log_error("K09", "audit", e)
+        logger.log_error("K08", "audit", e)
 
     finally:
         release_lock(lock_file)

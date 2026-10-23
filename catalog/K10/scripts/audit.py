@@ -1,9 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Dict
-import subprocess
+import os
 import sys
-
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -12,92 +10,77 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import CATALOG_LOCKS
+from config.settings import JOURNAL_LOG_DIR, CATALOG_LOCKS
 
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
-    is_ufw_installed,
-    release_lock
+    release_lock,
 )
 
 
-def get_ufw_default_policies() -> Dict[str, str]:
-    """Mengambil status kebijakan default UFW (incoming, outgoing, routed)."""
-    policies = {"incoming": "", "outgoing": "", "routed": ""}
-    try:
-        res = subprocess.run(
-            ["ufw", "status", "verbose"],
-            capture_output=True,
-            text=True,
-        )
-        if res.returncode == 0:
-            for line in res.stdout.splitlines():
-                line_lower = line.strip().lower()
-                if "default:" in line_lower:
-                    # Contoh format output: Default: deny (incoming), allow (outgoing), disabled (routed)
-                    # atau: Default: deny (incoming), allow (outgoing), deny (routed)
-                    parts = line_lower.replace("default:", "").split(",")
-                    for part in parts:
-                        part = part.strip()
-                        if "(incoming)" in part:
-                            policies["incoming"] = part.split()[0]
-                        elif "(outgoing)" in part:
-                            policies["outgoing"] = part.split()[0]
-                        elif "(routed)" in part:
-                            policies["routed"] = part.split()[0]
-    except Exception:
-        pass
+def check_journald_access() -> tuple[bool, str]:
+    """Memeriksa apakah direktori dan berkas log journald memiliki izin akses yang aman.
 
-    return policies
+    Berdasarkan CIS 6.1.1.2: Direktori dan file log tidak boleh memiliki izin
+    yang terlalu longgar (world-writable atau group-writable yang tidak sah).
+    """
+    if not JOURNAL_LOG_DIR.exists():
+        return (
+            True,
+            "Direktori /var/log/journal belum ada (volatile mode aktif), tidak ada file persisten untuk diperiksa.",
+        )
+
+    try:
+        # Periksa direktori utama /var/log/journal
+        st = JOURNAL_LOG_DIR.stat()
+        # Cek apakah other memiliki write permission (bit o+w / 0o002)
+        if st.st_mode & 0o002:
+            return False, f"Direktori {JOURNAL_LOG_DIR} memiliki izin world-writable."
+
+        # Periksa file-file di dalam direktori log
+        for path in JOURNAL_LOG_DIR.glob("**/*"):
+            if path.is_file():
+                p_st = path.stat()
+                # Cek apakah group atau other memiliki write permission (g+w atau o+w)
+                if p_st.st_mode & 0o022:
+                    return False, f"File log ditemukan memiliki izin group/world-writable: {path}"
+
+        return True, "Izin akses direktori dan file log journald sudah aman dan sesuai standar CIS."
+    except Exception as e:
+        return False, f"Gagal memeriksa izin akses: {str(e)}"
 
 
 def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K10",
-        cis_id="4.2.7",
+        catalog="K13",
+        cis_id="6.1.1.2",
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K10", "ufw_audit")
+    lock_name = CATALOG_LOCKS.get("K13", "journald_audit")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        if not is_ufw_installed():
-            logger.log(
-                "FAILED",
-                "Result",
-                "Hasil Audit: FAILED - Paket 'ufw' belum terinstall pada sistem.",
-            )
-            sys.exit(0)
+        is_secure, detail = check_journald_access()
 
-        # Cek policy default UFW
-        policies = get_ufw_default_policies()
-
-        incoming = policies.get("incoming", "")
-        routed = policies.get("routed", "")
-
-        # Kebijakan CIS: incoming harus deny/reject, routed harus deny/reject/disabled
-        is_incoming_ok = incoming in ("deny", "reject")
-        is_routed_ok = routed in ("deny", "reject", "disabled")
-
-        if is_incoming_ok and is_routed_ok:
-            logger.log(
-                "COMPLIANT",
-                "Result",
-                f"Hasil Audit: COMPLIANT - Kebijakan default UFW sudah aman (incoming: {incoming}, routed: {routed}).",
-            )
-        else:
+        if not is_secure:
             logger.log(
                 "NON_COMPLIANT",
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Kebijakan default UFW tidak aman (incoming: {incoming}, routed: {routed}).",
+                f"Hasil Audit: NON_COMPLIANT - {detail}",
+            )
+        else:
+            logger.log(
+                "COMPLIANT",
+                "Result",
+                f"Hasil Audit: COMPLIANT - {detail}",
             )
 
     except Exception as e:
-        logger.log_error("K10", "audit", e)
+        logger.log_error("K13", "audit", e)
 
     finally:
         release_lock(lock_file)

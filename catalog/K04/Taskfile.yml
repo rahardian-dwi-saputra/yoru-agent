@@ -5,19 +5,35 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS
   ID: "K04"
-  NAMA: "Membatasi Percobaan Auth SSH"
+  NAMA: "Membatasi Percobaan Auth SSH (MaxAuthTries)"
   KODE_CIS: "5.1.16"
   CIS_JUDUL: "5.1.16 Ensure sshd MaxAuthTries is configured"
+  REGULASI: "Pasal 35, Pasal 36"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
     Aturan keamanan untuk membatasi jumlah percobaan autentikasi/login 
     SSH yang gagal dalam satu koneksi. Fungsinya untuk mengurangi 
     risiko serangan brute-force, karena penyerang tidak dapat mencoba 
     password atau kredensial berkali-kali tanpa batas.
-  RISIKO: "BERISIKO"
+  RISIKO: "TINGGI"
   KATEGORI: "SSH"
   AUDIT_ONLY: false
+  PESAN_HARDENING: |
+    Aksi ini akan menetapkan parameter 'MaxAuthTries' (menjadi 4 atau 
+    sesuai standar CIS) pada file /etc/ssh/sshd_config dan merestart 
+    layanan SSH.
+    ⚠️ DAMPAK OPERASIONAL: Jumlah kesalahan pengetikan password atau 
+    kunci SSH dibatasi maksimal 4 kali dalam satu sesi koneksi. 
+    Jika melebihi batas, server akan otomatis memutuskan koneksi. 
+    Pastikan Anda teliti saat melakukan login!
+  PESAN_ROLLBACK: |
+    ini akan mengembalikan atau menghapus pengaturan 'MaxAuthTries' 
+    ke nilai default sistem.
+    ⚠️ RISIKO KEAMANAN: Penyerang memiliki kesempatan lebih banyak 
+    untuk mencoba menebak kombinasi kredensial (brute-force) dalam 
+    satu sesi koneksi SSH yang sama tanpa batasan ketat.
 
 tasks:
   default:

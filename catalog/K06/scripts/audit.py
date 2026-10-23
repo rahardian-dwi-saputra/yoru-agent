@@ -83,9 +83,9 @@ def main():
         # Skenario 1: Parameter MACs tidak dikonfigurasi / terkomentar
         if state in ("not_found", "commented"):
             logger.log(
-                "NON_COMPLIANT",
+                "FAILED",
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Parameter 'MACs' belum dikonfigurasi secara eksplisit (State: {state}).",
+                f"Hasil Audit: FAILED - Parameter 'MACs' belum dikonfigurasi secara eksplisit (State: {state}).",
             )
             sys.exit(0)
 

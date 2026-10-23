@@ -1,6 +1,9 @@
 from __future__ import annotations
 from pathlib import Path
+from typing import Dict
+import subprocess
 import sys
+
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -9,99 +12,92 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import JOURNALD_CONFIG, TARGET_SYSTEM_MAX_USE, CATALOG_LOCKS
+from config.settings import CATALOG_LOCKS
 
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
-    release_lock,
-    check_journald_config_exists,
+    is_ufw_installed,
+    release_lock
 )
 
 
-def evaluate_journald_audit(config_path: Path) -> tuple[str, str]:
-    """
-    Mengevaluasi parameter journald.conf dan mengembalikan status (COMPLIANT/NON_COMPLIANT/WARNING) 
-    beserta pesan detailnya.
-    """
-    if not config_path.is_file():
-        return "NON_COMPLIANT", f"Berkas konfigurasi {config_path} tidak ditemukan."
+def get_ufw_default_policies() -> Dict[str, str]:
+    """Mengambil status kebijakan default UFW (incoming, outgoing, routed)."""
+    policies = {"incoming": "", "outgoing": "", "routed": ""}
+    try:
+        res = subprocess.run(
+            ["ufw", "status", "verbose"],
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode == 0:
+            for line in res.stdout.splitlines():
+                line_lower = line.strip().lower()
+                if "default:" in line_lower:
+                    # Contoh format output: Default: deny (incoming), allow (outgoing), disabled (routed)
+                    # atau: Default: deny (incoming), allow (outgoing), deny (routed)
+                    parts = line_lower.replace("default:", "").split(",")
+                    for part in parts:
+                        part = part.strip()
+                        if "(incoming)" in part:
+                            policies["incoming"] = part.split()[0]
+                        elif "(outgoing)" in part:
+                            policies["outgoing"] = part.split()[0]
+                        elif "(routed)" in part:
+                            policies["routed"] = part.split()[0]
+    except Exception:
+        pass
 
-    found_persistent = False
-    found_compress = False
-    found_max_use = False
-    found_retention = False
-
-    with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_str = line.strip().lower()
-            # Abaikan baris komentar
-            if line_str.startswith("#") or line_str.startswith(";") or "=" not in line_str:
-                continue
-
-            key, val = [x.strip() for x in line_str.split("=", 1)]
-            
-            if key == "storage" and val == "persistent":
-                found_persistent = True
-            elif key == "compress" and val == "yes":
-                found_compress = True
-            elif key == "systemmaxuse" and val == TARGET_SYSTEM_MAX_USE.lower():
-                found_max_use = True
-            elif key == "maxretentionsec" in key:  # Fleksibel untuk varian penulisan durasi
-                found_retention = True
-
-    # Evaluasi kepatuhan penuh
-    if found_persistent and found_compress and found_max_use and found_retention:
-        return "COMPLIANT", "Parameter journald (Storage, Compress, SystemMaxUse, MaxRetentionSec) sudah sesuai standar CIS."
-    
-    # Jika sebagian ada tapi belum lengkap
-    missing = []
-    if not found_persistent: missing.append("Storage=persistent")
-    if not found_compress: missing.append("Compress=yes")
-    if not found_max_use: missing.append(f"SystemMaxUse={TARGET_SYSTEM_MAX_USE}")
-    if not found_retention: missing.append("MaxRetentionSec")
-
-    return "NON_COMPLIANT", f"Parameter journald belum sepenuhnya ter-hardening. Belum dikonfigurasi / belum sesuai: {', '.join(missing)}"
+    return policies
 
 
 def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K14",
-        cis_id="6.1.2.3",
+        catalog="K10",
+        cis_id="4.2.7",
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K14", "journald_audit")
+    lock_name = CATALOG_LOCKS.get("K10", "ufw_audit")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        if not check_journald_config_exists(logger):
+        if not is_ufw_installed():
             logger.log(
-                "NON_COMPLIANT",
+                "FAILED",
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Berkas konfigurasi {JOURNALD_CONFIG} tidak ditemukan."
+                "Hasil Audit: FAILED - Paket 'ufw' belum terinstall pada sistem.",
             )
-            sys.exit(1)
+            sys.exit(0)
 
-        status, message = evaluate_journald_audit(JOURNALD_CONFIG)
+        # Cek policy default UFW
+        policies = get_ufw_default_policies()
 
-        if status == "COMPLIANT":
+        incoming = policies.get("incoming", "")
+        routed = policies.get("routed", "")
+
+        # Kebijakan CIS: incoming harus deny/reject, routed harus deny/reject/disabled
+        is_incoming_ok = incoming in ("deny", "reject")
+        is_routed_ok = routed in ("deny", "reject", "disabled")
+
+        if is_incoming_ok and is_routed_ok:
             logger.log(
-                "COMPLIANT", 
-                "Result", 
-                f"Hasil Audit: COMPLIANT - {message}"
+                "COMPLIANT",
+                "Result",
+                f"Hasil Audit: COMPLIANT - Kebijakan default UFW sudah aman (incoming: {incoming}, routed: {routed}).",
             )
         else:
             logger.log(
-                "NON_COMPLIANT", 
-                "Result", 
-                f"Hasil Audit: NON_COMPLIANT - {message}"
+                "NON_COMPLIANT",
+                "Result",
+                f"Hasil Audit: NON_COMPLIANT - Kebijakan default UFW tidak aman (incoming: {incoming}, routed: {routed}).",
             )
 
     except Exception as e:
-        logger.log_error("K14", "audit", e)
+        logger.log_error("K10", "audit", e)
 
     finally:
         release_lock(lock_file)

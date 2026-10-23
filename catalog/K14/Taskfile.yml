@@ -6,18 +6,19 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   # Metadata CIS Benchmark
-  ID: "K14"
-  NAMA: "Kompresi Log Journald"
-  KODE_CIS: "6.1.2.3"
-  CIS_JUDUL: "6.1.2.3 Ensure journald Compress is configured"
+  ID: "K10"
+  NAMA: "Pengaturan Kebijakan Default UFW Firewall"
+  KODE_CIS: "4.2.7"
+  CIS_JUDUL: "4.2.7 Ensure ufw default deny firewall policy"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan systemd-journald dikonfigurasi 
-    agar mengompresi log sistem saat ukurannya melebihi batas tertentu. 
-    Fungsinya untuk menghemat ruang penyimpanan disk dan menjaga efisiensi 
-    pencatatan log dalam jangka panjang tanpa mengganggu layanan.
-  RISIKO: "AMAN"
-  KATEGORI: "Logging and Auditing"
-  AUDIT_ONLY: false
+    Aturan keamanan untuk memastikan UFW secara default menolak 
+    koneksi jaringan yang tidak secara khusus diizinkan oleh 
+    aturan firewall. Fungsinya untuk membatasi akses yang tidak 
+    diperlukan ke server, sehingga hanya koneksi atau layanan 
+    yang telah diizinkan yang dapat mengakses sistem.
+  RISIKO: "BERISIKO"
+  KATEGORI: "Firewall"
+  AUDIT_ONLY: true
 
 tasks:
   # Task internal untuk memastikan folder logs/ selalu ada
@@ -26,23 +27,9 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Konfigurasi Kompresi Journald
+  # Audit status kebijakan default UFW
   audit:
-    desc: "Menjalankan audit pengaturan kompresi log systemd-journald"
+    desc: "Menjalankan audit kebijakan default UFW firewall"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
-
-  # 2. Hardening Konfigurasi Kompresi Journald (Mengatur Compress=yes)
-  hardening:
-    desc: "Menerapkan konfigurasi kompresi log journald secara permanen"
-    deps: [init-log-dir]
-    cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
-
-  # 3. Rollback Konfigurasi Kompresi Journald (Mengembalikan ke kondisi awal)
-  rollback:
-    desc: "Mengembalikan konfigurasi kompresi log journald ke kondisi sebelum hardening"
-    deps: [init-log-dir]
-    cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

@@ -5,7 +5,6 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS
   ID: "K03"
   NAMA: "Membatasi Waktu Login SSH (LoginGraceTime)"
   KODE_CIS: "5.1.13"

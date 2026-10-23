@@ -5,43 +5,56 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS Benchmark
   ID: "K07"
   NAMA: "Pengaturan KexAlgorithms SSH yang Aman"
   KODE_CIS: "5.1.8"
   CIS_JUDUL: "5.1.8 Ensure sshd KexAlgorithms are configured"
+  REGULASI: "Pasal 35, Pasal 39"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
     Aturan keamanan untuk memastikan SSH hanya menggunakan 
     algoritma pertukaran kunci (Key Exchange/KEX) yang aman 
     saat membuat koneksi. Fungsinya untuk melindungi proses 
     pembentukan kunci enkripsi antara client dan server agar 
     tidak mudah dieksploitasi oleh pihak yang tidak berwenang.
-  RISIKO: "BERISIKO"
+  RISIKO: "TINGGI"
   KATEGORI: "SSH"
   AUDIT_ONLY: false
+  PESAN_HARDENING: |
+    Aksi ini akan menetapkan parameter 'KexAlgorithms' hanya pada 
+    algoritma pertukaran kunci modern yang disetujui standar CIS 
+    (seperti curve25519-sha256, diffie-hellman-group16-sha512) 
+    pada file /etc/ssh/sshd_config serta merestart layanan SSH.
+    ⚠️ DAMPAK OPERASIONAL: Klien SSH atau skrip otomatisasi lama 
+    yang masih menggunakan algoritma Kex usang tidak akan dapat 
+    terhubung ke server. Pastikan perangkat penghubung Anda 
+    mendukung standar kriptografi modern!
+  PESAN_ROLLBACK: |
+    Aksi ini akan mengembalikan atau menghapus pengaturan 
+    'KexAlgorithms' khusus ke konfigurasi default sistem operasi.
+    ⚠️ RISIKO KEAMANAN: Server akan kembali mengizinkan algoritma 
+    pertukaran kunci lama yang berpotensi memiliki kelemahan matematis 
+    atau rentan terhadap analisis dekripsi jangka panjang.
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit SSH KexAlgorithms Configuration
   audit:
     desc: "Menjalankan audit konfigurasi SSH KexAlgorithms"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 2. Hardening SSH KexAlgorithms (Terapkan Key Exchange Algorithms yang kuat)
   hardening:
     desc: "Menerapkan konfigurasi KexAlgorithms terenkripsi kuat pada SSH"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 3. Rollback SSH KexAlgorithms (Mengembalikan parameter KexAlgorithms ke kondisi awal)
   rollback:
     desc: "Mengembalikan konfigurasi KexAlgorithms SSH ke nilai default/kondisi sebelum hardening"
     deps: [init-log-dir]

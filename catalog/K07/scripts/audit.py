@@ -20,7 +20,6 @@ from pipeline.catalogutils import (
 )
 
 
-
 def parse_kex_from_config(config_path: Path) -> Tuple[str, Optional[List[str]]]:
     """Mengecek dan meng-extract daftar KexAlgorithms dari file sshd_config.
 

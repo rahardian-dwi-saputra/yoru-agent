@@ -113,18 +113,18 @@ CATALOG_LOCKS = {
     "K05": "ssh_ciphers",
     "K06": "ssh_macs",
     "K07": "ssh_kex_algorithms",
-    "K08": "auditd_service",
-    "K09": "ufw_service",
-    "K10": "ufw_default_deny",
-    "K11": "approved_services_listening",
-    "K12": "journald_service",
-    "K13": "journald_log_access",
-    "K14": "journald_compress",
-    "K15": "journald_storage",
-    "K16": "icmp_broadcast",
-    "K17": "icmp_redirects",
-    "K18": "source_route",
-    "K19": "tcp_syncookies",
+    
+    "K09": "auditd_service",
+    "K10": "journald_log_access",
+    "K11": "journald_compress",
+
+    "K13": "ufw_service",
+    "K14": "ufw_default_deny",
+    "K15": "approved_services_listening",
+    "K22": "icmp_broadcast",
+    "K23": "icmp_redirects",
+    "K24": "source_route",
+    "K25": "tcp_syncookies",
 }
 
 # Helper function untuk mendapatkan waktu saat ini

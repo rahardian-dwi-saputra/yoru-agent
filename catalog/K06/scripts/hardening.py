@@ -93,7 +93,6 @@ def main():
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        # 1. Cek keberadaan file sshd_config
         if not check_sshd_config_exists(logger):
             logger.log(
                 "FAILED",
@@ -104,7 +103,11 @@ def main():
 
         success_backup, backup_msg = create_ssh_backup(logger)
         if not success_backup:
-            logger.log("FAILED", "BackupFailed", backup_msg)
+            logger.log(
+                "FAILED",
+                "Result", 
+                f"Hasil Hardening: BackupFailed - {backup_msg}", 
+            )
             sys.exit(1)
 
         # 2. Cek status MACs saat ini
