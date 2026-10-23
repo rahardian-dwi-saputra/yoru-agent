@@ -13,47 +13,12 @@ from config.settings import SSHD_CONFIG, CATALOG_LOCKS
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
-    get_non_root_users,
-    check_sshd_config_exists,
     release_lock,
+    get_non_root_users,
+    check_config_exists,
+    check_config_parameter_value
 )
 
-
-def get_permit_root_login_val() -> tuple[str | None, bool]:
-    """
-    Membaca nilai PermitRootLogin dari sshd_config.
-    Mengembalikan tuple: (nilai_string, apakah_ditemukan_secara_aktif)
-    Jika dikomentari, mengembalikan (nilai_default_atau_none, False)
-    """
-    if not SSHD_CONFIG.is_file():
-        return None, False
-
-    is_commented = False
-
-    with open(SSHD_CONFIG, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            clean_line = line.strip()
-            if not clean_line:
-                continue
-            
-            # Cek apakah baris merupakan komentar yang memuat permitrootlogin
-            if clean_line.startswith("#"):
-                uncommented = clean_line.lstrip("#").strip()
-                parts = uncommented.split()
-                if parts and parts[0].lower() == "permitrootlogin" and len(parts) >= 2:
-                    is_commented = True
-                continue
-
-            # Cek baris aktif (non-komentar)
-            parts = clean_line.split()
-            if parts and parts[0].lower() == "permitrootlogin" and len(parts) >= 2:
-                return parts[1].lower(), True
-
-    # Jika hanya ditemukan dalam bentuk komentar
-    if is_commented:
-        return "commented", False
-
-    return None, False
 
 def main():
     logger = BaseLogger(
@@ -68,7 +33,7 @@ def main():
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        if not check_sshd_config_exists(logger):
+        if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
             logger.log(
                 "FAILED", 
                 "Result", 
@@ -93,40 +58,32 @@ def main():
             sys.exit(1)
 
 
-        status, is_explicit = get_permit_root_login_val()
+        status, value = check_config_parameter_value(SSHD_CONFIG, "PermitRootLogin")
 
-        if status is None:
-            logger.log(
-                "FAILED", 
-                "Result", 
-                "Hasil Audit: FAILED - Tidak ditemukan parameter PermitRootLogin di sshd_config."
-            )
+        if status == "active":
+            if value and value.lower() == "no":
+                logger.log(
+                    "COMPLIANT", 
+                    "Result", 
+                    "Hasil Audit: COMPLIANT - Parameter PermitRootLogin sudah diset ke 'no'"
+                )
+            else:
+                logger.log(
+                    "NON_COMPLIANT", 
+                    "Result", 
+                    f"Hasil Audit: NON_COMPLIANT - Parameter PermitRootLogin bernilai '{value}', seharusnya 'no'."
+                )
         elif status == "commented":
             logger.log(
                 "NON_COMPLIANT", 
                 "Result", 
                 "Hasil Audit: NON_COMPLIANT - Parameter PermitRootLogin dalam posisi dikomentari (belum diatur secara eksplisit)."
             )
-        elif status == "no":
-            # Bernilai 'no' (Sesuai CIS)
-            logger.log(
-                "COMPLIANT", 
-                "Result", 
-                "Hasil Audit: COMPLIANT - Konfigurasi PermitRootLogin bernilai 'no' sesuai standar CIS."
-            )
-        elif status == "yes":
-            # Bernilai 'yes' (Tidak aman)
-            logger.log(
-                "NON_COMPLIANT", 
-                "Result", 
-                "Hasil Audit: NON_COMPLIANT - Konfigurasi PermitRootLogin bernilai 'yes' (Root diizinkan login)."
-            )
         else:
-            # Nilai lain (seperti prohibit-password, dll., tergantung kebijakan)
             logger.log(
-                "NON_COMPLIANT", 
+                "FAILED", 
                 "Result", 
-                f"Hasil Audit: NON_COMPLIANT - Nilai PermitRootLogin '{status}' tidak memenuhi standar mutlak 'no'."
+                "Hasil Audit: FAILED - Tidak ditemukan parameter PermitRootLogin di sshd_config."
             )
 
     except Exception as e:

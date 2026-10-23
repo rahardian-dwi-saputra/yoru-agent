@@ -11,59 +11,27 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import CATALOG_LOCKS
+from config.settings import UFW_SERVICE_NAME, CATALOG_LOCKS
 
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
+    release_lock,
     is_ufw_installed,
-    release_lock
+    check_systemd_service_status
 )
-
-def is_ufw_enabled_and_active() -> tuple[bool, bool]:
-    """Mengecek apakah ufw service enabled (systemctl) dan aktif (ufw status).
-
-    Returns:
-        tuple[is_enabled, is_active]
-    """
-    is_enabled = False
-    is_active = False
-
-    # 1. Cek systemctl is-enabled ufw
-    try:
-        res_enabled = subprocess.run(
-            ["systemctl", "is-enabled", "ufw"],
-            capture_output=True,
-            text=True,
-        )
-        is_enabled = res_enabled.stdout.strip() == "enabled"
-    except Exception:
-        is_enabled = False
-
-    # 2. Cek ufw status
-    try:
-        res_status = subprocess.run(
-            ["ufw", "status"],
-            capture_output=True,
-            text=True,
-        )
-        is_active = "Status: active" in res_status.stdout
-    except Exception:
-        is_active = False
-
-    return is_enabled, is_active
 
 
 def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K09",
+        catalog="K13",
         cis_id="4.2.3",
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K09", "ufw_audit")
+    lock_name = CATALOG_LOCKS.get("K13", "ufw_audit")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
@@ -73,29 +41,25 @@ def main():
                 "Result",
                 "Hasil Audit: FAILED - Paket 'ufw' belum terinstall pada sistem.",
             )
-            sys.exit(0)
+            sys.exit(1)
 
-        # Cek status service UFW
-        is_enabled, is_active = is_ufw_enabled_and_active()
+        is_compliant, runtime_state, startup_state = check_systemd_service_status(UFW_SERVICE_NAME)
 
-        if is_enabled and is_active:
+        if is_compliant:
             logger.log(
                 "COMPLIANT",
                 "Result",
                 "Hasil Audit: COMPLIANT - Layanan 'ufw' dalam status enabled dan active.",
             )
-            sys.exit(0)
         else:
-            status_details = f"enabled={is_enabled}, active={is_active}"
             logger.log(
                 "NON_COMPLIANT",
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Layanan 'ufw' belum aktif/enabled ({status_details}).",
+                f"Hasil Audit: NON_COMPLIANT - Layanan 'ufw' belum aktif/enabled (active={runtime_state}, enabled={startup_state}).",
             )
-            sys.exit(0)
-
+           
     except Exception as e:
-        logger.log_error("K09", "audit", e)
+        logger.log_error("K13", "audit", e)
 
     finally:
         release_lock(lock_file)

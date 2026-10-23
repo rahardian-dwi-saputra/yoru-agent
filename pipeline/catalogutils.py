@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import List, Optional, TextIO, Tuple, Union
+from typing import Literal, List, Optional, TextIO, Tuple, Union
 from datetime import datetime, timezone
 from pathlib import Path
 import fcntl
@@ -14,6 +14,7 @@ import filecmp
 import getpass
 import socket
 
+
 from config.settings import (
     TIMEZONE_NAME,
     APP_TIMEZONE,
@@ -27,6 +28,7 @@ from config.settings import (
 )
 
 
+# Class untuk mencatat log
 class BaseLogger:
     def __init__(
         self,
@@ -95,11 +97,9 @@ class BaseLogger:
             "pid": os.getpid(),
             "hostname": socket.gethostname(),
             "executed_by": getpass.getuser(),
-            
             "catalog": self.catalog,
             "cis_id": self.cis_id,
             "type": self.log_type,
-
             "status": status,
             "step": step,
             "message": message,
@@ -126,6 +126,7 @@ class BaseLogger:
         )
 
 
+# Function untuk melakukan log file
 def acquire_lock(lock_name: str, logger: BaseLogger | None = None) -> Optional[TextIO]:
     """Mengambil lock eksklusif non-blocking berdasarkan nama lock."""
     lock_path = Path(f"/tmp/{lock_name}.lock")
@@ -143,6 +144,7 @@ def acquire_lock(lock_name: str, logger: BaseLogger | None = None) -> Optional[T
         sys.exit(0)
 
 
+# Function untuk melepas log file
 def release_lock(lock_file_obj: Optional[TextIO]) -> None:
     """Melepaskan lock dan menutup file handle."""
     if lock_file_obj:
@@ -151,6 +153,24 @@ def release_lock(lock_file_obj: Optional[TextIO]) -> None:
             lock_file_obj.close()
         except Exception:
             pass
+
+
+# Function untuk mengecek keberadaan file konfigurasi
+def check_config_exists(
+    config_path: Path,
+    config_name: str = "Konfigurasi",
+    logger: BaseLogger | None = None,
+) -> bool:
+    """Mengecek apakah file konfigurasi generik ada dan merupakan file valid."""
+    if not config_path.is_file():
+        if logger:
+            logger.log(
+                "ERROR",
+                "Note",
+                f"File {config_name} ({config_path}) tidak ditemukan atau tidak valid.",
+            )
+        return False
+    return True
 
 
 def check_sshd_config_exists(
@@ -167,6 +187,142 @@ def check_sshd_config_exists(
             )
         return False
     return True
+
+
+
+ParameterStatus = Literal["not_found", "commented", "active"]
+
+def check_config_parameter_value(
+    file_path: Path,
+    param_name: str,
+    comment_chars: tuple[str, ...] = ("#", ";"),
+    case_sensitive: bool = False,
+) -> Tuple[ParameterStatus, Optional[str]]:
+    """
+    Mengecek status keberadaan parameter dan mengambil nilai aktualnya jika aktif.
+    
+    Returns:
+        Tuple[ParameterStatus, Optional[str]]: 
+            - Status: "not_found" | "commented" | "active"
+            - Nilai: string nilai parameter jika ditemukan aktif, atau None jika tidak ada/dikomentari.
+    """
+    if not file_path.is_file():
+        return "not_found", None
+
+
+    active_value: Optional[str] = None
+    has_commented_version = False
+
+    target_param = param_name if case_sensitive else param_name.lower()
+
+    try:
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                stripped_line = line.strip()
+                if not stripped_line:
+                    continue
+
+                is_commented_line = stripped_line.startswith(comment_chars)
+                content_to_check = stripped_line
+                if is_commented_line:
+                    content_to_check = stripped_line.lstrip("".join(comment_chars)).strip()
+
+                # Pisahkan berdasarkan spasi atau tanda '=' (misal: "LoginGraceTime 1m" atau "LoginGraceTime=1m")
+                # Kita ganti '=' dengan spasi agar mudah di-split
+                normalized_line = content_to_check.replace("=", " ")
+                parts = normalized_line.split()
+                
+                if not parts:
+                    continue
+
+                current_key = parts[0]
+                if not case_sensitive:
+                    current_key = current_key.lower()
+
+                if current_key == target_param:
+                    if not is_commented_line:
+                        # Ambil nilai parameter (biasanya ada di indeks ke-1)
+                        if len(parts) > 1:
+                            active_value = parts[1]
+                        return "active", active_value
+                    else:
+                        has_commented_version = True
+
+        if has_commented_version:
+            return "commented", None
+        
+        return "not_found", None
+
+    except Exception:
+        return "not_found", None
+    
+    
+
+
+ServiceState = Literal["running", "stopped", "failed", "unknown"]
+ServiceEnableState = Literal["enabled", "disabled", "masked", "unknown"]
+
+def check_systemd_service_status(service_name: str) -> Tuple[bool, ServiceState, ServiceEnableState]:
+    """
+    Mengecek status aktif (running) dan enable dari suatu layanan systemd.
+    
+    Args:
+        service_name: Nama layanan systemd (contoh: "ssh", "ufw", "auditd", "nginx")
+        
+    Returns:
+        Tuple[bool, ServiceState, ServiceEnableState]:
+            - is_active_and_enabled: True jika layanan aktif (running) DAN enabled, False jika sebaliknya.
+            - active_status: Status runtime ("running", "stopped", "failed", "unknown")
+            - enable_status: Status startup ("enabled", "disabled", "masked", "unknown")
+    """
+    active_state: ServiceState = "unknown"
+    enable_state: ServiceEnableState = "unknown"
+
+    try:
+        # 1. Cek apakah service aktif (running) menggunakan 'systemctl is-active'
+        result_active = subprocess.run(
+            ["systemctl", "is-active", service_name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False
+        )
+        active_output = result_active.stdout.strip()
+        if active_output == "active":
+            active_state = "running"
+        elif active_output in ("inactive", "dead"):
+            active_state = "stopped"
+        elif active_output == "failed":
+            active_state = "failed"
+        else:
+            active_state = "unknown"
+
+        # 2. Cek apakah service enabled menggunakan 'systemctl is-enabled'
+        result_enable = subprocess.run(
+            ["systemctl", "is-enabled", service_name],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            check=False
+        )
+        enable_output = result_enable.stdout.strip()
+        if enable_output == "enabled":
+            enable_state = "enabled"
+        elif enable_output in ("disabled", "static"):
+            enable_state = "disabled"
+        elif enable_output == "masked":
+            enable_state = "masked"
+        else:
+            enable_state = "unknown"
+
+    except Exception:
+        # Jika terjadi error saat eksekusi subprocess (misal bukan sistem Linux / systemctl tidak ada)
+        return False, "unknown", "unknown"
+
+    # Layanan dianggap sukses (compliant) jika berjalan (running) dan diatur menyala otomatis (enabled)
+    is_compliant = (active_state == "running" and enable_state == "enabled")
+
+    return is_compliant, active_state, enable_state
 
 
 def create_ssh_backup(logger=None) -> tuple[bool, str]:
