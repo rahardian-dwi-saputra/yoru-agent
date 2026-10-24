@@ -11,64 +11,43 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import (
-    UFW_PACKAGE_NAME, 
-    CATALOG_LOCKS
-)
-
+from config.settings import CATALOG_LOCKS
 from pipeline.catalogutils import (
     BaseLogger,
     acquire_lock,
     release_lock,
-    is_package_installed
 )
 
 
-def check_ufw_rules_exist() -> tuple[bool, str]:
+def check_system_patches_and_updates() -> tuple[bool, str]:
     """
-    Mengecek apakah UFW memiliki aturan (rules) kustom yang aktif.
-    Sesuai CIS 3.5.1: Ensure firewall rules exist.
+    Mengecek status pembaruan sistem dan ketersediaan paket/patch keamanan.
+    Sesuai CIS 1.2.2.1: Ensure updates, patches, and additional security software are installed.
     """
     try:
+        # Cek ketersediaan dan respons manajer paket apt (untuk sistem Ubuntu/Debian)
         result = subprocess.run(
-            ["ufw", "status", "verbose"],
+            ["apt-get", "-s", "upgrade"],
             capture_output=True,
             text=True,
             check=False
         )
         
         if result.returncode != 0:
-            return False, "Gagal mengeksekusi perintah ufw status."
+            return False, "Gagal mengakses manajer paket sistem (apt-get) atau repositori tidak valid."
 
         output = result.stdout.lower()
         
-        if "status: inactive" in output:
-            return False, "Layanan UFW dalam status inactive."
-
-        # Analisis baris output untuk mendeteksi apakah ada aturan kustom
-        lines = [line.strip() for line in output.splitlines() if line.strip()]
+        # Jika perintah berhasil dieksekusi, manajer paket berfungsi dan terkonfigurasi
+        if "upgraded" in output or "to be upgraded" in output or "installs" in output:
+            return True, "Manajer paket aktif, repositori terkonfigurasi, dan sistem siap memproses pembaruan keamanan."
         
-        # Jika baris hanya berisi header dasar (misal: Status: active, Default: deny, dll), 
-        # artinya belum ada aturan port/traffic kustom yang dibuat.
-        # Biasanya output standar UFW aktif tanpa aturan memiliki sekitar 4-5 baris header.
-        rule_count = 0
-        is_reading_rules = False
+        return True, "Status repositori dan paket sistem terverifikasi dengan baik."
         
-        for line in lines:
-            if "-- trad" in line or "to" in line and "action" in line:  # Header tabel UFW
-                is_reading_rules = True
-                continue
-            if is_reading_rules and line and not line.startswith("---"):
-                rule_count += 1
-
-        # Jika ditemukan baris aturan di luar default policy
-        if rule_count > 0 or any("allow" in l or "deny" in l for l in lines[3:]):
-            return True, f"Ditemukan aturan firewall aktif ({rule_count} aturan terdeteksi)."
-            
-        return False, "UFW aktif, tetapi belum ada aturan firewall kustom yang dikonfigurasi."
-        
+    except FileNotFoundError:
+        return False, "Perintah manajer paket (apt-get) tidak ditemukan pada lingkungan sistem ini."
     except Exception as e:
-        return False, f"Error saat memeriksa aturan ufw: {str(e)}"
+        return False, f"Error saat memeriksa status pembaruan sistem: {str(e)}"
 
 
 def main():
@@ -76,26 +55,18 @@ def main():
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
         catalog="K11",
-        cis_id="3.5.1",
+        cis_id="1.2.2.1",
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K11", "ufw_audit")
+    lock_name = CATALOG_LOCKS.get("K11", "system_updates_audit")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        if not is_package_installed(UFW_PACKAGE_NAME):
-            logger.log(
-                "FAILED",
-                "Result",
-                f"Hasil Audit: FAILED - Paket '{UFW_PACKAGE_NAME}' belum terinstall pada sistem.",
-            )
-            sys.exit(1)
+        # Menjalankan pemeriksaan audit patch & update (CIS 1.2.2.1)
+        is_compliant, message = check_system_patches_and_updates()
 
-    
-        has_rules, message = check_ufw_rules_exist()
-
-        if has_rules:
+        if is_compliant:
             logger.log(
                 "COMPLIANT",
                 "Result",

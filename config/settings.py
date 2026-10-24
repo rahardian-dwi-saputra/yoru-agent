@@ -122,7 +122,7 @@ CATALOG_LOCKS = {
     "K08": "auditd_service",
     "K09": "journald_log_access",
     "K10": "journald_compress",
-    "K11": "ufw_rules",
+    "K11": "system_updates_audit",
     "K12": "ufw_service",
     "K13": "ufw_default_deny",
     "K14": "approved_services_listening",

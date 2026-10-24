@@ -7,18 +7,18 @@ vars:
 
   ID: "K02"
   NAMA: "Login SSH menggunakan Password Dimatikan (Khusus SSH Key)"
-  KODE_CIS: "5.2.14"
-  CIS_JUDUL: "5.2.14 Ensure SSH PasswordAuthentication is disabled"
+  KODE_CIS: "-"
+  CIS_JUDUL: "-"
   REGULASI: "Pasal 35, Pasal 36"
   KEPATUHAN: "UU PDP No. 27/2022"
-  FRAMEWORK: "CIS Benchmark & UU PDP"
+  FRAMEWORK: "UU PDP"
   DESKRIPSI: |
     Aturan keamanan untuk memastikan login ke server melalui SSH tidak 
     menggunakan password, melainkan metode autentikasi kriptografi yang lebih aman 
     seperti SSH Public Key. Fungsinya untuk mencegah serangan brute-force, 
     credential stuffing, dan pencurian password sesuai standar perlindungan data.
   RISIKO: "TINGGI"
-  KATEGORI: "SSH"
+  KATEGORI: "SSH Security"
   AUDIT_ONLY: false
   PESAN_HARDENING: |
     Aksi ini akan mengubah parameter 'PasswordAuthentication' menjadi 'no' 

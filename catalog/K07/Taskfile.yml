@@ -7,8 +7,8 @@ vars:
 
   ID: "K07"
   NAMA: "Pengaturan KexAlgorithms SSH yang Aman"
-  KODE_CIS: "5.1.8"
-  CIS_JUDUL: "5.1.8 Ensure sshd KexAlgorithms are configured"
+  KODE_CIS: "5.1.12"
+  CIS_JUDUL: "5.1.12 Ensure sshd KexAlgorithms are configured"
   REGULASI: "Pasal 35, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
@@ -19,7 +19,7 @@ vars:
     pembentukan kunci enkripsi antara client dan server agar 
     tidak mudah dieksploitasi oleh pihak yang tidak berwenang.
   RISIKO: "TINGGI"
-  KATEGORI: "SSH"
+  KATEGORI: "SSH Security"
   AUDIT_ONLY: false
   PESAN_HARDENING: |
     Aksi ini akan menetapkan parameter 'KexAlgorithms' hanya pada 

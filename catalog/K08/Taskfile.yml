@@ -19,7 +19,7 @@ vars:
     sistem yang dapat digunakan untuk pemantauan, pemeriksaan, 
     dan investigasi ketika terjadi masalah atau insiden keamanan.
   RISIKO: "TINGGI"
-  KATEGORI: "AUDIT LOGGING"
+  KATEGORI: "Logging and Auditing"
   AUDIT_ONLY: true
   PESAN_HARDENING: "-"
   PESAN_ROLLBACK: "-"

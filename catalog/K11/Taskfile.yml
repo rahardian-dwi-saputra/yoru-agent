@@ -6,21 +6,20 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   ID: "K11"
-  NAMA: "Memastikan Aturan Firewall Aktif dan Memblokir Akses Tidak Perlu"
-  KODE_CIS: "3.5.1"
-  CIS_JUDUL: "3.5.1 Ensure firewall rules exist"
-  REGULASI: "Pasal 35, Pasal 36"
+  NAMA: "Pembaruan keamanan otomatis"
+  KODE_CIS: "1.2.2.1"
+  CIS_JUDUL: "1.2.2.1 Ensure updates, patches, and additional security software are installed"
+  REGULASI: "Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Kontrol keamanan yang memastikan firewall memiliki aturan (rules) 
-    yang ditetapkan untuk mengatur lalu lintas jaringan yang masuk 
-    dan keluar berdasarkan kebutuhan keamanan. Fungsinya adalah 
-    mengizinkan koneksi yang sah dan memblokir koneksi yang tidak 
-    diizinkan, sehingga mengurangi risiko akses tidak sah dan 
-    serangan terhadap sistem.
+    Aturan keamanan yang mewajibkan sistem memasang pembaruan, 
+    patch keamanan, dan perangkat lunak keamanan tambahan sesuai 
+    kebutuhan. Fungsinya adalah memperbaiki kerentanan yang diketahui, 
+    mengurangi risiko eksploitasi oleh penyerang, dan menjaga sistem 
+    tetap aman serta mutakhir.
   RISIKO: "TINGGI"
-  KATEGORI: "Firewall"
+  KATEGORI: "System Security / Patch Management"
   AUDIT_ONLY: true
   PESAN_HARDENING: "-"
   PESAN_ROLLBACK: "-"
@@ -32,7 +31,7 @@ tasks:
       - mkdir -p {{.LOG_DIR}}
 
   audit:
-    desc: "Menjalankan audit status layanan ufw"
+    desc: "Menjalankan audit pembaruan keamanan dan patch sistem"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py

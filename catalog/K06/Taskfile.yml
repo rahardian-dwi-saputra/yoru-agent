@@ -7,8 +7,8 @@ vars:
 
   ID: "K06"
   NAMA: "Pengaturan MACs SSH yang Aman (Integritas Pesan)"
-  KODE_CIS: "5.1.7"
-  CIS_JUDUL: "5.1.7 Ensure sshd MACs are configured"
+  KODE_CIS: "5.1.15"
+  CIS_JUDUL: "5.1.15 Ensure sshd MACs are configured"
   REGULASI: "Pasal 35, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
@@ -19,7 +19,7 @@ vars:
     untuk mencegah data komunikasi SSH diubah atau dimanipulasi 
     oleh pihak yang tidak berwenang selama proses komunikasi.
   RISIKO: "TINGGI"
-  KATEGORI: "SSH"
+  KATEGORI: "SSH Security"
   AUDIT_ONLY: false
   PESAN_HARDENING: |
     Aksi ini akan menetapkan parameter 'MACs' hanya pada algoritma 

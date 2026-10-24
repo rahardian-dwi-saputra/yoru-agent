@@ -19,7 +19,7 @@ vars:
     autentikasi tetap terbuka terlalu lama, sehingga mengurangi 
     risiko penyalahgunaan koneksi dan serangan terhadap server.
   RISIKO: "SEDANG"
-  KATEGORI: "SSH"
+  KATEGORI: "SSH Security"
   AUDIT_ONLY: false
   PESAN_HARDENING: |
     Aksi ini akan menetapkan parameter 'LoginGraceTime' 

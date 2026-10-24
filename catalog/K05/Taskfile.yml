@@ -19,7 +19,7 @@ vars:
     yang dikirim antara client dan server SSH agar tidak mudah 
     dibaca atau disadap oleh pihak yang tidak berwenang.
   RISIKO: "TINGGI"
-  KATEGORI: "SSH"
+  KATEGORI: "SSH Security"
   AUDIT_ONLY: false
   PESAN_HARDENING: |
     Aksi ini akan menetapkan parameter 'Ciphers' hanya pada algoritma 

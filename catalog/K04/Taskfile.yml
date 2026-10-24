@@ -18,7 +18,7 @@ vars:
     risiko serangan brute-force, karena penyerang tidak dapat mencoba 
     password atau kredensial berkali-kali tanpa batas.
   RISIKO: "TINGGI"
-  KATEGORI: "SSH"
+  KATEGORI: "SSH Security"
   AUDIT_ONLY: false
   PESAN_HARDENING: |
     Aksi ini akan menetapkan parameter 'MaxAuthTries' (menjadi 4 atau 

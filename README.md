@@ -15,16 +15,16 @@ Yoru-agent menggunakan katalog berikut untuk melakukan audit dan hardening keama
 | ID | Referensi CIS | Kategori | Deskripsi Kontrol | Mode |
 | --- | --- | --- | --- | --- |
 | K01 | 5.1.20 | SSH Security | Ensure sshd PermitRootLogin is disabled | Audit & Hardening |
-| K02 | 5.2.14 | SSH Security | Ensure SSH PasswordAuthentication is disabled |	Audit & Hardening |
+| K02 | - | SSH Security | Ensure SSH PasswordAuthentication is disabled |	Audit & Hardening |
 | K03 | 5.1.13 | SSH Security | Ensure sshd LoginGraceTime is configured | Audit & Hardening |
 | K04 | 5.1.16 | SSH Security | Ensure sshd MaxAuthTries is configured | Audit & Hardening |
 | K05 | 5.1.6 | SSH Security | Ensure sshd Ciphers are configured | Audit & Hardening |
-| K06 | 5.1.7 | SSH Security | Ensure sshd MACs are configured | Audit & Hardening |
-| K07 | 5.1.8 | SSH Security | Ensure sshd KexAlgorithms are configured	| Audit & Hardening |
+| K06 | 5.1.15 | SSH Security | Ensure sshd MACs are configured | Audit & Hardening |
+| K07 | 5.1.12 | SSH Security | Ensure sshd KexAlgorithms are configured	| Audit & Hardening |
 | K08 | 4.1.1.2 | Logging and Auditing | Ensure auditd service is enabled and active | Audit Only |
 | K09 | 6.1.1.2 | Logging and Auditing | Ensure journald log file access is configured | Audit & Hardening |
-| K10 | 6.1.2.3 | System LogginLogging and Auditing | Ensure journald Compress is configured | Audit & Hardening |
-| K11 | 3.5.1 | Firewall | Ensure firewall rules exist | Audit Only |
+| K10 | 6.1.2.3 | Logging and Auditing | Ensure journald Compress is configured | Audit & Hardening |
+| K11 | 1.2.2.1 | System Security / Patch Management | Ensure updates, patches, and additional security software are installed | Audit Only |
 | K12 | 4.2.3 | Firewall | Ensure ufw service is enabled | Audit Only |
 | K13 | 4.2.7 | Firewall | Ensure ufw default deny firewall policy | Audit Only |
 | K14 | 2.1.22 | Network Security | Ensure only approved services are listening on a network interface | Audit Only |
