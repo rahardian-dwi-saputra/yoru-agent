@@ -5,44 +5,34 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS Benchmark
-  ID: "K14"
-  NAMA: "Kompresi Log Journald"
-  KODE_CIS: "6.1.2.3"
-  CIS_JUDUL: "6.1.2.3 Ensure journald Compress is configured"
+  ID: "K11"
+  NAMA: "Memastikan Aturan Firewall Aktif dan Memblokir Akses Tidak Perlu"
+  KODE_CIS: "3.5.1"
+  CIS_JUDUL: "3.5.1 Ensure firewall rules exist"
+  REGULASI: "Pasal 35, Pasal 36"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan systemd-journald dikonfigurasi 
-    agar mengompresi log sistem saat ukurannya melebihi batas tertentu. 
-    Fungsinya untuk menghemat ruang penyimpanan disk dan menjaga efisiensi 
-    pencatatan log dalam jangka panjang tanpa mengganggu layanan.
-  RISIKO: "AMAN"
-  KATEGORI: "Logging and Auditing"
-  AUDIT_ONLY: false
+    Kontrol keamanan yang memastikan firewall memiliki aturan (rules) 
+    yang ditetapkan untuk mengatur lalu lintas jaringan yang masuk 
+    dan keluar berdasarkan kebutuhan keamanan. Fungsinya adalah 
+    mengizinkan koneksi yang sah dan memblokir koneksi yang tidak 
+    diizinkan, sehingga mengurangi risiko akses tidak sah dan 
+    serangan terhadap sistem.
+  RISIKO: "TINGGI"
+  KATEGORI: "Firewall"
+  AUDIT_ONLY: true
+  PESAN_HARDENING: "-"
+  PESAN_ROLLBACK: "-"
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Konfigurasi Kompresi Journald
   audit:
-    desc: "Menjalankan audit pengaturan kompresi log systemd-journald"
+    desc: "Menjalankan audit status layanan ufw"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
-
-  # 2. Hardening Konfigurasi Kompresi Journald (Mengatur Compress=yes)
-  hardening:
-    desc: "Menerapkan konfigurasi kompresi log journald secara permanen"
-    deps: [init-log-dir]
-    cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
-
-  # 3. Rollback Konfigurasi Kompresi Journald (Mengembalikan ke kondisi awal)
-  rollback:
-    desc: "Mengembalikan konfigurasi kompresi log journald ke kondisi sebelum hardening"
-    deps: [init-log-dir]
-    cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

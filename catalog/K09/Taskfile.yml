@@ -6,29 +6,52 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   ID: "K09"
-  NAMA: "Layanan Auditd Aktif dan Enabler"
-  KODE_CIS: "4.1.1.2"
-  CIS_JUDUL: "4.1.1.2 Ensure auditd service is enabled and active"
+  NAMA: "Pengaturan Akses File Log Journald"
+  KODE_CIS: "6.1.1.2"
+  CIS_JUDUL: "6.1.1.2 Ensure journald log file access is configured"
+  REGULASI: "Pasal 35, Pasal 36"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan layanan auditd selalu aktif 
-    dan berjalan untuk mencatat aktivitas penting yang terjadi 
-    pada sistem. Fungsinya untuk menyediakan rekaman aktivitas 
-    sistem yang dapat digunakan untuk pemantauan, pemeriksaan, 
-    dan investigasi ketika terjadi masalah atau insiden keamanan.
-  RISIKO: "HIGH"
-  KATEGORI: "LOGGING"
-  AUDIT_ONLY: true
+    Aturan keamanan untuk memastikan direktori dan berkas log systemd-journald 
+    memiliki izin akses yang aman (permissions dan kepemilikan yang tepat) 
+    sehingga tidak dapat dibaca atau dimanipulasi secara sembarangan oleh user 
+    yang tidak berotoritas.
+  RISIKO: "RENDAH"
+  KATEGORI: "Logging and Auditing"
+  AUDIT_ONLY: false
+  PESAN_HARDENING: |
+    Aksi ini akan memperketat izin akses file dan direktori log Journald 
+    sistem dan memastikan kepemilikan (ownership) yang aman sesuai CIS 
+    Benchmark. ⚠️ DAMPAK: User biasa atau proses aplikasi yang tidak 
+    memiliki hak akses yang tepat tidak akan dapat membaca direktori 
+    log systemd-journald secara langsung.
+  PESAN_ROLLBACK: |
+    Aksi ini akan mengembalikan hak akses (permissions dan ownership) 
+    direktori log Journald ke kondisi semula.
+    ⚠️ RISIKO: Berkas log sistem dapat kembali dibaca oleh user 
+    yang tidak berotoritas, menurunkan tingkat kerahasiaan data log.
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # Audit Task (Satu-satunya task eksekusi karena AUDIT_ONLY: true)
   audit:
-    desc: "Menjalankan audit ketersediaan dan status layanan auditd"
+    desc: "Menjalankan audit izin akses dan kepemilikan file log journald"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
+
+  hardening:
+    desc: "Menerapkan konfigurasi izin akses dan kepemilikan yang aman pada direktori log journald"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
+
+  rollback:
+    desc: "Mengembalikan izin akses file log journald ke kondisi sebelum hardening"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

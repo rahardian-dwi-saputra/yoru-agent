@@ -1,0 +1,37 @@
+version: '3'
+
+vars:
+  PROJECT_DIR: "{{.TASKFILE_DIR}}"
+  SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
+  LOG_DIR: "{{.PROJECT_DIR}}/logs"
+
+  ID: "K08"
+  NAMA: "Layanan Auditd Aktif dan Berjalan"
+  KODE_CIS: "4.1.1.2"
+  CIS_JUDUL: "4.1.1.2 Ensure auditd service is enabled and active"
+  REGULASI: "Pasal 35, Pasal 36"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
+  DESKRIPSI: |
+    Aturan keamanan untuk memastikan layanan auditd selalu aktif 
+    dan berjalan untuk mencatat aktivitas penting yang terjadi 
+    pada sistem. Fungsinya untuk menyediakan rekaman aktivitas 
+    sistem yang dapat digunakan untuk pemantauan, pemeriksaan, 
+    dan investigasi ketika terjadi masalah atau insiden keamanan.
+  RISIKO: "TINGGI"
+  KATEGORI: "AUDIT LOGGING"
+  AUDIT_ONLY: true
+  PESAN_HARDENING: "-"
+  PESAN_ROLLBACK: "-"
+
+tasks:
+  init-log-dir:
+    internal: true
+    cmds:
+      - mkdir -p {{.LOG_DIR}}
+
+  audit:
+    desc: "Menjalankan audit ketersediaan dan status layanan auditd"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py

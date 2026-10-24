@@ -5,31 +5,33 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS Benchmark
-  ID: "K09"
-  NAMA: "Memastikan Layanan UFW Aktif"
-  KODE_CIS: "4.2.3"
-  CIS_JUDUL: "4.2.3 Ensure ufw service is enabled"
+  ID: "K13"
+  NAMA: "Pengaturan Kebijakan Default UFW Firewall (Deny By Default)"
+  KODE_CIS: "4.2.7"
+  CIS_JUDUL: "4.2.7 Ensure ufw default deny firewall policy"
+  REGULASI: "Pasal 35, Pasal 36"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan UFW (Uncomplicated Firewall) 
-    aktif pada sistem dan berjalan sebagai firewall. Fungsinya 
-    untuk mengontrol lalu lintas jaringan masuk dan keluar 
-    berdasarkan aturan yang ditentukan, sehingga dapat membatasi 
-    akses yang tidak diperlukan ke server.
-  RISIKO: "BERISIKO"
+    Aturan keamanan untuk memastikan UFW secara default menolak 
+    koneksi jaringan yang tidak secara khusus diizinkan oleh 
+    aturan firewall. Fungsinya untuk membatasi akses yang tidak 
+    diperlukan ke server, sehingga hanya koneksi atau layanan 
+    yang telah diizinkan yang dapat mengakses sistem.
+  RISIKO: "TINGGI"
   KATEGORI: "Firewall"
   AUDIT_ONLY: true
+  PESAN_HARDENING: "-"
+  PESAN_ROLLBACK: "-"
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # Audit status ufw service (enabled & active)
   audit:
-    desc: "Menjalankan audit status layanan ufw"
+    desc: "Menjalankan audit kebijakan default UFW firewall"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py

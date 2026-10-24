@@ -22,8 +22,12 @@ JOURNALD_DROPIN_DIR = Path("/etc/systemd/journald.conf.d")
 JOURNAL_LOG_DIR = Path("/var/log/journal")
 SYSCTL_CONF = Path("/etc/sysctl.d/60-cis-icmp-broadcast.conf")
 
+# Daftar Nama Package
+AUDITD_PACKAGE_NAME = "auditd"
+UFW_PACKAGE_NAME = "ufw"
+
 # Daftar Nama Layanan
-SSH_SERVICE_NAME = "ssh"
+SSH_SERVICE_NAME = ["ssh", "sshd"]
 AUDITD_SERVICE_NAME = "auditd"
 UFW_SERVICE_NAME = "ufw"
 JOURNALD_SERVICE_NAME = "systemd-journald"
@@ -115,14 +119,14 @@ CATALOG_LOCKS = {
     "K05": "ssh_ciphers",
     "K06": "ssh_macs",
     "K07": "ssh_kex_algorithms",
+    "K08": "auditd_service",
+    "K09": "journald_log_access",
+    "K10": "journald_compress",
+    "K11": "ufw_rules",
+    "K12": "ufw_service",
+    "K13": "ufw_default_deny",
+    "K14": "approved_services_listening",
     
-    "K09": "auditd_service",
-    "K10": "journald_log_access",
-    "K11": "journald_compress",
-
-    "K13": "ufw_service",
-    "K14": "ufw_default_deny",
-    "K15": "approved_services_listening",
     "K22": "icmp_broadcast",
     "K23": "icmp_redirects",
     "K24": "source_route",

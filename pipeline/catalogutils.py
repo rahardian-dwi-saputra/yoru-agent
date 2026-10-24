@@ -257,6 +257,39 @@ def check_config_parameter_value(
         return "not_found", None
     
     
+def is_package_installed(package_name: str, binary_name: str | None = None) -> bool:
+    """
+    Mengecek apakah suatu paket atau binary sudah terinstall pada sistem.
+    
+    Args:
+        package_name: Nama paket di system package manager (contoh: "auditd", "ufw", "nginx").
+        binary_name: Nama perintah/binary opsional untuk dicek via PATH (contoh: "auditd", "ufw"). 
+                     Jika None, akan menggunakan nilai dari `package_name`.
+        
+    Returns:
+        bool: True jika terinstall, False jika tidak.
+    """
+    target_binary = binary_name if binary_name is not None else package_name
+
+    # 1. Cek keberadaan binary melalui PATH sistem (paling cepat & aman)
+    if shutil.which(target_binary) is not None:
+        return True
+
+    # 2. Cadangan pengecekan menggunakan package manager dpkg (untuk Debian/Ubuntu)
+    try:
+        res = subprocess.run(
+            ["dpkg-query", "-W", "-f=${Status}", package_name],
+            capture_output=True,
+            text=True,
+            check=False
+        )
+        # Status 'install ok installed' menandakan paket terpasang sempurna
+        if res.returncode == 0 and "install ok installed" in res.stdout:
+            return True
+    except Exception:
+        pass
+
+    return False
 
 
 ServiceState = Literal["running", "stopped", "failed", "unknown"]
@@ -384,6 +417,53 @@ def restart_ssh_service() -> bool:
         )
         if result.returncode == 0:
             return True
+    return False
+
+
+
+
+def restart_system_service(service_names: Union[str, List[str]]) -> bool:
+    """
+    Mencoba merestart satu atau beberapa layanan systemd.
+    Mendukung argumen berupa string tunggal atau list string.
+    Akan mengembalikan True jika salah satu layanan berhasil direstart.
+    
+    Args:
+        service_names: Nama service (string) atau daftar nama service (list of strings).
+        
+    Returns:
+        bool: True jika restart berhasil, False jika semua percobaan gagal.
+    """
+    # Normalisasi argumen: Jika berupa string, ubah menjadi list berisi 1 elemen
+    if isinstance(service_names, str):
+        services_to_try = [service_names]
+    elif isinstance(service_names, list):
+        services_to_try = service_names
+    else:
+        return False
+
+    # Hapus duplikat jika ada, sambil mempertahankan urutan
+    services_to_try = list(dict.fromkeys(services_to_try))
+
+    for service in services_to_try:
+        if not service:
+            continue
+            
+        try:
+            result = subprocess.run(
+                ["systemctl", "restart", service],
+                capture_output=True,
+                text=True,
+                check=False
+            )
+            
+            # Jika returncode 0, berarti perintah systemctl restart berhasil dieksekusi
+            if result.returncode == 0:
+                return True
+        except Exception:
+            # Lanjut ke kandidat service berikutnya jika terjadi error sistem/subprocess
+            continue
+
     return False
 
 

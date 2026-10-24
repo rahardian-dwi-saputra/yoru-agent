@@ -5,31 +5,33 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS Benchmark
-  ID: "K10"
-  NAMA: "Pengaturan Kebijakan Default UFW Firewall"
-  KODE_CIS: "4.2.7"
-  CIS_JUDUL: "4.2.7 Ensure ufw default deny firewall policy"
+  ID: "K14"
+  NAMA: "Pengaturan Layanan Jaringan yang Mendengarkan Interface Network"
+  KODE_CIS: "2.1.22"
+  CIS_JUDUL: "2.1.22 Ensure only approved services are listening on a network interface"
+  REGULASI: "Pasal 35, Pasal 39"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan UFW secara default menolak 
-    koneksi jaringan yang tidak secara khusus diizinkan oleh 
-    aturan firewall. Fungsinya untuk membatasi akses yang tidak 
-    diperlukan ke server, sehingga hanya koneksi atau layanan 
-    yang telah diizinkan yang dapat mengakses sistem.
-  RISIKO: "BERISIKO"
-  KATEGORI: "Firewall"
+    Aturan keamanan untuk memastikan hanya layanan yang memang 
+    diperlukan dan telah disetujui yang dapat menerima koneksi melalui 
+    jaringan. Fungsinya untuk mengurangi port dan layanan yang terbuka 
+    sehingga memperkecil celah yang dapat dimanfaatkan oleh pihak yang 
+    tidak berwenang.
+  RISIKO: "TINGGI"
+  KATEGORI: "Services / Network Configuration"
   AUDIT_ONLY: true
+  PESAN_HARDENING: "-"
+  PESAN_ROLLBACK: "-"
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # Audit status kebijakan default UFW
   audit:
-    desc: "Menjalankan audit kebijakan default UFW firewall"
+    desc: "Menjalankan audit layanan yang mendengarkan pada network interface"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py

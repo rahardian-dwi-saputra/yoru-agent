@@ -57,7 +57,6 @@ def main():
             )
             sys.exit(1)
 
-
         status, value = check_config_parameter_value(SSHD_CONFIG, "PermitRootLogin")
 
         if status == "active":
