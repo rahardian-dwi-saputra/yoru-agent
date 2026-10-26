@@ -9,7 +9,7 @@ vars:
   NAMA: "Root Tidak Bisa Login Lewat SSH"
   KODE_CIS: "5.1.20"
   CIS_JUDUL: "5.1.20 Ensure sshd PermitRootLogin is disabled"
-  REGULASI: "Pasal 35, Pasal 36"
+  REGULASI: "Pasal 35, Pasal 36, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |

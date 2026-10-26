@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional, Tuple
+from time import perf_counter
 import os
 import shutil
 import subprocess
@@ -15,73 +15,25 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SSHD_CONFIG, CATALOG_LOCKS
-
-from pipeline.catalogutils import (
-    BaseLogger,
-    acquire_lock,
-    check_sshd_config_exists,
-    create_ssh_backup,
-    get_non_root_users,
-    release_lock,
-    restart_ssh_service,
+from config.settings import (
+    SSHD_CONFIG, 
+    SSH_SERVICE_NAME, 
+    CATALOG_LOCKS
 )
 
-
-def get_current_root_login_status() -> Optional[str]:
-    """Mengecek status PermitRootLogin saat ini di sshd_config."""
-    if not SSHD_CONFIG.is_file():
-        return None
-
-    with open(SSHD_CONFIG, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-            if line_stripped.startswith("#"):
-                continue
-
-            if line_stripped.lower().startswith("permitrootlogin"):
-                parts = line_stripped.split()
-                if len(parts) >= 2:
-                    return parts[1]
-    return None
-
-
-def apply_permit_root_login_logic(
-    src_path: Path, dst_file_obj
-) -> Tuple[bool, str]:
-    """Menerapkan logika manipulasi PermitRootLogin ke dalam file sementara."""
-    found_parameter = False
-    action_taken = ""
-
-    with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            # 1. Baris Komentar: e.g. #PermitRootLogin yes / # PermitRootLogin no
-            if line_stripped.startswith("#"):
-                uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("permitrootlogin"):
-                    found_parameter = True
-                    dst_file_obj.write("PermitRootLogin no\n")
-                    action_taken = "uncommented_and_set_to_no"
-                    continue
-
-            # 2. Baris Aktif: e.g. PermitRootLogin yes / PermitRootLogin prohibit-password
-            elif line_stripped.lower().startswith("permitrootlogin"):
-                found_parameter = True
-                dst_file_obj.write("PermitRootLogin no\n")
-                action_taken = "updated_to_no"
-                continue
-
-            # Tulis baris lain tanpa perubahan
-            dst_file_obj.write(line)
-
-    # 3. Parameter Belum Ada Sama Sekali
-    if not found_parameter:
-        dst_file_obj.write("\nPermitRootLogin no\n")
-        action_taken = "appended_new_parameter"
-
-    return found_parameter, action_taken
+from pipeline.catalogutils import (
+    LogStatus,
+    BaseLogger,
+    acquire_lock,
+    release_lock,
+    check_config_exists,
+    create_ssh_backup,
+    check_config_parameter_value,
+    get_effective_sshd_parameter,
+    get_non_root_users,
+    set_config_parameter_value,
+    restart_system_service
+)
 
 
 def main():
@@ -91,100 +43,141 @@ def main():
         log_file_name="hardening.json",
         catalog="K01",
         cis_id="5.1.20",
+        regulasi="Pasal 35, Pasal 36, Pasal 39",
+        kepatuhan="UU PDP No. 27/2022",
         log_type="hardening",
     )
 
     lock_name = CATALOG_LOCKS.get("K01", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+
     try:
-        if not check_sshd_config_exists(logger):
+        if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
             logger.log(
-                "FAILED", 
+                LogStatus.FAILED, 
                 "Result", 
-                "Hasil Hardening: FAILED - File sshd_config tidak ditemukan."
+                f"Hasil Hardening: FAILED - File {SSHD_CONFIG} tidak ditemukan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
         success_backup, backup_msg = create_ssh_backup(logger)
         if not success_backup:
             logger.log(
-                "FAILED",
+                LogStatus.FAILED, 
                 "Result", 
-                f"Hasil Hardening: BackupFailed - {backup_msg}", 
+                f"Hasil Hardening: Backup konfigurasi gagal - {backup_msg}",
+                duration_ms=(perf_counter() - start) * 1000, 
             )
             sys.exit(1)
 
-        # Cek A: Apakah Root login sudah disabled?
-        current_status = get_current_root_login_status()
-        if current_status and current_status.lower() == "no":
-            logger.log(
-                "SKIPPED",
-                "Result",
-                "Hasil Hardening: SKIPPED - Root login SSH sudah dalam keadaan nonaktif (PermitRootLogin no).",
+        # Cek apakah Root login sudah nonaktif (COMPLIANT / SKIPPED)
+        status, _ = check_config_parameter_value(SSHD_CONFIG, "PermitRootLogin")
+        if status == "active":
+            value = get_effective_sshd_parameter(
+                config_file=SSHD_CONFIG,
+                parameter="PermitRootLogin",
             )
-            sys.exit(0)
+            if value.lower() == "no":
+                logger.log(
+                    LogStatus.SKIPPED, 
+                    "Result",
+                    "Hasil Hardening: SKIPPED - Root login SSH sudah dalam keadaan nonaktif (PermitRootLogin no).",
+                    duration_ms=(perf_counter() - start) * 1000, 
+                )
+                sys.exit(0)
 
-        # Cek B: Apakah ada user non-root lain yang bisa login?
+
+        # Validasi keamanan: Pastikan ada user non-root aktif agar tidak terjadi remote lockout
         other_users_count = len(get_non_root_users())
         if other_users_count == 0:
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
                 "Hasil Hardening: CANCELLED FOR SECURITY REASONS - Tidak ditemukan user non-root dengan akses shell!",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
         logger.log(
-            "INFO",
+            LogStatus.INFO,
             "Note",
             f"Verifikasi berhasil: Ditemukan {other_users_count} user non-root aktif.",
         )
 
+        # Buat salinan sementara untuk proses modifikasi dan uji sintaks yang aman
         with tempfile.NamedTemporaryFile(
             "w+", delete=False, prefix="sshd_config_"
         ) as tmp_file:
             tmp_config_path = Path(tmp_file.name)
 
-            found_param, action = apply_permit_root_login_logic(
-                SSHD_CONFIG, tmp_file
-            )
+        # Salin konten file asli ke file sementara
+        shutil.copy2(SSHD_CONFIG, tmp_config_path)
 
-        # Validasi sintaks file sementara menggunakan sshd -t -f
+        # Terapkan perubahan parameter
+        success_set = set_config_parameter_value(
+            tmp_config_path, "PermitRootLogin", "no"
+        )
+
+        if not success_set:
+            if tmp_config_path.exists():
+                tmp_config_path.unlink()
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                "Hasil Hardening: FAILED - Gagal menerapkan parameter PermitRootLogin pada file konfigurasi.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        # Validasi sintaks file konfigurasi sementara menggunakan perintah sshd -t
         validate_cmd = subprocess.run(
             ["sshd", "-t", "-f", str(tmp_config_path)], capture_output=True
         )
 
         if validate_cmd.returncode == 0:
-            # Timpa file utama secara atomic
+            # Jika valid, timpa file utama secara atomic dan atur permission (0600)
             shutil.move(str(tmp_config_path), str(SSHD_CONFIG))
             os.chmod(SSHD_CONFIG, 0o600)
 
-            if restart_ssh_service():
+            # Restart layanan SSH untuk menerapkan perubahan
+            if restart_system_service(SSH_SERVICE_NAME):
                 logger.log(
-                    "SUCCESS",
+                    LogStatus.SUCCESS,
                     "Result",
-                    f"Hasil Hardening: SUCCEED - Root login via SSH berhasil DINONAKTIFKAN (Aksi: {action}).",
+                    "Hasil Hardening: SUCCEED - Root login via SSH berhasil DINONAKTIFKAN menggunakan fungsi global.",
+                    duration_ms=(perf_counter() - start) * 1000,
                 )
+                sys.exit(0)
             else:
                 logger.log(
-                    "WARNING",
+                    LogStatus.WARNING,
                     "Result",
                     "Hasil Hardening: WARNING - Konfigurasi sudah diubah, tetapi gagal merestart service SSH.",
+                    duration_ms=(perf_counter() - start) * 1000,
                 )
+                sys.exit(1)
         else:
             if tmp_config_path.exists():
                 tmp_config_path.unlink()
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
                 "Hasil Hardening: FAILED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
     except Exception as e:
-        logger.log_error("K01", "hardening", e)
-
+        logger.log_error(
+            "K01", 
+            "hardening", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000, 
+        )
+        sys.exit(2)
     finally:
         release_lock(lock_file)
 

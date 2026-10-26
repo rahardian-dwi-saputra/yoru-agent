@@ -28,10 +28,10 @@ Yoru-agent menggunakan katalog berikut untuk melakukan audit dan hardening keama
 | K12 | 4.2.3 | Pasal 35, Pasal 39 | Firewall | Ensure ufw service is enabled | Audit Only |
 | K13 | 4.2.7 | Pasal 35, Pasal 39 | Firewall | Ensure ufw default deny firewall policy | Audit Only |
 | K14 | 2.1.22 | Pasal 35, Pasal 39 | Network Security | Ensure only approved services are listening on a network interface | Audit Only |
-| K21 | 3.3.4 | Pasal 35, Pasal 39 | Network Security | Ensure broadcast icmp requests are ignored |	Audit & Hardening |
-| K22 | 3.3.5 | Pasal 35, Pasal 39 | Network Security | Ensure icmp redirects are not accepted | Audit & Hardening |
-| K23 | 3.3.8 | Pasal 35, Pasal 39 | Network Security | Ensure source routed packets are not accepted | Audit & Hardening |
-| K24 | 3.3.10 | Pasal 35, Pasal 39 | Network Security | Ensure tcp syn cookies is enabled | Audit & Hardening |
+| K15 | 3.3.4 | Pasal 35, Pasal 39 | Network Security | Ensure broadcast icmp requests are ignored |	Audit & Hardening |
+| K16 | 3.3.5 | Pasal 35, Pasal 39 | Network Security | Ensure icmp redirects are not accepted | Audit & Hardening |
+| K17 | 3.3.8 | Pasal 35, Pasal 39 | Network Security | Ensure source routed packets are not accepted | Audit & Hardening |
+| K18 | 3.3.10 | Pasal 35, Pasal 39 | Network Security | Ensure tcp syn cookies is enabled | Audit & Hardening |
 
 **Keterangan Kategori**
 - SSH Security: Mengamankan akses jarak jauh melalui SSH.

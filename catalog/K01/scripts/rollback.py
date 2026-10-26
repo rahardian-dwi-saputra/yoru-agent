@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional, Tuple
+from time import perf_counter
 import os
 import shutil
 import subprocess
@@ -15,64 +15,23 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SSHD_CONFIG, CATALOG_LOCKS
+from config.settings import (
+    SSHD_CONFIG, 
+    SSH_SERVICE_NAME, 
+    CATALOG_LOCKS
+)
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
     acquire_lock,
     release_lock,
-    restart_ssh_service,
-    check_sshd_config_exists,
+    check_config_exists,
+    check_config_parameter_value,
+    get_effective_sshd_parameter,
+    set_config_parameter_value,
+    restart_system_service,
 )
-
-
-def check_permit_root_login_state(
-    config_path: Path,
-) -> Tuple[str, Optional[str]]:
-    """Mengecek keberadaan dan nilai PermitRootLogin di sshd_config.
-
-    Return:
-        Tuple[state, value]
-        - state: 'not_found', 'commented', 'active'
-        - value: Nilai parameter (misal 'yes', 'no') atau None jika tidak ada
-    """
-    if not config_path.is_file():
-        return "not_found", None
-
-    with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            # Cek jika baris berkomentar
-            if line_stripped.startswith("#"):
-                uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("permitrootlogin"):
-                    parts = uncommented.split()
-                    val = parts[1] if len(parts) >= 2 else None
-                    return "commented", val
-
-            # Cek jika baris aktif
-            elif line_stripped.lower().startswith("permitrootlogin"):
-                parts = line_stripped.split()
-                val = parts[1] if len(parts) >= 2 else None
-                return "active", val
-
-    return "not_found", None
-
-
-def apply_rollback_logic(src_path: Path, dst_file_obj) -> None:
-    """Mengubah parameter PermitRootLogin aktif yang bernilai 'no' menjadi 'yes'."""
-    with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            # Ubah HANYA baris aktif PermitRootLogin
-            if not line_stripped.startswith(
-                "#"
-            ) and line_stripped.lower().startswith("permitrootlogin"):
-                dst_file_obj.write("PermitRootLogin yes\n")
-            else:
-                dst_file_obj.write(line)
 
 
 def main():
@@ -82,66 +41,91 @@ def main():
         log_file_name="rollback.json",
         catalog="K01",
         cis_id="5.1.20",
+        regulasi="Pasal 35, Pasal 36, Pasal 39",
+        kepatuhan="UU PDP No. 27/2022",
         log_type="rollback",
     )
 
     lock_name = CATALOG_LOCKS.get("K01", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+
     try:
-        if not check_sshd_config_exists(logger):
+        if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
             logger.log(
-                "FAILED", 
+                LogStatus.FAILED,
                 "Result", 
-                "Hasil Rollback: FAILED - File sshd_config tidak ditemukan."
+                f"Hasil Rollback: FAILED - File {SSHD_CONFIG} tidak ditemukan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-        # Cek status parameter PermitRootLogin di sshd_config
-        state, value = check_permit_root_login_state(SSHD_CONFIG)
+        status, _ = check_config_parameter_value(SSHD_CONFIG, "PermitRootLogin")
 
-        # Syarat 1: Tidak ada parameter PermitRootLogin di SSHD_CONFIG
-        if state == "not_found":
+        if status == "not_found":
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
-                "Hasil Rollback: CANCELLED - Parameter PermitRootLogin tidak ditemukan di sshd_config.",
+                f"Hasil Rollback: CANCELLED - Parameter PermitRootLogin tidak ditemukan di file {SSHD_CONFIG}",
+                duration_ms=(perf_counter() - start) * 1000,
             )
-            sys.exit(0)
-
-        # Syarat 2: Parameter PermitRootLogin dalam posisi Comment ('#')
-        if state == "commented":
+            sys.exit(1)
+        elif status == "commented":
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
-                "Hasil Rollback: CANCELLED - Parameter PermitRootLogin dalam keadaan terkomentar (#).",
+                f"Hasil Rollback: CANCELLED - Parameter PermitRootLogin pada file {SSHD_CONFIG} dalam keadaan terkomentar (#).",
+                duration_ms=(perf_counter() - start) * 1000,
             )
-            sys.exit(0)
-
-        # Syarat 3: Parameter PermitRootLogin sudah bernilai 'yes'
-        if state == "active" and value and value.lower() == "yes":
-            logger.log(
-                "SKIPPED",
-                "Result",
-                "Hasil Rollback: SKIPPED - PermitRootLogin sudah bernilai 'yes'.",
+            sys.exit(1)
+        elif status == "active":
+            value = get_effective_sshd_parameter(
+                config_file=SSHD_CONFIG,
+                parameter="PermitRootLogin",
             )
-            sys.exit(0)
+            if value and value.lower() == "yes":
+                logger.log(
+                    LogStatus.SKIPPED,
+                    "Result",
+                    "Hasil Rollback: SKIPPED - Parameter PermitRootLogin sudah bernilai 'yes'.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(0)
+            elif value and value.lower() != "no":
+                # Jika bernilai bukan 'no' (misal: prohibit-password / forced-commands-only)
+                logger.log(
+                    LogStatus.FAILED,
+                    "Result",
+                    f"Hasil Rollback: CANCELLED - PermitRootLogin bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
 
-        # Syarat 4: Jika bernilai bukan 'no' (misal: prohibit-password / forced-commands-only)
-        if state == "active" and value and value.lower() != "no":
-            logger.log(
-                "FAILED",
-                "Result",
-                f"Hasil Rollback: CANCELLED - PermitRootLogin bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
-            )
-            sys.exit(0)
-
-        # Proses perubahan config (Hanya jika bernilai 'no')
+        # Buat salinan sementara untuk proses modifikasi dan uji sintaks yang aman
         with tempfile.NamedTemporaryFile(
             "w+", delete=False, prefix="sshd_config_"
         ) as tmp_file:
             tmp_config_path = Path(tmp_file.name)
-            apply_rollback_logic(SSHD_CONFIG, tmp_file)
+      
+        # Salin konten file asli ke file sementara
+        shutil.copy2(SSHD_CONFIG, tmp_config_path)
+      
+        # Terapkan perubahan parameter
+        success_set = set_config_parameter_value(
+            tmp_config_path, "PermitRootLogin", "yes"
+        )
+      
+        if not success_set:
+            if tmp_config_path.exists():
+                tmp_config_path.unlink()
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                "Hasil Hardening: FAILED - Gagal menerapkan parameter PermitRootLogin pada file konfigurasi.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
 
         # Validasi sintaks file sementara menggunakan sshd -t -f
         validate_cmd = subprocess.run(
@@ -153,31 +137,32 @@ def main():
             shutil.move(str(tmp_config_path), str(SSHD_CONFIG))
             os.chmod(SSHD_CONFIG, 0o600)
 
-            if restart_ssh_service():
+            # Restart layanan SSH untuk menerapkan perubahan
+            if restart_system_service(SSH_SERVICE_NAME):
                 logger.log(
-                    "SUCCESS",
+                    LogStatus.SUCCESS,
                     "Result",
-                    "Hasil Rollback: SUCCEED - PermitRootLogin berhasil dikembalikan ke 'yes'. Konfigurasi lain tetap terjaga.",
+                    "Hasil Rollback: SUCCEED - Parameter PermitRootLogin berhasil dikembalikan ke 'yes'.",
+                    duration_ms=(perf_counter() - start) * 1000,
                 )
+                sys.exit(0)
             else:
                 logger.log(
-                    "WARNING",
+                    LogStatus.WARNING,
                     "Result",
                     "Hasil Rollback: WARNING - Konfigurasi diubah ke 'yes', tetapi gagal merestart service SSH.",
+                    duration_ms=(perf_counter() - start) * 1000,
                 )
-        else:
-            if tmp_config_path.exists():
-                tmp_config_path.unlink()
-            logger.log(
-                "FAILED",
-                "Result",
-                "Hasil Rollback: CANCELLED - Sintaks konfigurasi invalid! Rollback dibatalkan.",
-            )
-            sys.exit(1)
+                sys.exit(1)
 
     except Exception as e:
-        logger.log_error("K01", "rollback", e)
-
+        logger.log_error(
+            "K01", 
+            "rollback", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
     finally:
         release_lock(lock_file)
 
