@@ -23,7 +23,7 @@ from pipeline.catalogutils import (
 )
 
 
-def main() -> int:
+def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",

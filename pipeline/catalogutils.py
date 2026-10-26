@@ -300,7 +300,7 @@ class BaseLogger:
         }
 
         if duration_ms is not None:
-            log_entry["duration_ms"] = duration_ms
+            log_entry["duration_ms"] = round(duration_ms, 4)
 
         self._write_json(log_entry)
 
@@ -389,18 +389,21 @@ def get_effective_sshd_parameter(
     if sshd_path is None:
         raise RuntimeError("Executable sshd tidak ditemukan.")
 
-    result = subprocess.run(
-        [
-            sshd_path,
-            "-T",
-            "-f",
-            str(config_file),
-        ],
-        capture_output=True,
-        text=True,
-        timeout=15,
-        check=False,
-    )
+    try:
+        result = subprocess.run(
+            [
+                sshd_path,
+                "-T",
+                "-f",
+                str(config_file),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        raise RuntimeError("Proses pembacaan konfigurasi sshd (-T) mengalami timeout.")
 
     if result.returncode != 0:
         error_message = result.stderr.strip() or (

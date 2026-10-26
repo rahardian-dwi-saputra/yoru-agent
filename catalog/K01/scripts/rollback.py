@@ -50,6 +50,8 @@ def main():
     lock_file = acquire_lock(lock_name, logger)
 
     start = perf_counter()
+    temp_config: Path | None = None
+    original_config: Path | None = None
 
     try:
         if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
@@ -102,59 +104,113 @@ def main():
                 )
                 sys.exit(1)
 
-        # Buat salinan sementara untuk proses modifikasi dan uji sintaks yang aman
+        # Siapkan konfigurasi kandidat dan salinan pemulihan.
         with tempfile.NamedTemporaryFile(
-            "w+", delete=False, prefix="sshd_config_"
-        ) as tmp_file:
-            tmp_config_path = Path(tmp_file.name)
-      
-        # Salin konten file asli ke file sementara
-        shutil.copy2(SSHD_CONFIG, tmp_config_path)
-      
-        # Terapkan perubahan parameter
-        success_set = set_config_parameter_value(
-            tmp_config_path, "PermitRootLogin", "yes"
-        )
-      
-        if not success_set:
-            if tmp_config_path.exists():
-                tmp_config_path.unlink()
+            prefix=".sshd-rollback-",
+            dir=SSHD_CONFIG.parent,
+            delete=False,
+        ) as tmp:
+            temp_config = Path(tmp.name)
+
+        with tempfile.NamedTemporaryFile(
+            prefix=".sshd-original-",
+            dir=SSHD_CONFIG.parent,
+            delete=False,
+        ) as tmp:
+            original_config = Path(tmp.name)
+
+        shutil.copy2(SSHD_CONFIG, temp_config)
+        shutil.copy2(SSHD_CONFIG, original_config)
+        os.chmod(temp_config, 0o600)
+
+        # Ubah parameter pada file kandidat.
+        if not set_config_parameter_value(
+            temp_config,
+            "PermitRootLogin",
+            "yes",
+        ):
             logger.log(
                 LogStatus.FAILED,
                 "Result",
-                "Hasil Hardening: FAILED - Gagal menerapkan parameter PermitRootLogin pada file konfigurasi.",
+                f"Hasil Rollback: FAILED - tidak dapat mengubah PermitRootLogin.",
                 duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-        # Validasi sintaks file sementara menggunakan sshd -t -f
-        validate_cmd = subprocess.run(
-            ["sshd", "-t", "-f", str(tmp_config_path)], capture_output=True
+        # Validasi sintaks konfigurasi.
+        sshd_path = shutil.which("sshd")
+        if sshd_path is None:
+            raise RuntimeError("Executable sshd tidak ditemukan.")
+
+        validation = subprocess.run(
+            [sshd_path, "-t", "-f", str(temp_config)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
         )
 
-        if validate_cmd.returncode == 0:
-            # Timpa file utama secara atomic
-            shutil.move(str(tmp_config_path), str(SSHD_CONFIG))
-            os.chmod(SSHD_CONFIG, 0o600)
+        if validation.returncode != 0:
+            detail = (
+                validation.stderr.strip()
+                or "Sintaks konfigurasi tidak valid."
+            )
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Rollback: FAILED - validasi sshd gagal: {detail}",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
 
-            # Restart layanan SSH untuk menerapkan perubahan
+        # Pastikan nilai efektif kandidat benar-benar 'yes'.
+        effective_value = get_effective_sshd_parameter(
+            config_file=temp_config,
+            parameter="PermitRootLogin",
+        )
+
+        if effective_value.lower() != "yes":
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Rollback: FAILED - nilai efektif kandidat adalah {effective_value}', bukan 'yes'.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        # Terapkan konfigurasi yang telah tervalidasi.
+        os.replace(temp_config, SSHD_CONFIG)
+        temp_config = None
+
+        if not restart_system_service(SSH_SERVICE_NAME):
+            # Pulihkan file konfigurasi sebelumnya.
+            os.replace(original_config, SSHD_CONFIG)
+            original_config = None
+        
             if restart_system_service(SSH_SERVICE_NAME):
-                logger.log(
-                    LogStatus.SUCCESS,
-                    "Result",
-                    "Hasil Rollback: SUCCEED - Parameter PermitRootLogin berhasil dikembalikan ke 'yes'.",
-                    duration_ms=(perf_counter() - start) * 1000,
-                )
-                sys.exit(0)
-            else:
                 logger.log(
                     LogStatus.WARNING,
                     "Result",
-                    "Hasil Rollback: WARNING - Konfigurasi diubah ke 'yes', tetapi gagal merestart service SSH.",
+                    f"Hasil Rollback: WARNING - Restart SSH gagal; konfigurasi lama dipulihkan.",
                     duration_ms=(perf_counter() - start) * 1000,
                 )
-                sys.exit(1)
+            else:
+                logger.log(
+                    LogStatus.ERROR,
+                    "Result",
+                    f"Hasil Rollback: FAILED - restart SSH gagal dan restart setelah rollback juga gagal.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )  
+            sys.exit(2)
 
+        logger.log(
+            LogStatus.SUCCESS,
+            "Result",
+            f"Hasil Rollback: SUCCEED - PermitRootLogin berhasil dinonaktifkan dan service SSH berhasil direstart.",
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(0) 
+            
     except Exception as e:
         logger.log_error(
             "K01", 
@@ -164,6 +220,17 @@ def main():
         )
         sys.exit(2)
     finally:
+        for path in (temp_config, original_config):
+            if path is not None:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.log(
+                        LogStatus.WARNING,
+                        "Note",
+                        f"Gagal membersihkan file sementara: {exc}",
+                    )
+                    
         release_lock(lock_file)
 
 
