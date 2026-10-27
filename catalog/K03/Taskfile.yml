@@ -9,7 +9,7 @@ vars:
   NAMA: "Membatasi Waktu Login SSH (LoginGraceTime)"
   KODE_CIS: "5.1.13"
   CIS_JUDUL: "5.1.13 Ensure sshd LoginGraceTime is configured"
-  REGULASI: "Pasal 35"
+  REGULASI: "Pasal 35, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
@@ -23,23 +23,26 @@ vars:
   AUDIT_ONLY: false
   PESAN_HARDENING: |
     Aksi ini akan menetapkan parameter 'LoginGraceTime' 
-    (menjadi 1m atau 60 detik) pada file /etc/ssh/sshd_config dan 
+    (menjadi 1m atau 60 detik) pada konfigurasi SSH dan 
     merestart layanan SSH.
-    ⚠️ DAMPAK OPERASIONAL: Pengguna harus menyelesaikan proses 
-    login SSH dalam batas waktu yang ditentukan. Jika terlalu lama 
-    memasukkan password/kunci, koneksi akan otomatis diputus oleh server.
+    ⚠️ DAMPAK OPERASIONAL: 
+    Pengguna harus menyelesaikan proses login SSH dalam batas 
+    waktu yang ditentukan. Jika terlalu lama memasukkan password/kunci, 
+    koneksi akan otomatis diputus oleh server.
   PESAN_ROLLBACK: |
-    Aksi ini akan mengembalikan atau menghapus pengaturan 'LoginGraceTime'
+    Aksi ini akan mengembalikan pengaturan 'LoginGraceTime' 
     ke kondisi default sistem.
-    ⚠️ RISIKO KEAMANAN: Koneksi SSH yang menggantung tanpa autentikasi
-    dapat dibiarkan terbuka lebih lama, meningkatkan risiko serangan 
+    ⚠️ RISIKO KEAMANAN: 
+    Koneksi SSH yang menggantung tanpa autentikasi dapat 
+    dibiarkan terbuka lebih lama, meningkatkan risiko serangan 
     penghabisan sumber daya (connection exhaustion / Denial of Service).
 
 tasks:
-  default:
-    desc: "Menampilkan informasi catalog dan daftar task yang tersedia"
+  init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
+    internal: true
     cmds:
-      - task: info
+      - mkdir -p {{.LOG_DIR}}
 
   info:
     desc: "Menampilkan perintah pengecekan LoginGraceTime sesuai standar CIS 5.1.13"
@@ -56,22 +59,19 @@ tasks:
         '=================================================='
 
   audit:
-    desc: "Menjalankan audit untuk CIS 5.1.13 LoginGraceTime"
+    desc: "Menjalankan audit untuk LoginGraceTime"
+    deps: [init-log-dir]
     cmds:
       - python3 {{.SCRIPT_DIR}}/audit.py
 
   hardening:
-    desc: "Menjalankan hardening untuk CIS 5.1.13 LoginGraceTime"
+    desc: "Menjalankan hardening untuk LoginGraceTime"
+    deps: [init-log-dir]
     cmds:
       - python3 {{.SCRIPT_DIR}}/hardening.py
 
   rollback:
-    desc: "Menjalankan rollback untuk CIS 5.1.13 LoginGraceTime"
+    desc: "Menjalankan rollback untuk LoginGraceTime"
+    deps: [init-log-dir]
     cmds:
       - python3 {{.SCRIPT_DIR}}/rollback.py
-
-  clean:
-    desc: "Membersihkan file log pada catalog K03"
-    cmds:
-      - rm -rf {{.LOG_DIR}}/*.json
-      - echo "Log catalog {{.ID}} berhasil dibersihkan."

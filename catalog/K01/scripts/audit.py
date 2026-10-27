@@ -106,7 +106,7 @@ def main():
             logger.log(
                 LogStatus.FAILED, 
                 "Result", 
-                f"Hasil Audit: FAILED - Tidak ditemukan parameter PermitRootLogin di file {SSHD_CONFIG}.",
+                f"Hasil Audit: FAILED - Tidak ditemukan parameter PermitRootLogin pada file {SSHD_CONFIG}.",
                 duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)

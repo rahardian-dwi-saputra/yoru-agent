@@ -21,18 +21,22 @@ vars:
   AUDIT_ONLY: false
   PESAN_HARDENING: |
     Aksi ini akan mengubah parameter 'PermitRootLogin' menjadi 'no' 
-    pada file /etc/ssh/sshd_config dan merestart layanan SSH.
-    ⚠️ DAMPAK: Anda TIDAK BISA lagi login SSH secara langsung 
-    menggunakan user 'root'. Pastikan Anda sudah memiliki akun user 
-    biasa dengan hak akses sudo yang aktif sebelum melanjutkan!
+    pada  konfigurasi SSH dan merestart layanan SSH.
+    ⚠️ PERINGATAN: 
+    Anda TIDAK BISA lagi login SSH secara langsung menggunakan 
+    user 'root'. Pastikan Anda sudah memiliki akun user biasa 
+    dengan hak akses sudo yang aktif dan telah menguji bahwa 
+    akun tersebut dapat digunakan untuk login SSH sebelum melanjutkan.
   PESAN_ROLLBACK: |
     Aksi ini akan mengembalikan parameter 'PermitRootLogin' ke nilai 
-    semula ('yes' / default) pada file /etc/ssh/sshd_config dan merestart layanan SSH.
-    ⚠️ RISIKO: Login root langsung via SSH akan diizinkan kembali. 
+    semula ('yes' / default) pada pada  konfigurasi SSH dan merestart layanan SSH.
+    ⚠️ RISIKO KEAMANAN: 
+    Login root langsung via SSH akan diizinkan kembali. 
     Server Anda berisiko lebih tinggi terhadap serangan brute-force.
 
 tasks:
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}

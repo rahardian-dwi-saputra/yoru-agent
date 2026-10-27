@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
+from time import perf_counter
 import os
 import shutil
 import subprocess
@@ -15,117 +16,41 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SSHD_CONFIG, CATALOG_LOCKS
-
-from pipeline.catalogutils import (
-    BaseLogger,
-    acquire_lock,
-    check_sshd_config_exists,
-    create_ssh_backup,
-    get_non_root_users,
-    release_lock,
-    restart_ssh_service,
+from config.settings import (
+    SSHD_CONFIG, 
+    SSH_SERVICE_NAME, 
+    CATALOG_LOCKS
 )
 
+from pipeline.catalogutils import (
+    LogStatus,
+    BaseLogger,
+    acquire_lock,
+    release_lock,
+    check_config_exists,
+    create_ssh_backup,
+    check_config_parameter_value,
+    get_effective_sshd_parameter,
+    get_non_root_users,
+    set_config_parameter_value,
+    restart_system_service
+)
 
-def check_file_permissions(config_path: Path, expected_mode: int = 0o600) -> bool:
-    """Mengecek apakah permission file bernilai 600 (rw-------)."""
-    if not config_path.exists():
-        return False
-    # Mengambil bit izin file (st_mode & 0o777)
-    file_stat = config_path.stat()
-    file_mode = file_stat.st_mode & 0o777
-    return file_mode == expected_mode
-
-
-def has_valid_ssh_key(home_dir: Path) -> bool:
-    """Mengecek keberadaan file authorized_keys yang tidak kosong pada user."""
-    ssh_dir = home_dir / ".ssh"
-    auth_keys = ssh_dir / "authorized_keys"
-
-    if not auth_keys.is_file():
-        return False
-
-    # Pastikan file authorized_keys tidak kosong dan memiliki minimal 1 baris kunci valid
+def check_ssh_key_validity(key_file: Path) -> Tuple[bool, str]:
+    """Mengecek keabsahan kunci publik SSH menggunakan ssh-keygen -l."""
     try:
-        with open(auth_keys, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                line_stripped = line.strip()
-                if line_stripped and not line_stripped.startswith("#"):
-                    return True
-    except OSError:
-        return False
+        result = subprocess.run(
+            ["ssh-keygen", "-l", "-f", str(key_file)],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode == 0:
+            return True, "Key valid"
 
-    return False
-
-
-def get_current_password_auth_status(config_path: Path) -> Tuple[str, Optional[str]]:
-    """Mengecek status dan nilai PasswordAuthentication di sshd_config.
-
-    Return:
-        Tuple[state, value]
-        - state: 'not_found', 'commented', 'active'
-        - value: Nilai parameter (misal 'yes', 'no') atau None
-    """
-    if not config_path.is_file():
-        return "not_found", None
-
-    with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            # Baris Terkomentar
-            if line_stripped.startswith("#"):
-                uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("passwordauthentication"):
-                    parts = uncommented.split()
-                    val = parts[1] if len(parts) >= 2 else None
-                    return "commented", val
-
-            # Baris Aktif
-            elif line_stripped.lower().startswith("passwordauthentication"):
-                parts = line_stripped.split()
-                val = parts[1] if len(parts) >= 2 else None
-                return "active", val
-
-    return "not_found", None
-
-
-def apply_password_auth_logic(
-    src_path: Path, dst_file_obj
-) -> Tuple[bool, str]:
-    """Menerapkan logika manipulasi PasswordAuthentication ke file sementara."""
-    found_parameter = False
-    action_taken = ""
-
-    with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            # 1. Parameter terkomentar -> uncomment dan ubah ke 'no'
-            if line_stripped.startswith("#"):
-                uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("passwordauthentication"):
-                    found_parameter = True
-                    dst_file_obj.write("PasswordAuthentication no\n")
-                    action_taken = "uncommented_and_set_to_no"
-                    continue
-
-            # 2. Parameter aktif -> ubah nilainya ke 'no'
-            elif line_stripped.lower().startswith("passwordauthentication"):
-                found_parameter = True
-                dst_file_obj.write("PasswordAuthentication no\n")
-                action_taken = "updated_to_no"
-                continue
-
-            dst_file_obj.write(line)
-
-    # 3. Parameter belum ada -> tambahkan di akhir file
-    if not found_parameter:
-        dst_file_obj.write("\nPasswordAuthentication no\n")
-        action_taken = "appended_new_parameter"
-
-    return found_parameter, action_taken
+        error_message = result.stderr.strip() or result.stdout.strip()
+        return False, error_message or "Format kunci tidak valid."
+    except Exception as e:
+        return False, str(e)
 
 
 def main():
@@ -133,123 +58,249 @@ def main():
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
         catalog="K02",
-        cis_id="5.2.14",
+        cis_id="-",
+        regulasi="Pasal 35, Pasal 36, Pasal 39",
+        kepatuhan="UU PDP No. 27/2022",
         log_type="hardening",
     )
 
     lock_name = CATALOG_LOCKS.get("K02", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+    temp_config: Path | None = None
+    original_config: Path | None = None
+
     try:
-        if not check_sshd_config_exists(logger):
+        if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
             logger.log(
-                "FAILED", 
+                LogStatus.FAILED,
                 "Result", 
-                "Hasil Hardening: FAILED - File sshd_config tidak ditemukan."
+                f"Hasil Hardening: FAILED - File {SSHD_CONFIG} tidak ditemukan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-        success_backup, backup_msg = create_ssh_backup(logger)
-        if not success_backup:
-            logger.log(
-                "FAILED",
-                "Result", 
-                f"Hasil Hardening: BackupFailed - {backup_msg}", 
+        # Cek apakah  PasswordAuthentication sudah nonaktif (COMPLIANT / SKIPPED)
+        status, _ = check_config_parameter_value(SSHD_CONFIG, "PasswordAuthentication")
+        if status == "active":
+            value = get_effective_sshd_parameter(
+                config_file=SSHD_CONFIG,
+                parameter="PasswordAuthentication",
             )
-            sys.exit(1)
+            if value.lower() == "no":
+                logger.log(
+                    LogStatus.SKIPPED, 
+                    "Result",
+                    f"Hasil Hardening: SKIPPED - Login SSH menggunakan Password sudah dinonaktifkan (PasswordAuthentication no).",
+                    duration_ms=(perf_counter() - start) * 1000, 
+                )
+                sys.exit(0)
 
-        # Cek Permission file sshd_config (Harus 600)
-        if not check_file_permissions(SSHD_CONFIG, 0o600):
-            file_mode = oct(SSHD_CONFIG.stat().st_mode & 0o777)
-            logger.log(
-                "FAILED",
-                "Result",
-                f"Hasil Hardening: CANCELLED - Permission file {SSHD_CONFIG} adalah {file_mode} (harus 0600).",
-            )
-            sys.exit(1)
-
-        # Cek User Non-Root dan SSH Key Valid
+        # Pastikan sudah memiliki daftar user non-root
         non_root_users = get_non_root_users(include_home=True)
 
         if not non_root_users:
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
                 "Hasil Hardening: CANCELLED FOR SECURITY REASONS - Tidak ditemukan user non-root aktif di sistem!",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-        # Filter user yang memiliki SSH Key valid di authorized_keys
-        users_with_key = [
-            user for user, home in non_root_users if has_valid_ssh_key(home)
-        ]
+        # Cek persyaratan lain
+        findings: list[str] = []
+       
+        for username, home_dir in non_root_users:
+            auth_keys_path = home_dir / ".ssh" / "authorized_keys"
 
-        if not users_with_key:
-            logger.log(
-                "FAILED",
-                "Result",
-                "Hasil Hardening: CANCELLED FOR SECURITY REASONS - Tidak ada user non-root yang memiliki SSH Key valid (~/.ssh/authorized_keys)!",
-            )
-            sys.exit(1)
+            try:
+                # Check 2: Keberadaan public key
+                if not auth_keys_path.is_file():
+                    findings.append(
+                        f"- User '{username}' tidak memiliki file authorized_keys."
+                    )
+                    continue
 
-        logger.log(
-            "INFO",
-            "Note",
-            f"Verifikasi user berhasil: Ditemukan {len(users_with_key)} user non-root dengan SSH Key valid ({', '.join(users_with_key)}).",
-        )
+                file_stat = auth_keys_path.stat()
 
-        # Cek Nilai PasswordAuthentication Saat Ini
-        state, value = get_current_password_auth_status(SSHD_CONFIG)
+                if file_stat.st_size == 0:
+                    findings.append(
+                        f"- File authorized_keys milik user '{username}' kosong."
+                    )
+                    continue
 
-        if state == "active" and value and value.lower() == "no":
-            logger.log(
-                "SKIPPED",
-                "Result",
-                "Hasil Hardening: SKIPPED - Parameter PasswordAuthentication sudah bernilai 'no'.",
-            )
-            sys.exit(0)
-
-        with tempfile.NamedTemporaryFile(
-            "w+", delete=False, prefix="sshd_config_"
-        ) as tmp_file:
-            tmp_config_path = Path(tmp_file.name)
-            _, action = apply_password_auth_logic(SSHD_CONFIG, tmp_file)
-
-        # Validasi sintaks file sementara menggunakan sshd -t -f
-        validate_cmd = subprocess.run(
-            ["sshd", "-t", "-f", str(tmp_config_path)], capture_output=True
-        )
-
-        if validate_cmd.returncode == 0:
-            shutil.move(str(tmp_config_path), str(SSHD_CONFIG))
-            os.chmod(SSHD_CONFIG, 0o600)
-
-            if restart_ssh_service():
-                logger.log(
-                    "SUCCESS",
-                    "Result",
-                    f"Hardening berhasil: SUCCEED - PasswordAuthentication berhasil DINONAKTIFKAN (Aksi: {action}).",
+                # Periksa format kunci publik.
+                is_valid, error_message = check_ssh_key_validity(
+                    auth_keys_path
                 )
+                
+                if not is_valid:
+                    findings.append(
+                        f"- File authorized_keys milik user '{username}' tidak valid: {error_message}"
+                    )
+
+                # Permission yang diharapkan: 600 (rw-------).
+                if file_stat.st_mode & 0o777 != 0o600:
+                    try:
+                        os.chmod(auth_keys_path, 0o600)
+                    except OSError as exc2:
+                        findings.append(
+                            f"- Gagal mengubah permission authorized_keys milik user '{username}': {exc2}"
+                        )
+                                   
+            except OSError as exc:
+                findings.append(
+                    f"- File authorized_keys milik user '{username}' gagal diperiksa: {exc}."
+                )
+
+                
+        if findings:
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                "Hasil Hardening: CANCELLED - Terdapat syarat pra-kondisi yang belum terpenuhi:\n" + "\n".join(findings),
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+
+        # Buat backup konfigurasi sebelum melakukan perubahan.
+        success_backup, backup_msg = create_ssh_backup(logger)
+        if not success_backup:
+            logger.log(
+                LogStatus.FAILED, 
+                "Result", 
+                f"Hasil Hardening: Backup konfigurasi gagal - {backup_msg}",
+                duration_ms=(perf_counter() - start) * 1000, 
+            )
+            sys.exit(1)
+
+        # Buat salinan sementara untuk proses modifikasi dan uji sintaks yang aman
+        with tempfile.NamedTemporaryFile(
+            prefix=".sshd-candidate-",
+            dir=SSHD_CONFIG.parent,
+            delete=False,
+        ) as tmp:
+            temp_config = Path(tmp.name)
+        
+        with tempfile.NamedTemporaryFile(
+            prefix=".sshd-original-",
+            dir=SSHD_CONFIG.parent,
+            delete=False,
+        ) as tmp:
+            original_config = Path(tmp.name)
+
+        # Salin konten file asli ke file sementara
+        shutil.copy2(SSHD_CONFIG, temp_config)
+        shutil.copy2(SSHD_CONFIG, original_config)
+        os.chmod(temp_config, 0o600)
+
+        # Terapkan perubahan parameter pada file sementara
+        if not set_config_parameter_value(
+            temp_config,
+            "PasswordAuthentication",
+            "no",
+        ):
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                "Hasil Hardening: FAILED - Gagal menerapkan nilai parameter PasswordAuthentication 'no' pada file konfigurasi.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+        
+        sshd = shutil.which("sshd")
+        if sshd is None:
+            raise RuntimeError("Executable sshd tidak ditemukan.")
+
+        # Validasi sintaks file konfigurasi sementara menggunakan perintah sshd -t
+        validation = subprocess.run(
+            [sshd, "-t", "-f", str(temp_config)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+
+        if validation.returncode != 0:
+            detail = validation.stderr.strip() or "Sintaks konfigurasi tidak valid."
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Hardening: FAILED - Validasi sshd gagal: {detail}",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        effective_value = get_effective_sshd_parameter(
+            temp_config,
+            "PasswordAuthentication",
+        )
+        if effective_value.lower() != "no":
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Hardening: FAILED - Nilai efektif kandidat adalah '{effective_value}', bukan 'no'.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        # Terapkan konfigurasi yang telah tervalidasi.
+        os.replace(temp_config, SSHD_CONFIG)
+        temp_config = None
+
+        if not restart_system_service(SSH_SERVICE_NAME):
+            # Pulihkan file konfigurasi sebelumnya.
+            os.replace(original_config, SSHD_CONFIG)
+            original_config = None
+        
+            if restart_system_service(SSH_SERVICE_NAME):
+                logger.log(
+                    LogStatus.WARNING,
+                    "Result",
+                    f"Hasil Hardening: WARNING - Restart SSH gagal; konfigurasi lama dipulihkan.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
             else:
                 logger.log(
-                    "WARNING",
+                    LogStatus.ERROR,
                     "Result",
-                    "Hardening berhasil: WARNING - Konfigurasi diubah, tetapi gagal merestart service SSH.",
-                )
-        else:
-            if tmp_config_path.exists():
-                tmp_config_path.unlink()
-            logger.log(
-                "FAILED",
-                "Result",
-                "Hardening berhasil: FAILED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
-            )
-            sys.exit(1)
+                    f"Hasil Hardening: ERROR - restart SSH gagal dan restart setelah rollback juga gagal.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )  
+                sys.exit(2)
+
+        logger.log(
+            LogStatus.SUCCESS,
+            "Result",
+            f"Hasil Hardening: SUCCEED - Login SSH menggunakan password berhasil dinonaktifkan dan service SSH berhasil direstart.",
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(0)
 
     except Exception as e:
-        logger.log_error("K02", "hardening", e)
-
+        logger.log_error(
+            "K02", 
+            "hardening", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
     finally:
+
+        for path in (temp_config, original_config):
+                    if path is not None:
+                        try:
+                            path.unlink(missing_ok=True)
+                        except OSError as exc:
+                            logger.log(
+                                LogStatus.WARNING,
+                                "Note",
+                                f"Gagal menghapus file sementara: {exc}",
+                            )
         release_lock(lock_file)
 
 

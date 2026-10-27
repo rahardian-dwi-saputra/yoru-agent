@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
+from time import perf_counter
 import subprocess
 import sys
 
@@ -14,11 +15,14 @@ if str(PROJECT_ROOT) not in sys.path:
 from config.settings import SSHD_CONFIG, CATALOG_LOCKS
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
     acquire_lock,
-    get_non_root_users,
-    check_sshd_config_exists,
     release_lock,
+    check_config_exists,
+    get_non_root_users,
+    check_config_parameter_value,
+    get_effective_sshd_parameter
 )
 
 
@@ -32,24 +36,11 @@ def check_ssh_key_validity(key_file: Path) -> Tuple[bool, str]:
         )
         if result.returncode == 0:
             return True, "Key valid"
-        return False, result.stderr.strip()
+
+        error_message = result.stderr.strip() or result.stdout.strip()
+        return False, error_message or "Format kunci tidak valid."
     except Exception as e:
         return False, str(e)
-
-
-def check_password_auth_status() -> Optional[str]:
-    """Mengecek status PasswordAuthentication aktif di sshd_config (mengabaikan komentar)."""
-    if not SSHD_CONFIG.is_file():
-        return None
-
-    with open(SSHD_CONFIG, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-            if not line_stripped.startswith("#") and line_stripped.lower().startswith("passwordauthentication"):
-                parts = line_stripped.split()
-                if len(parts) >= 2:
-                    return parts[1].lower()
-    return None
 
 
 def main():
@@ -58,21 +49,24 @@ def main():
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
         catalog="K02",
-        cis_id="5.2.14",
+        cis_id="-",
+        regulasi="Pasal 35, Pasal 36, Pasal 39",
+        kepatuhan="UU PDP No. 27/2022",
         log_type="audit",
     )
     
     lock_name = CATALOG_LOCKS.get("K02", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
-    
-    prerequisites_met = True
+
+    start = perf_counter()
     
     try:
-        if not check_sshd_config_exists(logger):
+        if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
             logger.log(
-                "FAILED", 
+                LogStatus.FAILED, 
                 "Result", 
-                "Hasil Audit: FAILED - File sshd_config tidak ditemukan."
+                f"Hasil Audit: FAILED - File {SSHD_CONFIG} tidak ditemukan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
@@ -80,80 +74,127 @@ def main():
         users_with_home = get_non_root_users(include_home=True)
         if not users_with_home:
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Note",
                 "Hasil Audit: FAILED - Tidak ditemukan user non-root dengan shell aktif di sistem.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
         else:
             user_list_str = ", ".join([u[0] for u in users_with_home])
             logger.log(
-                "INFO",
+                LogStatus.INFO,
                 "Note",
                 f"Ditemukan {len(users_with_home)} user non-root aktif: {user_list_str}"
             )
 
+        findings: list[str] = []
         # Verifikasi SSH Key setiap user
         for username, home_dir in users_with_home:
             auth_keys_path = home_dir / ".ssh" / "authorized_keys"
 
-            # Check 2: Keberadaan public key
-            if not auth_keys_path.is_file() or auth_keys_path.stat().st_size == 0:
-                logger.log(
-                    "ERROR",
-                    "Note",
-                    f"User '{username}' tidak memiliki file authorized_keys yang valid.",
+            try:
+                # Check 2: Keberadaan public key
+                if not auth_keys_path.is_file():
+                    findings.append(
+                        f"- User '{username}' tidak memiliki file authorized_keys."
+                    )
+                    continue
+
+                file_stat = auth_keys_path.stat()
+
+                if file_stat.st_size == 0:
+                    findings.append(
+                        f"- File authorized_keys milik user '{username}' kosong."
+                    )
+                    continue
+
+                # Periksa format kunci publik.
+                is_valid, error_message = check_ssh_key_validity(
+                    auth_keys_path
                 )
-                prerequisites_met = False
-                continue
 
-            # Check 3: Validasi format key (ssh-keygen -l)
-            is_valid, err_msg = check_ssh_key_validity(auth_keys_path)
-            if not is_valid:
-                logger.log(
-                    "ERROR",
-                    "Note",
-                    f"File authorized_keys milik user '{username}' corrupt/tidak valid: {err_msg}",
+                if not is_valid:
+                    findings.append(
+                        f"- File authorized_keys milik user '{username}' tidak valid: {error_message}"
+                    )
+
+                # Permission yang diharapkan: 600 (rw-------).
+                file_mode = file_stat.st_mode & 0o777
+
+                if file_stat.st_mode & 0o777 != 0o600:
+                    findings.append(
+                        f"- Permission authorized_keys milik user '{username}' adalah {oct(file_mode)}; seharusnya 0o600."
+                    )
+                    
+            except OSError as exc:
+                findings.append(
+                    f"- File authorized_keys milik user '{username}' gagal diperiksa: {exc}."
                 )
-                prerequisites_met = False
-
-            # Check 4: Permission file harus 600 (rw-------)
-            file_mode = oct(auth_keys_path.stat().st_mode & 0o777)
-            if file_mode != "0o600":
-                logger.log(
-                    "ERROR",
-                    "Note",
-                    f"Permission file authorized_keys user '{username}' adalah {file_mode} (Wajib 0o600).",
-                )
-                prerequisites_met = False
 
 
-        if not prerequisites_met:
+        if findings:
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
-                "Hasil Audit: FAILED - Terdapat syarat pra-kondisi (keberadaan key, format, atau permission authorized_keys) yang belum terpenuhi.",
+                "Hasil Audit: FAILED - Terdapat syarat pra-kondisi yang belum terpenuhi:\n" + "\n".join(findings),
+                duration_ms=(perf_counter() - start) * 1000,
             )
+            sys.exit(1)
         else:
-           
-            pass_auth_status = check_password_auth_status()
-            
-            if pass_auth_status == "no":
+
+            status, _ = check_config_parameter_value(
+                SSHD_CONFIG, 
+                "PasswordAuthentication"
+            )
+
+            if status == "commented":
                 logger.log(
-                    "COMPLIANT",
+                    LogStatus.NON_COMPLIANT, 
                     "Result",
-                    "Hasil Audit: COMPLIANT - Syarat terpenuhi, PasswordAuthentication di-set ke 'no'.",
+                    f"Hasil Audit: NON_COMPLIANT - Syarat terpenuhi, tapi Parameter PasswordAuthentication pada file {SSHD_CONFIG} dalam posisi dikomentari (belum diatur secara eksplisit).",
+                    duration_ms=(perf_counter() - start) * 1000,
                 )
+                sys.exit(1)
+            elif status == "active":
+                password_auth = get_effective_sshd_parameter(
+                    SSHD_CONFIG,
+                    "PasswordAuthentication"
+                )
+                if password_auth == "no":
+                    logger.log(
+                        LogStatus.COMPLIANT,
+                        "Result",
+                        f"Hasil Audit: COMPLIANT - Syarat terpenuhi, parameter PasswordAuthentication pada file {SSHD_CONFIG} sudah di-set ke 'no'.",
+                        duration_ms=(perf_counter() - start) * 1000,
+                    )
+                    sys.exit(0)
+                elif password_auth == "yes":
+                    logger.log(
+                        LogStatus.NON_COMPLIANT, 
+                        "Result",
+                        f"Hasil Audit: NON_COMPLIANT - Syarat terpenuhi, tapi parameter PasswordAuthentication pada file {SSHD_CONFIG} bernilai 'yes' (seharusnya 'no').",
+                        duration_ms=(perf_counter() - start) * 1000,
+                    )
+                    sys.exit(1)
             else:
                 logger.log(
-                    "NON_COMPLIANT",
+                    LogStatus.NON_COMPLIANT,
                     "Result",
-                    f"Hasil Audit: NON_COMPLIANT - Syarat terpenuhi, tapi PasswordAuthentication bernilai '{pass_auth_status or 'yes/default'}' (seharusnya 'no').",
+                    f"Hasil Audit: NON_COMPLIANT - Syarat terpenuhi, tapi parameter PasswordAuthentication pada file {SSHD_CONFIG} tidak ditemukan.",
+                    duration_ms=(perf_counter() - start) * 1000,
                 )
+                sys.exit(1)
 
 
     except Exception as e:
-        logger.log_error("K02", "audit", e)
+        logger.log_error(
+            "K02", 
+            "audit", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
 
     finally:
         release_lock(lock_file)

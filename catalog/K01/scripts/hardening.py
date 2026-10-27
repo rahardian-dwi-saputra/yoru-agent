@@ -65,16 +65,6 @@ def main():
             )
             sys.exit(1)
 
-        success_backup, backup_msg = create_ssh_backup(logger)
-        if not success_backup:
-            logger.log(
-                LogStatus.FAILED, 
-                "Result", 
-                f"Hasil Hardening: Backup konfigurasi gagal - {backup_msg}",
-                duration_ms=(perf_counter() - start) * 1000, 
-            )
-            sys.exit(1)
-
         # Cek apakah Root login sudah nonaktif (COMPLIANT / SKIPPED)
         status, _ = check_config_parameter_value(SSHD_CONFIG, "PermitRootLogin")
         if status == "active":
@@ -91,7 +81,6 @@ def main():
                 )
                 sys.exit(0)
 
-
         # Validasi keamanan: Pastikan ada user non-root aktif agar tidak terjadi remote lockout
         other_users_count = len(get_non_root_users())
         if other_users_count == 0:
@@ -103,11 +92,16 @@ def main():
             )
             sys.exit(1)
 
-        logger.log(
-            LogStatus.INFO,
-            "Note",
-            f"Verifikasi berhasil: Ditemukan {other_users_count} user non-root aktif.",
-        )
+        # Buat backup konfigurasi sebelum melakukan perubahan.
+        success_backup, backup_msg = create_ssh_backup(logger)
+        if not success_backup:
+            logger.log(
+                LogStatus.FAILED, 
+                "Result", 
+                f"Hasil Hardening: Backup konfigurasi gagal - {backup_msg}",
+                duration_ms=(perf_counter() - start) * 1000, 
+            )
+            sys.exit(1)
 
         # Buat salinan sementara untuk proses modifikasi dan uji sintaks yang aman
         with tempfile.NamedTemporaryFile(
@@ -138,7 +132,7 @@ def main():
             logger.log(
                 LogStatus.FAILED,
                 "Result",
-                "Hasil Hardening: FAILED - Gagal menerapkan parameter PermitRootLogin pada file konfigurasi.",
+                "Hasil Hardening: FAILED - Gagal menerapkan nilai parameter PermitRootLogin 'no' pada file konfigurasi.",
                 duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
@@ -195,19 +189,20 @@ def main():
                     f"Hasil Hardening: WARNING - Restart SSH gagal; konfigurasi lama dipulihkan.",
                     duration_ms=(perf_counter() - start) * 1000,
                 )
+                sys.exit(1)
             else:
                 logger.log(
                     LogStatus.ERROR,
                     "Result",
-                    f"Hasil Hardening: FAILED - restart SSH gagal dan restart setelah rollback juga gagal.",
+                    f"Hasil Hardening: ERROR - restart SSH gagal dan restart setelah rollback juga gagal.",
                     duration_ms=(perf_counter() - start) * 1000,
                 )  
-            sys.exit(2)
+                sys.exit(2)
 
         logger.log(
             LogStatus.SUCCESS,
             "Result",
-            f"Hasil Hardening: SUCCEED - PermitRootLogin berhasil dinonaktifkan dan service SSH berhasil direstart.",
+            f"Hasil Hardening: SUCCEED - Root login SSH berhasil dinonaktifkan dan service SSH berhasil direstart.",
             duration_ms=(perf_counter() - start) * 1000,
         )
         sys.exit(0) 
@@ -220,6 +215,7 @@ def main():
             duration_ms=(perf_counter() - start) * 1000, 
         )
         sys.exit(2)
+        
     finally:
 
         for path in (temp_config, original_config):

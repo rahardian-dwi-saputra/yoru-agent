@@ -9,7 +9,7 @@ vars:
   NAMA: "Login SSH menggunakan Password Dimatikan (Khusus SSH Key)"
   KODE_CIS: "-"
   CIS_JUDUL: "-"
-  REGULASI: "Pasal 35, Pasal 36"
+  REGULASI: "Pasal 35, Pasal 36, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "UU PDP"
   DESKRIPSI: |
@@ -22,20 +22,22 @@ vars:
   AUDIT_ONLY: false
   PESAN_HARDENING: |
     Aksi ini akan mengubah parameter 'PasswordAuthentication' menjadi 'no' 
-    pada file /etc/ssh/sshd_config dan merestart layanan SSH.
-    ⚠️ DAMPAK KRITIS: Anda dan administrator lain TIDAK AKAN BISA 
-    login menggunakan password lagi. Pastikan SSH Public Key Anda 
-    (id_rsa.pub / id_ed25519.pub) sudah terpasang di dalam server 
-    (~/.ssh/authorized_keys) sebelum melanjutkan!
+    pada konfigurasi SSH dan merestart layanan SSH.
+    ⚠️ PERINGATAN: 
+    Anda dan administrator lain TIDAK AKAN BISA login menggunakan 
+    password lagi. Pastikan SSH Public Key Anda (id_rsa.pub / id_ed25519.pub) 
+    sudah terpasang di dalam server (~/.ssh/authorized_keys) sebelum melanjutkan!
   PESAN_ROLLBACK: |
     Aksi ini akan mengembalikan parameter 'PasswordAuthentication' 
     ke nilai semula ('yes' / default) pada file /etc/ssh/sshd_config 
     dan merestart layanan SSH.
-    ⚠️ RISIKO KEAMANAN: Login menggunakan password diizinkan kembali, 
-    membuat server rentan terhadap serangan brute-force password.
+    ⚠️ RISIKO KEAMANAN: 
+    Login menggunakan password diizinkan kembali, membuat server 
+    rentan terhadap serangan brute-force password.
 
 tasks:
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}

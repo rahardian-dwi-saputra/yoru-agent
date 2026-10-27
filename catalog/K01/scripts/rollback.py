@@ -90,7 +90,7 @@ def main():
                 logger.log(
                     LogStatus.SKIPPED,
                     "Result",
-                    "Hasil Rollback: SKIPPED - Parameter PermitRootLogin sudah bernilai 'yes'.",
+                    f"Hasil Rollback: SKIPPED - Parameter PermitRootLogin pada file {SSHD_CONFIG} sudah bernilai 'yes'.",
                     duration_ms=(perf_counter() - start) * 1000,
                 )
                 sys.exit(0)
@@ -99,7 +99,7 @@ def main():
                 logger.log(
                     LogStatus.FAILED,
                     "Result",
-                    f"Hasil Rollback: CANCELLED - PermitRootLogin bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
+                    f"Hasil Rollback: CANCELLED - PermitRootLogin pada file {SSHD_CONFIG} bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
                     duration_ms=(perf_counter() - start) * 1000,
                 )
                 sys.exit(1)
@@ -132,7 +132,7 @@ def main():
             logger.log(
                 LogStatus.FAILED,
                 "Result",
-                f"Hasil Rollback: FAILED - tidak dapat mengubah PermitRootLogin.",
+                f"Hasil Rollback: FAILED - Gagal menerapkan nilai parameter PermitRootLogin 'yes' pada file konfigurasi.",
                 duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
@@ -194,6 +194,7 @@ def main():
                     f"Hasil Rollback: WARNING - Restart SSH gagal; konfigurasi lama dipulihkan.",
                     duration_ms=(perf_counter() - start) * 1000,
                 )
+                sys.exit(1)
             else:
                 logger.log(
                     LogStatus.ERROR,
@@ -201,12 +202,12 @@ def main():
                     f"Hasil Rollback: FAILED - restart SSH gagal dan restart setelah rollback juga gagal.",
                     duration_ms=(perf_counter() - start) * 1000,
                 )  
-            sys.exit(2)
+                sys.exit(2)
 
         logger.log(
             LogStatus.SUCCESS,
             "Result",
-            f"Hasil Rollback: SUCCEED - PermitRootLogin berhasil dinonaktifkan dan service SSH berhasil direstart.",
+            f"Hasil Rollback: SUCCEED - Root login SSH berhasil diaktifkan kembali dan service SSH berhasil direstart.",
             duration_ms=(perf_counter() - start) * 1000,
         )
         sys.exit(0) 
@@ -219,6 +220,7 @@ def main():
             duration_ms=(perf_counter() - start) * 1000,
         )
         sys.exit(2)
+        
     finally:
         for path in (temp_config, original_config):
             if path is not None:

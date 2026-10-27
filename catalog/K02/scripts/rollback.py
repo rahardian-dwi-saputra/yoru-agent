@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Tuple
+from time import perf_counter
 import os
 import shutil
 import subprocess
@@ -16,13 +17,22 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SSHD_CONFIG, CATALOG_LOCKS
+from config.settings import (
+    SSHD_CONFIG, 
+    SSH_SERVICE_NAME, 
+    CATALOG_LOCKS
+)
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
     acquire_lock,
-    check_sshd_config_exists,
     release_lock,
+    check_config_exists,
+    check_config_parameter_value,
+    get_effective_sshd_parameter,
+    set_config_parameter_value,
+    restart_system_service,
     restart_ssh_service,
 )
 
@@ -80,103 +90,192 @@ def main():
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
         catalog="K02",
-        cis_id="5.2.14",
+        cis_id="-",
+        regulasi="Pasal 35, Pasal 36, Pasal 39",
+        kepatuhan="UU PDP No. 27/2022",
         log_type="rollback",
     )
 
     lock_name = CATALOG_LOCKS.get("K02", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+    temp_config: Path | None = None
+    original_config: Path | None = None
+
     try:
-        if not check_sshd_config_exists(logger):
+        if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
             logger.log(
-                "FAILED", 
+                LogStatus.FAILED, 
                 "Result", 
-                "Hasil Rollback: FAILED - File sshd_config tidak ditemukan."
+                f"Hasil Rollback: FAILED - File {SSHD_CONFIG} tidak ditemukan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-        # Cek status parameter PasswordAuthentication di sshd_config
-        state, value = check_password_auth_state(SSHD_CONFIG)
+        status, _ = check_config_parameter_value(SSHD_CONFIG, "PasswordAuthentication")
 
-        # 1. Jika parameter tidak ditemukan -> Batalkan rollback
-        if state == "not_found":
+        if status == "not_found":
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
-                "Hasil Rollback: CANCELLED - Parameter PasswordAuthentication tidak ditemukan di sshd_config.",
+                f"Hasil Rollback: CANCELLED - Parameter PasswordAuthentication tidak ditemukan di file {SSHD_CONFIG}",
+                duration_ms=(perf_counter() - start) * 1000,
             )
-            sys.exit(0)
-
-        # 2. Jika parameter terkomentar (#) -> Batalkan rollback
-        if state == "commented":
+            sys.exit(1)
+        elif status == "commented":
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
-                "Hasil Rollback: CANCELLED - Parameter PasswordAuthentication dalam keadaan terkomentar (#).",
+                f"Hasil Rollback: CANCELLED - Parameter PasswordAuthentication pada file {SSHD_CONFIG} dalam keadaan terkomentar (#).",
+                duration_ms=(perf_counter() - start) * 1000,
             )
-            sys.exit(0)
-
-        # 3. Jika parameter sudah bernilai 'yes' -> Batalkan rollback
-        if state == "active" and value and value.lower() == "yes":
-            logger.log(
-                "SKIPPED",
-                "Result",
-                "Hasil Rollback: SKIPPED - PasswordAuthentication sudah bernilai 'yes'.",
+            sys.exit(1)
+        elif status == "active":
+            value = get_effective_sshd_parameter(
+                config_file=SSHD_CONFIG,
+                parameter="PasswordAuthentication",
             )
-            sys.exit(0)
+            if value and value.lower() == "yes":
+                logger.log(
+                    LogStatus.SKIPPED,
+                    "Result",
+                    "Hasil Rollback: SKIPPED - Parameter PasswordAuthentication pada file {SSHD_CONFIG} sudah bernilai 'yes'.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(0)
 
-        # Penanganan jika parameter aktif tapi nilainya bukan 'no' (misal nilai kustom/tidak valid)
-        if state == "active" and value and value.lower() != "no":
-            logger.log(
-                "FAILED",
-                "Result",
-                f"Hasil Rollback: CANCELLED - PasswordAuthentication bernilai '{value}' (hanya 'no' yang diubah ke 'yes').",
-            )
-            sys.exit(0)
-
-        # 4. Jika parameter bernilai 'no' -> Ubah nilainya menjadi 'yes'
+        # Siapkan konfigurasi kandidat dan salinan pemulihan.
         with tempfile.NamedTemporaryFile(
-            "w+", delete=False, prefix="sshd_config_"
-        ) as tmp_file:
-            tmp_config_path = Path(tmp_file.name)
-            apply_rollback_logic(SSHD_CONFIG, tmp_file)
+            prefix=".sshd-rollback-",
+            dir=SSHD_CONFIG.parent,
+            delete=False,
+        ) as tmp:
+            temp_config = Path(tmp.name)
+        
+        with tempfile.NamedTemporaryFile(
+            prefix=".sshd-original-",
+            dir=SSHD_CONFIG.parent,
+            delete=False,
+        ) as tmp:
+            original_config = Path(tmp.name)
+        
+        shutil.copy2(SSHD_CONFIG, temp_config)
+        shutil.copy2(SSHD_CONFIG, original_config)
+        os.chmod(temp_config, 0o600)
 
-        # Validasi sintaks file sementara menggunakan sshd -t -f
-        validate_cmd = subprocess.run(
-            ["sshd", "-t", "-f", str(tmp_config_path)], capture_output=True
+        # Ubah parameter pada file kandidat.
+        if not set_config_parameter_value(
+            temp_config,
+            "PasswordAuthentication",
+            "yes",
+        ):
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Rollback: FAILED - Gagal menerapkan nilai parameter PasswordAuthentication 'yes' pada file konfigurasi.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        # Validasi sintaks konfigurasi.
+        sshd_path = shutil.which("sshd")
+        if sshd_path is None:
+            raise RuntimeError("Executable sshd tidak ditemukan.")
+        
+        validation = subprocess.run(
+            [sshd_path, "-t", "-f", str(temp_config)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
         )
 
-        if validate_cmd.returncode == 0:
-            shutil.move(str(tmp_config_path), str(SSHD_CONFIG))
-            os.chmod(SSHD_CONFIG, 0o600)
-
-            if restart_ssh_service():
-                logger.log(
-                    "SUCCESS",
-                    "Result",
-                    "Hasil Rollback: SUCCEED - PasswordAuthentication berhasil dikembalikan ke 'yes'.",
-                )
-            else:
-                logger.log(
-                    "WARNING",
-                    "Result",
-                    "Hasil Rollback: WARNING - Konfigurasi diubah ke 'yes', tetapi gagal merestart service SSH.",
-                )
-        else:
-            if tmp_config_path.exists():
-                tmp_config_path.unlink()
+        if validation.returncode != 0:
+            detail = (
+                validation.stderr.strip()
+                or "Sintaks konfigurasi tidak valid."
+            )
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
-                "Hasil Rollback: CANCELLED - Sintaks konfigurasi invalid! Rollback dibatalkan.",
+                f"Hasil Rollback: FAILED - validasi sshd gagal: {detail}",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-    except Exception as e:
-        logger.log_error("K02", "rollback", e)
 
+        # Pastikan nilai efektif kandidat benar-benar 'yes'.
+        effective_value = get_effective_sshd_parameter(
+            config_file=temp_config,
+            parameter="PasswordAuthentication",
+        )
+        
+        if effective_value.lower() != "yes":
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Rollback: FAILED - nilai efektif kandidat adalah {effective_value}', bukan 'yes'.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        # Terapkan konfigurasi yang telah tervalidasi.
+        os.replace(temp_config, SSHD_CONFIG)
+        temp_config = None
+
+        if not restart_system_service(SSH_SERVICE_NAME):
+            # Pulihkan file konfigurasi sebelumnya.
+            os.replace(original_config, SSHD_CONFIG)
+            original_config = None
+        
+            if restart_system_service(SSH_SERVICE_NAME):
+                logger.log(
+                    LogStatus.WARNING,
+                    "Result",
+                    f"Hasil Rollback: WARNING - Restart SSH gagal; konfigurasi lama dipulihkan.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
+            else:
+                logger.log(
+                    LogStatus.ERROR,
+                    "Result",
+                    f"Hasil Rollback: FAILED - restart SSH gagal dan restart setelah rollback juga gagal.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )  
+                sys.exit(2)
+
+        
+        logger.log(
+            LogStatus.SUCCESS,
+            "Result",
+            f"Hasil Rollback: SUCCEED - Login SSH menggunakan password berhasil diaktifkan kembali dan service SSH berhasil direstart.",
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(0) 
+
+    except Exception as e:
+        logger.log_error(
+            "K02", 
+            "rollback", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
+        
     finally:
+        for path in (temp_config, original_config):
+            if path is not None:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.log(
+                        LogStatus.WARNING,
+                        "Note",
+                        f"Gagal membersihkan file sementara: {exc}",
+                    )
+
         release_lock(lock_file)
 
 
