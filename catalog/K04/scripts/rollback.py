@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
+from time import perf_counter
 import os
 import shutil
 import subprocess
@@ -15,14 +16,22 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SSHD_CONFIG, CATALOG_LOCKS
+from config.settings import (
+    SSHD_CONFIG, 
+    SSH_SERVICE_NAME, 
+    CATALOG_LOCKS
+)
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
     acquire_lock,
-    check_sshd_config_exists,
     release_lock,
-    restart_ssh_service,
+    check_config_exists,
+    check_config_parameter_value,
+    get_effective_sshd_parameter,
+    set_config_parameter_value,
+    restart_system_service
 )
 
 
@@ -34,152 +43,194 @@ def parse_max_auth_tries(raw_value: str) -> Optional[int]:
         return None
 
 
-def get_max_auth_tries_state(
-    config_path: Path,
-) -> Tuple[str, Optional[str], Optional[int]]:
-    """Mengecek keberadaan dan nilai MaxAuthTries di sshd_config.
-
-    Return:
-        Tuple[state, raw_value, tries]
-        - state: 'not_found', 'commented', 'active'
-        - raw_value: Nilai mentah di config (misal '4', '6')
-        - tries: Nilai integer atau None
-    """
-    if not config_path.is_file():
-        return "not_found", None, None
-
-    with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            # 1. Baris Terkomentar
-            if line_stripped.startswith("#"):
-                uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("maxauthtries"):
-                    parts = uncommented.split()
-                    raw_val = parts[1] if len(parts) >= 2 else None
-                    tries = parse_max_auth_tries(raw_val) if raw_val else None
-                    return "commented", raw_val, tries
-
-            # 2. Baris Aktif
-            elif line_stripped.lower().startswith("maxauthtries"):
-                parts = line_stripped.split()
-                raw_val = parts[1] if len(parts) >= 2 else None
-                tries = parse_max_auth_tries(raw_val) if raw_val else None
-                return "active", raw_val, tries
-
-    return "not_found", None, None
-
-
-def apply_rollback_max_auth_tries(
-    src_path: Path, dst_file_obj, rollback_value: str = "6"
-) -> None:
-    """Mengubah parameter MaxAuthTries aktif dari 4 menjadi nilai default OpenSSH (6)."""
-    with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            if not line_stripped.startswith(
-                "#"
-            ) and line_stripped.lower().startswith("maxauthtries"):
-                dst_file_obj.write(f"MaxAuthTries {rollback_value}\n")
-            else:
-                dst_file_obj.write(line)
-
-
 def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
         catalog="K04",
         cis_id="5.1.16",
+        regulasi="Pasal 35, Pasal 39",
+        kepatuhan="UU PDP No. 27/2022",
         log_type="rollback",
     )
 
     lock_name = CATALOG_LOCKS.get("K04", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+    temp_config: Path | None = None
+    original_config: Path | None = None
+
     try:
-        if not check_sshd_config_exists(logger):
+        if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
-                "Hasil Rollback: FAILED - File sshd_config tidak ditemukan.",
+                f"Hasil Rollback: FAILED - File {SSHD_CONFIG} tidak ditemukan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-        # Cek status MaxAuthTries saat ini
-        state, raw_val, tries = get_max_auth_tries_state(SSHD_CONFIG)
+        status, _ = check_config_parameter_value(SSHD_CONFIG, "MaxAuthTries")
 
-        # Syarat 1: Parameter tidak ditemukan -> Batalkan rollback
-        if state == "not_found":
+        if status == "not_found":
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
-                "Hasil Rollback: CANCELLED - Parameter MaxAuthTries tidak ditemukan di sshd_config.",
-            )
-            sys.exit(0)
-
-        # Syarat 2: Parameter terkomentar (#) -> Batalkan rollback
-        if state == "commented":
-            logger.log(
-                "FAILED",
-                "Result",
-                "Hasil Rollback: CANCELLED - Parameter MaxAuthTries dalam keadaan terkomentar (#).",
-            )
-            sys.exit(0)
-
-        # Syarat 3: Jika nilainya bukan 4 (bukan nilai hasil hardening K04) -> Batalkan rollback
-        if state == "active" and tries is not None and tries != 4:
-            logger.log(
-                "SKIPPED",
-                "Result",
-                f"Hasil Rollback: SKIPPED - MaxAuthTries tidak bernilai 4 (saat ini '{raw_val}').",
-            )
-            sys.exit(0)
-
-        # 3. Jalankan proses rollback ke nilai default (6)
-        with tempfile.NamedTemporaryFile(
-            "w+", delete=False, prefix="sshd_config_"
-        ) as tmp_file:
-            tmp_config_path = Path(tmp_file.name)
-            apply_rollback_max_auth_tries(SSHD_CONFIG, tmp_file, rollback_value="6")
-
-        # 4. Validasi sintaks file baru
-        validate_cmd = subprocess.run(
-            ["sshd", "-t", "-f", str(tmp_config_path)], capture_output=True
-        )
-
-        if validate_cmd.returncode == 0:
-            shutil.move(str(tmp_config_path), str(SSHD_CONFIG))
-            os.chmod(SSHD_CONFIG, 0o600)
-
-            if restart_ssh_service():
-                logger.log(
-                    "SUCCESS",
-                    "Result",
-                    "Hasil Rollback: SUCCEED - MaxAuthTries berhasil dikembalikan ke 6.",
-                )
-            else:
-                logger.log(
-                    "WARNING",
-                    "Result",
-                    "Hasil Rollback: WARNING - Konfigurasi MaxAuthTries diubah ke 6, tetapi gagal merestart service SSH.",
-                )
-        else:
-            if tmp_config_path.exists():
-                tmp_config_path.unlink()
-            logger.log(
-                "FAILED",
-                "Result",
-                "Hasil Rollback: CANCELLED - Sintaks konfigurasi invalid! Rollback dibatalkan.",
+                f"Hasil Rollback: CANCELLED - Parameter MaxAuthTries tidak ditemukan di file {SSHD_CONFIG}",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
+        elif status == "commented":
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Rollback: CANCELLED - Parameter MaxAuthTries pada file {SSHD_CONFIG} dalam keadaan terkomentar (#).",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+        elif status == "active":
+            value = get_effective_sshd_parameter(
+                config_file=SSHD_CONFIG,
+                parameter="MaxAuthTries",
+            )
+
+            max_tries = parse_max_auth_tries(value)
+
+            if max_tries == 6:
+                logger.log(
+                    LogStatus.SKIPPED,
+                    "Result",
+                    f"Hasil Rollback: SKIPPED - Parameter MaxAuthTries sudah bernilai {max_tries}",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(0)
+
+            # Buat salinan sementara untuk proses modifikasi dan uji sintaks yang aman
+            with tempfile.NamedTemporaryFile(
+                prefix=".sshd-candidate-",
+                dir=SSHD_CONFIG.parent,
+                delete=False,
+            ) as tmp:
+                temp_config = Path(tmp.name)
+                            
+            with tempfile.NamedTemporaryFile(
+                prefix=".sshd-original-",
+                dir=SSHD_CONFIG.parent,
+                delete=False,
+            ) as tmp:
+                original_config = Path(tmp.name)
+
+            # Salin konten file asli ke file sementara
+            shutil.copy2(SSHD_CONFIG, temp_config)
+            shutil.copy2(SSHD_CONFIG, original_config)
+            os.chmod(temp_config, 0o600)
+
+            # Terapkan perubahan parameter pada file sementara
+            if not set_config_parameter_value(
+                temp_config,
+                "MaxAuthTries",
+                "6",
+            ):
+                logger.log(
+                    LogStatus.FAILED,
+                    "Result",
+                    "Hasil Rollback: FAILED - Gagal menerapkan nilai parameter MaxAuthTries '6' pada file konfigurasi.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
+
+            sshd = shutil.which("sshd")
+            if sshd is None:
+                raise RuntimeError("Executable sshd tidak ditemukan.")
+
+            # Validasi sintaks file konfigurasi sementara menggunakan perintah sshd -t
+            validation = subprocess.run(
+                [sshd, "-t", "-f", str(temp_config)],
+                capture_output=True,
+                text=True,
+                timeout=15,
+                check=False,
+            )
+            
+            if validation.returncode != 0:
+                detail = validation.stderr.strip() or "Sintaks konfigurasi tidak valid."
+                logger.log(
+                    LogStatus.FAILED,
+                    "Result",
+                    f"Hasil Rollback: FAILED - Validasi sshd gagal: {detail}",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
+
+            effective_value = get_effective_sshd_parameter(
+                temp_config,
+                "MaxAuthTries",
+            )
+            if effective_value.lower() != "6":
+                logger.log(
+                    LogStatus.FAILED,
+                    "Result",
+                    f"Hasil Rollback: FAILED - Nilai efektif kandidat adalah '{effective_value}', bukan '6'.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
+            
+            # Terapkan konfigurasi yang telah tervalidasi.
+            os.replace(temp_config, SSHD_CONFIG)
+            temp_config = None
+
+            if not restart_system_service(SSH_SERVICE_NAME):
+                # Pulihkan file konfigurasi sebelumnya.
+                os.replace(original_config, SSHD_CONFIG)
+                original_config = None
+        
+                if restart_system_service(SSH_SERVICE_NAME):
+                    logger.log(
+                        LogStatus.WARNING,
+                        "Result",
+                        f"Hasil Rollback: WARNING - Restart SSH gagal; konfigurasi lama dipulihkan.",
+                        duration_ms=(perf_counter() - start) * 1000,
+                    )
+                    sys.exit(1)
+                else:
+                    logger.log(
+                        LogStatus.ERROR,
+                        "Result",
+                        f"Hasil Rollback: ERROR - restart SSH gagal dan restart setelah rollback juga gagal.",
+                        duration_ms=(perf_counter() - start) * 1000,
+                    )  
+                    sys.exit(2)
+
+            logger.log(
+                LogStatus.SUCCESS,
+                "Result",
+                f"Hasil Rollback: SUCCEED - Batas percobaan login SSH dikembalikan menjadi 6 kali dan service SSH berhasil direstart.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(0)
 
     except Exception as e:
-        logger.log_error("K04", "rollback", e)
+        logger.log_error(
+            "K04", 
+            "rollback", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
 
     finally:
+        for path in (temp_config, original_config):
+            if path is not None:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.log(
+                        LogStatus.WARNING,
+                        "Note",
+                        f"Gagal membersihkan file sementara: {exc}",
+                    )
+
         release_lock(lock_file)
 
 

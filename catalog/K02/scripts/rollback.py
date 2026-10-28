@@ -32,57 +32,8 @@ from pipeline.catalogutils import (
     check_config_parameter_value,
     get_effective_sshd_parameter,
     set_config_parameter_value,
-    restart_system_service,
-    restart_ssh_service,
+    restart_system_service
 )
-
-
-def check_password_auth_state(
-    config_path: Path,
-) -> Tuple[str, Optional[str]]:
-    """Mengecek keberadaan dan nilai PasswordAuthentication di sshd_config.
-
-    Return:
-        Tuple[state, value]
-        - state: 'not_found', 'commented', 'active'
-        - value: Nilai parameter (misal 'yes', 'no') atau None jika tidak ada
-    """
-    if not config_path.is_file():
-        return "not_found", None
-
-    with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            # 1. Baris Terkomentar
-            if line_stripped.startswith("#"):
-                uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("passwordauthentication"):
-                    parts = uncommented.split()
-                    val = parts[1] if len(parts) >= 2 else None
-                    return "commented", val
-
-            # 2. Baris Aktif
-            elif line_stripped.lower().startswith("passwordauthentication"):
-                parts = line_stripped.split()
-                val = parts[1] if len(parts) >= 2 else None
-                return "active", val
-
-    return "not_found", None
-
-
-def apply_rollback_logic(src_path: Path, dst_file_obj) -> None:
-    """Mengubah parameter PasswordAuthentication aktif yang bernilai 'no' menjadi 'yes'."""
-    with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            if not line_stripped.startswith(
-                "#"
-            ) and line_stripped.lower().startswith("passwordauthentication"):
-                dst_file_obj.write("PasswordAuthentication yes\n")
-            else:
-                dst_file_obj.write(line)
 
 
 def main():

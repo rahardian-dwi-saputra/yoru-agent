@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 from typing import Optional, Tuple
+from time import perf_counter
 import sys
 
 
@@ -14,10 +15,12 @@ if str(PROJECT_ROOT) not in sys.path:
 from config.settings import SSHD_CONFIG, CATALOG_LOCKS
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
     acquire_lock,
-    check_sshd_config_exists,
     release_lock,
+    check_config_exists,
+    get_effective_sshd_parameter
 )
 
 
@@ -82,64 +85,87 @@ def main():
         log_file_name="audit.json",
         catalog="K03",
         cis_id="5.1.13",
+        regulasi="Pasal 35, Pasal 39",
+        kepatuhan="UU PDP No. 27/2022",
         log_type="audit",
     )
 
     lock_name = CATALOG_LOCKS.get("K03", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+
     try:
-        if not check_sshd_config_exists(logger):
+        if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
             logger.log(
-                "FAILED", 
+                LogStatus.FAILED, 
                 "Result", 
-                "Hasil Audit: FAILED - File sshd_config tidak ditemukan."
+                f"Hasil Audit: FAILED - File {SSHD_CONFIG} tidak ditemukan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-        state, raw_val, seconds = get_login_grace_time_status(SSHD_CONFIG)
+        state, raw_val, _ = get_login_grace_time_status(SSHD_CONFIG)
 
-        if state == "not_found":
-            logger.log(
-                "FAILED",
-                "Result",
-                "Hasil Audit: FAILED - Parameter LoginGraceTime tidak ditemukan di sshd_config (menggunakan default yang tidak aman).",
+        if state == "active":
+            login_grace_time = get_effective_sshd_parameter(
+                SSHD_CONFIG,
+                "LoginGraceTime",
             )
-            sys.exit(1)
 
-        elif state == "commented":
-            logger.log(
-                "FAILED",
-                "Result",
-                f"Hasil Audit: FAILED - Parameter LoginGraceTime ditemukan tetapi terkomentar (#) dengan nilai default '{raw_val}'.",
-            )
-            sys.exit(1)
+            grace_seconds = parse_grace_time_to_seconds(login_grace_time)
 
-        elif state == "active":
-            if seconds is None:
+            if grace_seconds is None:
                 logger.log(
-                    "FAILED",
+                    LogStatus.FAILED, 
                     "Result",
-                    f"Hasil Audit: FAILED - Parameter LoginGraceTime aktif namun nilainya tidak valid ('{raw_val}').",
+                    f"Hasil Audit: FAILED - Parameter LoginGraceTime pada file {SSHD_CONFIG} aktif namun nilainya tidak valid ('{login_grace_time}').",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
+            elif 0 < grace_seconds <= 60:
+                logger.log(
+                    LogStatus.COMPLIANT,
+                    "Result",
+                    f"Hasil Audit: COMPLIANT - Parameter LoginGraceTime pada file {SSHD_CONFIG} sudah dikonfigurasi secara aman dengan nilai {grace_seconds} detik ('{login_grace_time}').",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(0)
+            else:
+                logger.log(
+                    LogStatus.NON_COMPLIANT,
+                    "Result",
+                    f"Hasil Audit: NON_COMPLIANT - Parameter LoginGraceTime pada file {SSHD_CONFIG} bernilai {grace_seconds} detik ('{login_grace_time}'). Persyaratan aman: > 0 dan <= 60 detik.",
+                    duration_ms=(perf_counter() - start) * 1000,
                 )
                 sys.exit(1)
 
-            if 0 < seconds <= 60:
-                logger.log(
-                    "COMPLIANT",
-                    "Result",
-                    f"Hasil Audit: COMPLIANT - LoginGraceTime dikonfigurasi secara aman dengan nilai {seconds} detik ('{raw_val}').",
-                )
-            else:
-                logger.log(
-                    "NON_COMPLIANT",
-                    "Result",
-                    f"Hasil Audit: NON_COMPLIANT - LoginGraceTime bernilai {seconds} detik ('{raw_val}'). Persyaratan aman: > 0 dan <= 60 detik.",
-                )
+        elif state == "commented":
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Audit: FAILED - Parameter LoginGraceTime pada file {SSHD_CONFIG} ditemukan tetapi terkomentar (#) dengan nilai default '{raw_val}'.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        elif state == "not_found":
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Audit: FAILED - Parameter LoginGraceTime tidak ditemukan pada file {SSHD_CONFIG} (menggunakan default yang tidak aman).",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
 
     except Exception as e:
-        logger.log_error("K03", "audit", e)
-
+        logger.log_error(
+            "K03", 
+            "audit", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
     finally:
         release_lock(lock_file)
 

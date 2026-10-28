@@ -1,6 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Optional
+from time import perf_counter
 import os
 import shutil
 import subprocess
@@ -15,15 +16,23 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SSHD_CONFIG, CATALOG_LOCKS
+from config.settings import (
+    SSHD_CONFIG, 
+    SSH_SERVICE_NAME, 
+    CATALOG_LOCKS
+)
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
     acquire_lock,
-    check_sshd_config_exists,
-    create_ssh_backup,
     release_lock,
-    restart_ssh_service,
+    check_config_exists,
+    check_config_parameter_value,
+    get_effective_sshd_parameter,
+    create_ssh_backup,
+    set_config_parameter_value,
+    restart_system_service
 )
 
 
@@ -45,155 +54,190 @@ def parse_grace_time_to_seconds(raw_value: str) -> Optional[int]:
         return None
 
 
-def get_current_login_grace_time(
-    config_path: Path,
-) -> Tuple[str, Optional[str], Optional[int]]:
-    """Mengecek status dan nilai LoginGraceTime saat ini di sshd_config."""
-    if not config_path.is_file():
-        return "not_found", None, None
-
-    with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            if line_stripped.startswith("#"):
-                uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("logingracetime"):
-                    parts = uncommented.split()
-                    raw_val = parts[1] if len(parts) >= 2 else None
-                    sec = parse_grace_time_to_seconds(raw_val) if raw_val else None
-                    return "commented", raw_val, sec
-
-            elif line_stripped.lower().startswith("logingracetime"):
-                parts = line_stripped.split()
-                raw_val = parts[1] if len(parts) >= 2 else None
-                sec = parse_grace_time_to_seconds(raw_val) if raw_val else None
-                return "active", raw_val, sec
-
-    return "not_found", None, None
-
-
-def apply_login_grace_time_logic(
-    src_path: Path, dst_file_obj, target_value: str = "60"
-) -> Tuple[bool, str]:
-    """Menerapkan logika hardening LoginGraceTime ke file sementara."""
-    found_parameter = False
-    action_taken = ""
-
-    with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            # 1. Terkomentar -> uncomment dan ubah ke target_value (60)
-            if line_stripped.startswith("#"):
-                uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("logingracetime"):
-                    found_parameter = True
-                    dst_file_obj.write(f"LoginGraceTime {target_value}\n")
-                    action_taken = f"uncommented_and_set_to_{target_value}"
-                    continue
-
-            # 2. Aktif -> ubah nilainya ke target_value (60)
-            elif line_stripped.lower().startswith("logingracetime"):
-                found_parameter = True
-                dst_file_obj.write(f"LoginGraceTime {target_value}\n")
-                action_taken = f"updated_to_{target_value}"
-                continue
-
-            dst_file_obj.write(line)
-
-    # 3. Belum ada -> tambahkan parameter di akhir file
-    if not found_parameter:
-        dst_file_obj.write(f"\nLoginGraceTime {target_value}\n")
-        action_taken = f"appended_new_parameter_{target_value}"
-
-    return found_parameter, action_taken
-
-
 def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
         catalog="K03",
         cis_id="5.1.13",
+        regulasi="Pasal 35, Pasal 39",
+        kepatuhan="UU PDP No. 27/2022",
         log_type="hardening",
     )
 
     lock_name = CATALOG_LOCKS.get("K03", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+    temp_config: Path | None = None
+    original_config: Path | None = None
+
     try:
-        if not check_sshd_config_exists(logger):
+        if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
             logger.log(
-                "FAILED", 
+                LogStatus.FAILED,
                 "Result", 
-                "Hasil Hardening: FAILED - File sshd_config tidak ditemukan."
+                f"Hasil Hardening: FAILED - File {SSHD_CONFIG} tidak ditemukan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
+        # Cek apakah LoginGraceTime sudah nonaktif (COMPLIANT / SKIPPED)
+        status, _ = check_config_parameter_value(SSHD_CONFIG, "LoginGraceTime")
+
+        if status == "active":
+            login_grace_time = get_effective_sshd_parameter(
+                SSHD_CONFIG,
+                "LoginGraceTime",
+            )
+
+            grace_seconds = parse_grace_time_to_seconds(login_grace_time)
+
+            if 0 < grace_seconds <= 60:
+                logger.log(
+                    LogStatus.SKIPPED,
+                    "Result",
+                    f"Hasil Hardening: SKIPPED - Parameter LoginGraceTime sudah dikonfigurasi secara aman ({grace_seconds} detik / '{login_grace_time}').",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(0)
+
+        # Buat backup konfigurasi sebelum melakukan perubahan.
         success_backup, backup_msg = create_ssh_backup(logger)
         if not success_backup:
             logger.log(
-                "FAILED",
+                LogStatus.FAILED, 
                 "Result", 
-                f"Hasil Hardening: BackupFailed - {backup_msg}", 
+                f"Hasil Hardening: Backup konfigurasi gagal - {backup_msg}",
+                duration_ms=(perf_counter() - start) * 1000, 
             )
             sys.exit(1)
 
-        # Cek status LoginGraceTime saat ini
-        state, raw_val, seconds = get_current_login_grace_time(SSHD_CONFIG)
-
-        # Jika sudah aktif dan nilainya berada di kisaran aman (1-60 detik), batalkan hardening
-        if state == "active" and seconds is not None and 0 < seconds <= 60:
-            logger.log(
-                "SKIPPED",
-                "Result",
-                f"Hasil Hardening: SKIPPED - LoginGraceTime sudah dikonfigurasi secara aman ({seconds} detik / '{raw_val}').",
-            )
-            sys.exit(0)
-
-        # 3. Jalankan proses perubahan konfigurasi ke nilai standar CIS (60 detik)
+        # Buat salinan sementara untuk proses modifikasi dan uji sintaks yang aman
         with tempfile.NamedTemporaryFile(
-            "w+", delete=False, prefix="sshd_config_"
-        ) as tmp_file:
-            tmp_config_path = Path(tmp_file.name)
-            _, action = apply_login_grace_time_logic(SSHD_CONFIG, tmp_file, target_value="60")
+            prefix=".sshd-candidate-",
+            dir=SSHD_CONFIG.parent,
+            delete=False,
+        ) as tmp:
+            temp_config = Path(tmp.name)
+                
+        with tempfile.NamedTemporaryFile(
+            prefix=".sshd-original-",
+            dir=SSHD_CONFIG.parent,
+            delete=False,
+        ) as tmp:
+            original_config = Path(tmp.name)
+        
+        # Salin konten file asli ke file sementara
+        shutil.copy2(SSHD_CONFIG, temp_config)
+        shutil.copy2(SSHD_CONFIG, original_config)
+        os.chmod(temp_config, 0o600)
 
-        # 4. Validasi sintaks file baru
-        validate_cmd = subprocess.run(
-            ["sshd", "-t", "-f", str(tmp_config_path)], capture_output=True
+        # Terapkan perubahan parameter pada file sementara
+        if not set_config_parameter_value(
+            temp_config,
+            "LoginGraceTime",
+            "60",
+        ):
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                "Hasil Hardening: FAILED - Gagal menerapkan nilai parameter LoginGraceTime '60' pada file konfigurasi.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        sshd = shutil.which("sshd")
+        if sshd is None:
+            raise RuntimeError("Executable sshd tidak ditemukan.")
+        
+        # Validasi sintaks file konfigurasi sementara menggunakan perintah sshd -t
+        validation = subprocess.run(
+            [sshd, "-t", "-f", str(temp_config)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
         )
 
-        if validate_cmd.returncode == 0:
-            shutil.move(str(tmp_config_path), str(SSHD_CONFIG))
-            os.chmod(SSHD_CONFIG, 0o600)
-
-            if restart_ssh_service():
-                logger.log(
-                    "SUCCESS",
-                    "Result",
-                    f"Hardening berhasil: SUCCEED - LoginGraceTime dikonfigurasi ke 60 detik (Aksi: {action}).",
-                )
-            else:
-                logger.log(
-                    "WARNING",
-                    "Result",
-                    "Hardening berhasil: WARNING - Konfigurasi LoginGraceTime diubah, tetapi gagal merestart service SSH.",
-                )
-        else:
-            if tmp_config_path.exists():
-                tmp_config_path.unlink()
+        if validation.returncode != 0:
+            detail = validation.stderr.strip() or "Sintaks konfigurasi tidak valid."
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
-                "Hardening berhasil: FAILED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                f"Hasil Hardening: FAILED - Validasi sshd gagal: {detail}",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-    except Exception as e:
-        logger.log_error("K03", "hardening", e)
+        effective_value = get_effective_sshd_parameter(
+            temp_config,
+            "LoginGraceTime",
+        )
+        if effective_value.lower() != "60":
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Hardening: FAILED - Nilai efektif kandidat adalah '{effective_value}', bukan '60'.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
 
+        # Terapkan konfigurasi yang telah tervalidasi.
+        os.replace(temp_config, SSHD_CONFIG)
+        temp_config = None
+
+        if not restart_system_service(SSH_SERVICE_NAME):
+            # Pulihkan file konfigurasi sebelumnya.
+            os.replace(original_config, SSHD_CONFIG)
+            original_config = None
+        
+            if restart_system_service(SSH_SERVICE_NAME):
+                logger.log(
+                    LogStatus.WARNING,
+                    "Result",
+                    f"Hasil Hardening: WARNING - Restart SSH gagal; konfigurasi lama dipulihkan.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
+            else:
+                logger.log(
+                    LogStatus.ERROR,
+                    "Result",
+                    f"Hasil Hardening: ERROR - restart SSH gagal dan restart setelah rollback juga gagal.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )  
+                sys.exit(2)
+
+        logger.log(
+            LogStatus.SUCCESS,
+            "Result",
+            f"Hasil Hardening: SUCCEED - Waktu login SSH berhasil diubah menjadi 60 detik dan service SSH berhasil direstart.",
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(0)
+
+
+    except Exception as e:
+        logger.log_error(
+            "K03", 
+            "hardening", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
     finally:
+        for path in (temp_config, original_config):
+            if path is not None:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.log(
+                        LogStatus.WARNING,
+                        "Note",
+                        f"Gagal menghapus file sementara: {exc}",
+                    )
+                    
         release_lock(lock_file)
 
 

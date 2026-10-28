@@ -24,21 +24,22 @@ vars:
   PESAN_HARDENING: |
     Aksi ini akan menetapkan parameter 'Ciphers' hanya pada algoritma 
     enkripsi yang kuat dan disetujui standar CIS (seperti AES-GCM dan 
-    ChaCha20-Poly1305) pada file /etc/ssh/sshd_config serta merestart 
-    layanan SSH.
-    ⚠️ DAMPAK OPERASIONAL: Perangkat atau klien SSH lama (*legacy clients*) 
-    yang hanya mendukung cipher usang tidak akan bisa terhubung ke 
-    server ini. Pastikan perangkat admin Anda mendukung standar 
-    enkripsi modern!
+    ChaCha20-Poly1305) pada konfigurasi SSH serta merestart layanan SSH.
+    ⚠️ DAMPAK OPERASIONAL: 
+    Perangkat atau klien SSH lama (*legacy clients*) yang hanya 
+    mendukung cipher usang tidak akan bisa terhubung ke server ini. 
+    Pastikan perangkat admin Anda mendukung standar enkripsi modern!
   PESAN_ROLLBACK: |
     Aksi ini akan mengembalikan atau menghapus pengaturan 'Ciphers' 
     khusus ke konfigurasi default sistem operasi.
-    ⚠️ RISIKO KEAMANAN: Server akan kembali mengizinkan penggunaan 
-    algoritma enkripsi lama/lemah, meningkatkan risiko kerentanan 
-    dekripsi data di jalur komunikasi (*transport layer*).
+    ⚠️ RISIKO KEAMANAN: 
+    Server akan kembali mengizinkan penggunaan algoritma enkripsi 
+    lama/lemah, meningkatkan risiko kerentanan dekripsi data di 
+    jalur komunikasi (*transport layer*).
 
 tasks:
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}

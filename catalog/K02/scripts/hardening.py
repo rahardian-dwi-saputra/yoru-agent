@@ -292,15 +292,16 @@ def main():
     finally:
 
         for path in (temp_config, original_config):
-                    if path is not None:
-                        try:
-                            path.unlink(missing_ok=True)
-                        except OSError as exc:
-                            logger.log(
-                                LogStatus.WARNING,
-                                "Note",
-                                f"Gagal menghapus file sementara: {exc}",
-                            )
+            if path is not None:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.log(
+                        LogStatus.WARNING,
+                        "Note",
+                        f"Gagal menghapus file sementara: {exc}",
+                    )
+                    
         release_lock(lock_file)
 
 

@@ -9,7 +9,7 @@ vars:
   NAMA: "Membatasi Percobaan Auth SSH (MaxAuthTries)"
   KODE_CIS: "5.1.16"
   CIS_JUDUL: "5.1.16 Ensure sshd MaxAuthTries is configured"
-  REGULASI: "Pasal 35, Pasal 36"
+  REGULASI: "Pasal 35, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
@@ -21,26 +21,28 @@ vars:
   KATEGORI: "SSH Security"
   AUDIT_ONLY: false
   PESAN_HARDENING: |
-    Aksi ini akan menetapkan parameter 'MaxAuthTries' (menjadi 4 atau 
-    sesuai standar CIS) pada file /etc/ssh/sshd_config dan merestart 
-    layanan SSH.
-    ⚠️ DAMPAK OPERASIONAL: Jumlah kesalahan pengetikan password atau 
-    kunci SSH dibatasi maksimal 4 kali dalam satu sesi koneksi. 
-    Jika melebihi batas, server akan otomatis memutuskan koneksi. 
-    Pastikan Anda teliti saat melakukan login!
+    Aksi ini akan menetapkan parameter 'MaxAuthTries' menjadi 4
+    pada file konfigurasi SSH dan merestart layanan SSH.
+    ⚠️ DAMPAK OPERASIONAL: 
+    Jumlah kesalahan pengetikan password atau kunci SSH dibatasi 
+    maksimal 4 kali dalam satu sesi koneksi. Jika melebihi batas, 
+    server akan otomatis memutuskan koneksi. Pastikan Anda teliti 
+    saat melakukan login!
   PESAN_ROLLBACK: |
-    ini akan mengembalikan atau menghapus pengaturan 'MaxAuthTries' 
-    ke nilai default sistem.
-    ⚠️ RISIKO KEAMANAN: Penyerang memiliki kesempatan lebih banyak 
-    untuk mencoba menebak kombinasi kredensial (brute-force) dalam 
+    ini akan mengembalikan atau menghapus pengaturan 
+    'MaxAuthTries' ke nilai default sistem.
+    ⚠️ RISIKO KEAMANAN: 
+    Penyerang memiliki kesempatan lebih banyak untuk mencoba 
+    menebak kombinasi kredensial (brute-force) dalam 
     satu sesi koneksi SSH yang sama tanpa batasan ketat.
 
 tasks:
-  default:
-    desc: "Menampilkan informasi catalog dan daftar task yang tersedia"
+  init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
+    internal: true
     cmds:
-      - task: info
-
+      - mkdir -p {{.LOG_DIR}}
+      
   info:
     desc: "Menampilkan perintah pengecekan MaxAuthTries sesuai standar CIS 5.1.16"
     silent: true
@@ -56,22 +58,19 @@ tasks:
         '=================================================='
 
   audit:
-    desc: "Menjalankan audit untuk CIS 5.1.16 MaxAuthTries"
+    desc: "Menjalankan audit untuk MaxAuthTries"
+    deps: [init-log-dir]
     cmds:
       - python3 {{.SCRIPT_DIR}}/audit.py
 
   hardening:
-    desc: "Menjalankan hardening untuk CIS 5.1.16 MaxAuthTries"
+    desc: "Menjalankan hardening untuk MaxAuthTries"
+    deps: [init-log-dir]
     cmds:
       - python3 {{.SCRIPT_DIR}}/hardening.py
 
   rollback:
-    desc: "Menjalankan rollback untuk CIS 5.1.16 MaxAuthTries"
+    desc: "Menjalankan rollback untuk MaxAuthTries"
+    deps: [init-log-dir]
     cmds:
       - python3 {{.SCRIPT_DIR}}/rollback.py
-
-  clean:
-    desc: "Membersihkan file log pada catalog K04"
-    cmds:
-      - rm -rf {{.LOG_DIR}}/*.json
-      - echo "Log catalog {{.ID}} berhasil dibersihkan."
