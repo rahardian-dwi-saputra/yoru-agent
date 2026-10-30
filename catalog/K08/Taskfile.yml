@@ -7,9 +7,10 @@ vars:
 
   ID: "K08"
   NAMA: "Layanan Auditd Aktif dan Berjalan"
-  KODE_CIS: "4.1.1.2"
-  CIS_JUDUL: "4.1.1.2 Ensure auditd service is enabled and active"
-  REGULASI: "Pasal 35, Pasal 36"
+  KODE_CIS: "6.2.1.2"
+  JUDUL_CIS: "Ensure auditd service is enabled and active"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
+  REGULASI: "Pasal 35, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
@@ -26,6 +27,7 @@ vars:
 
 tasks:
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}

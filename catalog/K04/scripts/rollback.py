@@ -25,6 +25,7 @@ from config.settings import (
 from pipeline.catalogutils import (
     LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
     release_lock,
     check_config_exists,
@@ -44,13 +45,18 @@ def parse_max_auth_tries(raw_value: str) -> Optional[int]:
 
 
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
-        catalog="K04",
-        cis_id="5.1.16",
-        regulasi="Pasal 35, Pasal 39",
-        kepatuhan="UU PDP No. 27/2022",
+        catalog=task_vars.get("ID", "K04"),
+        nama=task_vars.get("NAMA", "Membatasi Percobaan Auth SSH (MaxAuthTries)"),
+        kode_cis=task_vars.get("KODE_CIS", "5.1.16"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure sshd MaxAuthTries is configured"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 35, Pasal 39"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="rollback",
     )
 

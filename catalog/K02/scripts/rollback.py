@@ -1,6 +1,5 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Optional, Tuple
 from time import perf_counter
 import os
 import shutil
@@ -26,6 +25,7 @@ from config.settings import (
 from pipeline.catalogutils import (
     LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
     release_lock,
     check_config_exists,
@@ -37,13 +37,18 @@ from pipeline.catalogutils import (
 
 
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
-        catalog="K02",
-        cis_id="-",
-        regulasi="Pasal 35, Pasal 36, Pasal 39",
-        kepatuhan="UU PDP No. 27/2022",
+        catalog=task_vars.get("ID", "K02"),
+        nama=task_vars.get("NAMA", "Login SSH menggunakan Password Dimatikan (Khusus SSH Key)"),
+        kode_cis=task_vars.get("KODE_CIS", "-"),
+        judul_cis=task_vars.get("JUDUL_CIS", "-"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 35, Pasal 36, Pasal 39"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="rollback",
     )
 

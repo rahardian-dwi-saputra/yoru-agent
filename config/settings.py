@@ -110,6 +110,7 @@ SYSCTL_KEY_TCP_SYNCOOKIES = "net.ipv4.tcp_syncookies"
 SYSCTL_TARGET_TCP_SYNCOOKIES = "1"
 SYSCTL_DEFAULT_TCP_SYNCOOKIES = "0"
 
+
 # Pemetaan nama Lock File untuk setiap Katalog (K01 - K19)
 CATALOG_LOCKS = {
     "K01": "ssh_root_login",

@@ -62,7 +62,7 @@ def main():
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
         catalog="K06",
-        cis_id="5.1.7",
+        cis_id="5.1.15",
         log_type="audit",
     )
     

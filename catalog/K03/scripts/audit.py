@@ -17,6 +17,7 @@ from config.settings import SSHD_CONFIG, CATALOG_LOCKS
 from pipeline.catalogutils import (
     LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
     release_lock,
     check_config_exists,
@@ -80,13 +81,18 @@ def get_login_grace_time_status(
 
 
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K03",
-        cis_id="5.1.13",
-        regulasi="Pasal 35, Pasal 39",
-        kepatuhan="UU PDP No. 27/2022",
+        catalog=task_vars.get("ID", "K03"),
+        nama=task_vars.get("NAMA", "Membatasi Waktu Login SSH (LoginGraceTime)"),
+        kode_cis=task_vars.get("KODE_CIS", "5.1.13"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure sshd LoginGraceTime is configured"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 35, Pasal 39"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="audit",
     )
 

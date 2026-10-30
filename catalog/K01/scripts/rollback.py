@@ -24,6 +24,7 @@ from config.settings import (
 from pipeline.catalogutils import (
     LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
     release_lock,
     check_config_exists,
@@ -35,14 +36,18 @@ from pipeline.catalogutils import (
 
 
 def main():
-    
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
-        catalog="K01",
-        cis_id="5.1.20",
-        regulasi="Pasal 35, Pasal 36, Pasal 39",
-        kepatuhan="UU PDP No. 27/2022",
+        catalog=task_vars.get("ID", "K01"),
+        nama=task_vars.get("NAMA", "Root Tidak Bisa Login Lewat SSH"),
+        kode_cis=task_vars.get("KODE_CIS", "5.1.20"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure sshd PermitRootLogin is disabled"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 35, Pasal 36, Pasal 39"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="rollback",
     )
 

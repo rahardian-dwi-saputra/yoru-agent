@@ -15,6 +15,7 @@ import filecmp
 import getpass
 import socket
 import stat
+import yaml
 
 
 from config.settings import (
@@ -61,7 +62,10 @@ class BaseLogger:
         script_dir: Path,
         log_file_name: str,
         catalog: str,
-        cis_id: str,
+        nama: str,
+        kode_cis: str,
+        judul_cis: str,
+        versi_cis: str,
         regulasi: str,
         kepatuhan: str,
         log_type: str,
@@ -98,7 +102,10 @@ class BaseLogger:
         )
 
         self.catalog = catalog
-        self.cis_id = cis_id
+        self.nama = nama
+        self.kode_cis = kode_cis
+        self.judul_cis = judul_cis
+        self.versi_cis = versi_cis
         self.regulasi = regulasi
         self.kepatuhan = kepatuhan
         self.log_type = log_type
@@ -218,14 +225,25 @@ class BaseLogger:
 
     def _send_to_journal(self, entry: dict) -> bool:
         """Kirim log ke Linux System Journal menggunakan utilitas logger."""
+
+        duration_str = (
+            f" | Durasi: {entry['duration_ms']:.4f} ms"
+            if entry.get("duration_ms") is not None
+            else ""
+        )
         
         message = (
-            f"[{entry['catalog']} | CIS {entry['cis_id']}] | "
+            f"[{entry['catalog']} | " 
+            f"Nama: {entry['nama']}] | "
+            f"Kode CIS: {entry['kode_cis']}] | "
+            f"Judul CIS: {entry['judul_cis']}] | "
+            f"Versi CIS: {entry['versi_cis']}] | "
             f"Regulasi: {entry['regulasi']} | "
             f"Kepatuhan: {entry['kepatuhan']} | "
             f"Type: {entry['type']} | "
             f"Status: {entry['status']} | "
             f"Step: {entry['step']} | {entry['message']}"
+            f"{duration_str}"
         )
 
         priority = self.SYSLOG_PRIORITIES.get(
@@ -290,7 +308,10 @@ class BaseLogger:
             "hostname": socket.gethostname(),
             "executed_by": getpass.getuser(),
             "catalog": self.catalog,
-            "cis_id": self.cis_id,
+            "nama": self.nama,
+            "kode_cis": self.kode_cis,
+            "judul_cis": self.judul_cis,
+            "versi_cis": self.versi_cis,
             "regulasi":self.regulasi,
             "kepatuhan":self.kepatuhan,
             "type": self.log_type,
@@ -331,6 +352,25 @@ class BaseLogger:
         )
 
 
+# Mengambil nilai vars dari Taskfile.yml
+def load_taskfile_vars(script_dir: Path) -> dict:
+    """
+    Membaca variabel metadata dari Taskfile.yml yang berada 
+    satu tingkat di atas direktori scripts (level katalog Kxx).
+    """
+    taskfile_path = script_dir.parent / "Taskfile.yml"
+    
+    if not taskfile_path.is_file():
+        return {}
+
+    try:
+        with open(taskfile_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+            return data.get("vars", {})
+    except Exception:
+        return {}
+
+    
 # Function untuk melakukan log file
 def acquire_lock(lock_name: str, logger: BaseLogger | None = None) -> Optional[TextIO]:
     """Mengambil lock eksklusif non-blocking berdasarkan nama lock."""

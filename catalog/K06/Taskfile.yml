@@ -8,7 +8,7 @@ vars:
   ID: "K06"
   NAMA: "Pengaturan MACs SSH yang Aman (Integritas Pesan)"
   KODE_CIS: "5.1.15"
-  CIS_JUDUL: "5.1.15 Ensure sshd MACs are configured"
+  CIS_JUDUL: "Ensure sshd MACs are configured"
   REGULASI: "Pasal 35, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"

@@ -8,7 +8,8 @@ vars:
   ID: "K05"
   NAMA: "Pengaturan Ciphers SSH yang Aman (Enkripsi Transport)"
   KODE_CIS: "5.1.6"
-  CIS_JUDUL: "5.1.6 Ensure sshd Ciphers are configured"
+  JUDUL_CIS: "Ensure sshd Ciphers are configured"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
   REGULASI: "Pasal 35, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
@@ -30,8 +31,8 @@ vars:
     mendukung cipher usang tidak akan bisa terhubung ke server ini. 
     Pastikan perangkat admin Anda mendukung standar enkripsi modern!
   PESAN_ROLLBACK: |
-    Aksi ini akan mengembalikan atau menghapus pengaturan 'Ciphers' 
-    khusus ke konfigurasi default sistem operasi.
+    Aksi ini akan menonaktifkan pengaturan 'Ciphers' pada 
+    konfigurasi SSH sesuai konfigurasi default sistem operasi.
     ⚠️ RISIKO KEAMANAN: 
     Server akan kembali mengizinkan penggunaan algoritma enkripsi 
     lama/lemah, meningkatkan risiko kerentanan dekripsi data di 
