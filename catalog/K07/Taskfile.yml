@@ -8,7 +8,8 @@ vars:
   ID: "K07"
   NAMA: "Pengaturan KexAlgorithms SSH yang Aman"
   KODE_CIS: "5.1.12"
-  CIS_JUDUL: "5.1.12 Ensure sshd KexAlgorithms are configured"
+  JUDUL_CIS: "Ensure sshd KexAlgorithms are configured"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
   REGULASI: "Pasal 35, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
@@ -25,20 +26,23 @@ vars:
     Aksi ini akan menetapkan parameter 'KexAlgorithms' hanya pada 
     algoritma pertukaran kunci modern yang disetujui standar CIS 
     (seperti curve25519-sha256, diffie-hellman-group16-sha512) 
-    pada file /etc/ssh/sshd_config serta merestart layanan SSH.
-    ⚠️ DAMPAK OPERASIONAL: Klien SSH atau skrip otomatisasi lama 
-    yang masih menggunakan algoritma Kex usang tidak akan dapat 
-    terhubung ke server. Pastikan perangkat penghubung Anda 
-    mendukung standar kriptografi modern!
+    pada konfigurasi SSH serta merestart layanan SSH.
+    ⚠️ DAMPAK OPERASIONAL: 
+    Klien SSH atau skrip otomatisasi lama yang masih menggunakan 
+    algoritma Kex usang tidak akan dapat terhubung ke server. 
+    Pastikan perangkat penghubung Anda mendukung standar 
+    kriptografi modern!
   PESAN_ROLLBACK: |
-    Aksi ini akan mengembalikan atau menghapus pengaturan 
-    'KexAlgorithms' khusus ke konfigurasi default sistem operasi.
-    ⚠️ RISIKO KEAMANAN: Server akan kembali mengizinkan algoritma 
-    pertukaran kunci lama yang berpotensi memiliki kelemahan matematis 
-    atau rentan terhadap analisis dekripsi jangka panjang.
+    Aksi ini akan menonaktifkan pengaturan 'KexAlgorithms' 
+    pada konfigurasi SSH sesuai konfigurasi default sistem operasi.
+    ⚠️ RISIKO KEAMANAN: 
+    Server akan kembali mengizinkan algoritma pertukaran kunci 
+    lama yang berpotensi memiliki kelemahan matematis atau 
+    rentan terhadap analisis dekripsi jangka panjang.
 
 tasks:
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}

@@ -8,7 +8,8 @@ vars:
   ID: "K06"
   NAMA: "Pengaturan MACs SSH yang Aman (Integritas Pesan)"
   KODE_CIS: "5.1.15"
-  CIS_JUDUL: "Ensure sshd MACs are configured"
+  JUDUL_CIS: "Ensure sshd MACs are configured"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
   REGULASI: "Pasal 35, Pasal 39"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
@@ -22,24 +23,26 @@ vars:
   KATEGORI: "SSH Security"
   AUDIT_ONLY: false
   PESAN_HARDENING: |
-    Aksi ini akan menetapkan parameter 'MACs' hanya pada algoritma 
-    integritas pesan yang kuat dan disetujui standar CIS 
+    Aksi ini akan menetapkan parameter 'MACs' hanya pada 
+    algoritma integritas pesan yang kuat dan disetujui standar CIS 
     (seperti hmac-sha2-256, hmac-sha2-512, atau yang berbasis 
-    Galois/Counter Mode) pada file /etc/ssh/sshd_config serta 
-    merestart layanan SSH.
-    ⚠️ DAMPAK OPERASIONAL: Klien atau sistem pemantauan lama yang 
-    menggunakan algoritma MAC usang (seperti hmac-md5 atau hmac-sha1) 
-    tidak akan dapat terhubung ke server. Pastikan klien SSH Anda 
-    mendukung algoritma modern!
+    Galois/Counter Mode) pada konfigurasi SSH serta merestart 
+    layanan SSH.
+    ⚠️ DAMPAK OPERASIONAL: 
+    Klien atau sistem pemantauan lama yang menggunakan algoritma MAC 
+    usang (seperti hmac-md5 atau hmac-sha1) tidak akan dapat terhubung 
+    ke server. Pastikan klien SSH Anda mendukung algoritma modern!
   PESAN_ROLLBACK: |
-    Aksi ini akan mengembalikan atau menghapus pengaturan 'MACs' 
-    khusus ke konfigurasi default sistem operasi.
-    ⚠️ RISIKO KEAMANAN: Server akan kembali mengizinkan algoritma 
-    MAC yang lemah, meningkatkan potensi kerentanan manipulasi 
-    paket data di jalur komunikasi (*packet tampering*).
+    Aksi ini akan menonaktifkan pengaturan 'MACs' pada konfigurasi 
+    SSH sesuai konfigurasi default sistem operasi.
+    ⚠️ RISIKO KEAMANAN: 
+    Server akan kembali mengizinkan algoritma MAC yang lemah, 
+    meningkatkan potensi kerentanan manipulasi paket data 
+    di jalur komunikasi (*packet tampering*).
 
 tasks:
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}

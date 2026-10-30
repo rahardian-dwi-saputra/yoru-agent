@@ -234,6 +234,7 @@ def main():
                         "Note",
                         f"Gagal menghapus file sementara: {exc}",
                     )
+                    
         release_lock(lock_file)
 
 

@@ -22,7 +22,6 @@ from config.settings import (
     TIMEZONE_NAME,
     APP_TIMEZONE,
     SSHD_CONFIG,
-    SSH_SERVICE_NAME, 
     INVALID_SHELLS, 
     SSH_BACKUP_DIR, 
     JOURNALD_CONFIG, 
@@ -244,6 +243,7 @@ class BaseLogger:
             f"Status: {entry['status']} | "
             f"Step: {entry['step']} | {entry['message']}"
             f"{duration_str}"
+            f" ]"
         )
 
         priority = self.SYSLOG_PRIORITIES.get(
@@ -417,6 +417,7 @@ def check_config_exists(
         return False
     return True
 
+
 # Function ini mengecek parameter SSH via sshd -T
 def get_effective_sshd_parameter(
     config_file: Path,
@@ -464,31 +465,6 @@ def get_effective_sshd_parameter(
     raise RuntimeError(
         f"Parameter {parameter} tidak ditemukan pada output sshd -T."
     )
-
-
-
-
-
-
-
-
-
-
-def check_sshd_config_exists(
-    logger: BaseLogger | None = None,
-    config_path: Path = SSHD_CONFIG,
-) -> bool:
-    """Mengecek apakah file sshd_config ada dan merupakan file valid."""
-    if not config_path.is_file():
-        if logger:
-            logger.log(
-                "ERROR",
-                "Note",
-                f"File konfigurasi {config_path} tidak ditemukan.",
-            )
-        return False
-    return True
-
 
 
 ParameterStatus = Literal["not_found", "commented", "active"]
@@ -640,11 +616,6 @@ def set_config_parameter_value(
     except Exception:
         return False
 
-
-
-
-
-
     
 def is_package_installed(package_name: str, binary_name: str | None = None) -> bool:
     """
@@ -754,7 +725,7 @@ def create_ssh_backup(logger=None) -> tuple[bool, str]:
     dibandingkan backup terakhir.
     """
     try:
-        if not check_sshd_config_exists(logger=logger, config_path=SSHD_CONFIG):
+        if not check_config_exists(config_path=SSHD_CONFIG, config_name="sshd_config", logger=logger):
             msg = f"File konfigurasi SSH utama tidak ditemukan di {SSHD_CONFIG}"
             return False, msg
 
@@ -793,22 +764,6 @@ def create_ssh_backup(logger=None) -> tuple[bool, str]:
         if logger:
             logger.log_error("SYSTEM", "backup", e)
         return False, err_msg
-
-
-def restart_ssh_service() -> bool:
-    """Mencoba merestart service sshd atau ssh."""
-    services_to_try = [SSH_SERVICE_NAME, "sshd", "ssh"]
-    services_to_try = list(dict.fromkeys(services_to_try))
-
-    for service in services_to_try:
-        result = subprocess.run(
-            ["systemctl", "restart", service], capture_output=True
-        )
-        if result.returncode == 0:
-            return True
-    return False
-
-
 
 
 def restart_system_service(service_names: Union[str, List[str]]) -> bool:

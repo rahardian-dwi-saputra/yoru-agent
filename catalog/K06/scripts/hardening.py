@@ -1,12 +1,12 @@
 from __future__ import annotations
-
-import os
 from pathlib import Path
+from time import perf_counter
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
-from typing import List, Optional, Tuple
+
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -15,160 +15,225 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SSHD_CONFIG, APPROVED_MACS_LIST, CATALOG_LOCKS
+from config.settings import (
+    SSHD_CONFIG, 
+    SSH_SERVICE_NAME, 
+    APPROVED_MACS_LIST, 
+    CATALOG_LOCKS
+)
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
-    check_sshd_config_exists,
-    create_ssh_backup,
     release_lock,
-    restart_ssh_service,
+    check_config_exists,
+    check_config_parameter_value,
+    get_effective_sshd_parameter,
+    create_ssh_backup,
+    set_config_parameter_value,
+    restart_system_service
 )
 
 
 HARDENED_MACS_VALUE = ",".join(APPROVED_MACS_LIST)
 APPROVED_MACS_SET = set(APPROVED_MACS_LIST)
 
-
-def parse_macs_from_config(config_path: Path) -> Tuple[str, Optional[List[str]]]:
-    """Mengecek dan meng-extract daftar MACs dari file sshd_config."""
-    if not config_path.is_file():
-        return "not_found", None
-
-    with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            if line_stripped.startswith("#"):
-                uncommented = line_stripped[1:].lstrip()
-                if uncommented.lower().startswith("macs"):
-                    parts = uncommented.split(maxsplit=1)
-                    if len(parts) >= 2:
-                        raw_macs = parts[1].strip()
-                        return "commented", [m.strip() for m in raw_macs.split(",")]
-
-            elif line_stripped.lower().startswith("macs"):
-                parts = line_stripped.split(maxsplit=1)
-                if len(parts) >= 2:
-                    raw_macs = parts[1].strip()
-                    return "active", [m.strip() for m in raw_macs.split(",")]
-
-    return "not_found", None
-
-
-def apply_hardening_macs(src_path: Path, dst_file_obj, macs_value: str) -> None:
-    """Mengubah atau menambahkan baris MACs ke nilai ter-hardening."""
-    macs_found = False
-
-    with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-
-            # Mengubah baris MACs aktif atau terkomentar
-            if line_stripped.lower().startswith("macs") or (
-                line_stripped.startswith("#")
-                and line_stripped[1:].lstrip().lower().startswith("macs")
-            ):
-                dst_file_obj.write(f"MACs {macs_value}\n")
-                macs_found = True
-            else:
-                dst_file_obj.write(line)
-
-    # Jika direktif MACs tidak pernah ditemukan di file, tambahkan di paling bawah
-    if not macs_found:
-        dst_file_obj.write(f"\n# Added by CIS Hardening K06\nMACs {macs_value}\n")
-
-
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
-        catalog="K06",
-        cis_id="5.1.7",
+        nama=task_vars.get("NAMA", "Pengaturan MACs SSH yang Aman (Integritas Pesan)"),
+        kode_cis=task_vars.get("KODE_CIS", "5.1.15"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure sshd MACs are configured"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 35, Pasal 39"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="hardening",
     )
 
     lock_name = CATALOG_LOCKS.get("K06", "sshd_config")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+    temp_config: Path | None = None
+    original_config: Path | None = None
+
     try:
-        if not check_sshd_config_exists(logger):
+        if not check_config_exists(SSHD_CONFIG, "sshd_config", logger):
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
-                "Hasil Hardening: FAILED - File sshd_config tidak ditemukan.",
+                f"Hasil Hardening: FAILED - File {SSHD_CONFIG} tidak ditemukan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-        success_backup, backup_msg = create_ssh_backup(logger)
-        if not success_backup:
-            logger.log(
-                "FAILED",
-                "Result", 
-                f"Hasil Hardening: BackupFailed - {backup_msg}", 
+        # Cek apakah MACs sudah dihardening
+        status, _ = check_config_parameter_value(
+            SSHD_CONFIG, 
+            "MACs"
+        )
+        if status == "active":
+            macs = get_effective_sshd_parameter(
+                config_file=SSHD_CONFIG,
+                parameter="MACs",
             )
-            sys.exit(1)
 
-        # 2. Cek status MACs saat ini
-        state, current_macs = parse_macs_from_config(SSHD_CONFIG)
+            mac_set = {
+                mac.strip()
+                for mac in macs.split(",")
+                if mac.strip()
+            }
 
-        # Jika sudah aktif dan semua MACs terdaftar di APPROVED_MACS, batalkan
-        if state == "active" and current_macs:
-            current_set = set(current_macs)
-            if (
-                current_set.issubset(APPROVED_MACS_SET)
-                and current_set == APPROVED_MACS_SET
-            ):
+            if mac_set.issubset(APPROVED_MACS_SET) and mac_set == APPROVED_MACS_SET:
                 logger.log(
-                    "SKIPPED",
+                    LogStatus.SKIPPED,
                     "Result",
-                    "Hasil Hardening: SKIPPED - Parameter MACs sudah ter-hardening dan sesuai standar CIS.",
+                    f"Hasil Hardening: SKIPPED - Parameter MACs pada file {SSHD_CONFIG} sudah ter-hardening dan sesuai standar CIS.",
+                    duration_ms=(perf_counter() - start) * 1000,
                 )
                 sys.exit(0)
 
-        # 3. Buat file konfigurasi sementara dan terapkan hardening
-        with tempfile.NamedTemporaryFile(
-            "w+", delete=False, prefix="sshd_config_"
-        ) as tmp_file:
-            tmp_config_path = Path(tmp_file.name)
-            apply_hardening_macs(SSHD_CONFIG, tmp_file, HARDENED_MACS_VALUE)
-
-        # 4. Validasi sintaks sshd
-        validate_cmd = subprocess.run(
-            ["sshd", "-t", "-f", str(tmp_config_path)], capture_output=True
-        )
-
-        if validate_cmd.returncode == 0:
-            shutil.move(str(tmp_config_path), str(SSHD_CONFIG))
-            os.chmod(SSHD_CONFIG, 0o600)
-
-            if restart_ssh_service():
-                logger.log(
-                    "SUCCESS",
-                    "Result",
-                    "Hasil Hardening: SUCCEED - Parameter MACs berhasil diperbarui dan disesuaikan dengan standar CIS.",
-                )
-            else:
-                logger.log(
-                    "WARNING",
-                    "Result",
-                    "Hasil Hardening: WARNING - Konfigurasi MACs berhasil diperbarui, tetapi gagal merestart service SSH.",
-                )
-        else:
-            if tmp_config_path.exists():
-                tmp_config_path.unlink()
+        # Buat backup konfigurasi sebelum melakukan perubahan.
+        success_backup, backup_msg = create_ssh_backup(logger)
+        if not success_backup:
             logger.log(
-                "FAILED",
-                "Result",
-                "Hasil Hardening: FAILED - Sintaks konfigurasi invalid! Hardening dibatalkan.",
+                LogStatus.FAILED,
+                "Result", 
+                f"Hasil Hardening: BackupFailed - {backup_msg}",
+                duration_ms=(perf_counter() - start) * 1000, 
             )
             sys.exit(1)
 
+        # Buat salinan sementara untuk proses modifikasi dan uji sintaks yang aman
+        with tempfile.NamedTemporaryFile(
+            prefix=".sshd-candidate-",
+            dir=SSHD_CONFIG.parent,
+            delete=False,
+        ) as tmp:
+            temp_config = Path(tmp.name)
+                
+        with tempfile.NamedTemporaryFile(
+            prefix=".sshd-original-",
+            dir=SSHD_CONFIG.parent,
+            delete=False,
+        ) as tmp:
+            original_config = Path(tmp.name)
+
+        # Salin konten file asli ke file sementara
+        shutil.copy2(SSHD_CONFIG, temp_config)
+        shutil.copy2(SSHD_CONFIG, original_config)
+        os.chmod(temp_config, 0o600)
+
+        # Terapkan perubahan parameter pada file sementara
+        if not set_config_parameter_value(
+            temp_config,
+            "MACs",
+            HARDENED_MACS_VALUE
+        ):
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                "Hasil Hardening: FAILED - Gagal menerapkan nilai parameter MACs pada file konfigurasi.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        sshd = shutil.which("sshd")
+        if sshd is None:
+            raise RuntimeError("Executable sshd tidak ditemukan.")
+
+        # Validasi sintaks file konfigurasi sementara menggunakan perintah sshd -t
+        validation = subprocess.run(
+            [sshd, "-t", "-f", str(temp_config)],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+
+        if validation.returncode != 0:
+            detail = validation.stderr.strip() or "Sintaks konfigurasi tidak valid."
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Hardening: FAILED - Validasi sshd gagal: {detail}",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        effective_value = get_effective_sshd_parameter(
+            temp_config,
+            "MACs",
+        )
+
+        if effective_value != HARDENED_MACS_VALUE:
+            logger.log(
+                LogStatus.FAILED,
+                "Result",
+                f"Hasil Hardening: FAILED - Nilai efektif kandidat adalah '{effective_value}', bukan '{HARDENED_MACS_VALUE}'.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        # Terapkan konfigurasi yang telah tervalidasi.
+        os.replace(temp_config, SSHD_CONFIG)
+        temp_config = None
+
+        if not restart_system_service(SSH_SERVICE_NAME):
+            # Pulihkan file konfigurasi sebelumnya.
+            os.replace(original_config, SSHD_CONFIG)
+            original_config = None
+        
+            if restart_system_service(SSH_SERVICE_NAME):
+                logger.log(
+                    LogStatus.WARNING,
+                    "Result",
+                    f"Hasil Hardening: WARNING - Restart SSH gagal; konfigurasi lama dipulihkan.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
+            else:
+                logger.log(
+                    LogStatus.ERROR,
+                    "Result",
+                    f"Hasil Hardening: ERROR - restart SSH gagal dan restart setelah rollback juga gagal.",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )  
+                sys.exit(2)
+
+        logger.log(
+            LogStatus.SUCCESS,
+            "Result",
+            f"Hasil Hardening: SUCCEED - Parameter 'MACs' pada file {SSHD_CONFIG} berhasil diperbarui dan service SSH berhasil direstart.",
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(0)
+
     except Exception as e:
-        logger.log_error("K06", "hardening", e)
-   
+        logger.log_error(
+            "K06", 
+            "hardening", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
     finally:
+        for path in (temp_config, original_config):
+            if path is not None:
+                try:
+                    path.unlink(missing_ok=True)
+                except OSError as exc:
+                    logger.log(
+                        LogStatus.WARNING,
+                        "Note",
+                        f"Gagal menghapus file sementara: {exc}",
+                    )
+
         release_lock(lock_file)
 
 

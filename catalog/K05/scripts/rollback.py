@@ -188,7 +188,7 @@ def main():
                 )
                 sys.exit(1)
 
-                        # Terapkan konfigurasi yang telah tervalidasi.
+            # Terapkan konfigurasi yang telah tervalidasi.
             os.replace(temp_config, SSHD_CONFIG)
             temp_config = None
 
