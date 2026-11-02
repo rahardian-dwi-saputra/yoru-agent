@@ -8,32 +8,42 @@ vars:
   ID: "K09"
   NAMA: "Pengaturan Akses File Log Journald"
   KODE_CIS: "6.1.1.2"
-  CIS_JUDUL: "6.1.1.2 Ensure journald log file access is configured"
+  JUDUL_CIS: "Ensure journald log file access is configured"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
   REGULASI: "Pasal 35, Pasal 36"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan direktori dan berkas log systemd-journald 
-    memiliki izin akses yang aman (permissions dan kepemilikan yang tepat) 
-    sehingga tidak dapat dibaca atau dimanipulasi secara sembarangan oleh user 
-    yang tidak berotoritas.
-  RISIKO: "RENDAH"
+    Aturan keamanan untuk memastikan direktori dan berkas log 
+    systemd-journald memiliki izin akses yang aman (permissions dan 
+    kepemilikan yang tepat) sehingga tidak dapat dibaca atau 
+    dimanipulasi secara sembarangan oleh user yang tidak berotoritas.
+  RISIKO: "TINGGI"
   KATEGORI: "Logging and Auditing"
   AUDIT_ONLY: false
   PESAN_HARDENING: |
-    Aksi ini akan memperketat izin akses file dan direktori log Journald 
-    sistem dan memastikan kepemilikan (ownership) yang aman sesuai CIS 
-    Benchmark. ⚠️ DAMPAK: User biasa atau proses aplikasi yang tidak 
-    memiliki hak akses yang tepat tidak akan dapat membaca direktori 
-    log systemd-journald secara langsung.
+    Aksi ini akan memperketat permission direktori dan file log
+    systemd-journald sesuai konfigurasi keamanan CIS Benchmark.
+    Direktori log akan dihilangkan dari permission world-writable,
+    sedangkan file dan subdirektori akan dihilangkan dari permission
+    group-writable dan world-writable.
+    ⚠️ PERINGATAN: 
+    Pembatasan permission dapat menyebabkan user atau proses 
+    aplikasi yang tidak memiliki hak akses memadai kehilangan 
+    kemampuan untuk membaca atau mengakses file log journald 
+    secara langsung. Ownership file dan direktori tidak diubah.
   PESAN_ROLLBACK: |
-    Aksi ini akan mengembalikan hak akses (permissions dan ownership) 
-    direktori log Journald ke kondisi semula.
-    ⚠️ RISIKO: Berkas log sistem dapat kembali dibaca oleh user 
-    yang tidak berotoritas, menurunkan tingkat kerahasiaan data log.
+    Aksi ini akan mengembalikan permission dan ownership direktori
+    serta file log systemd-journald berdasarkan metadata backup
+    yang dibuat sebelum proses hardening.
+    ⚠️ RISIKO KEAMANAN:
+    Permission dan ownership dapat kembali ke kondisi sebelumnya,
+    termasuk konfigurasi yang memungkinkan user atau proses yang
+    tidak berwenang mengakses file log sistem.
 
 tasks:
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}

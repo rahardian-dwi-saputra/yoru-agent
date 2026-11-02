@@ -6,45 +6,58 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   ID: "K10"
-  NAMA: "Kompresi Log Journald"
-  KODE_CIS: "6.1.2.3"
-  CIS_JUDUL: "6.1.2.3 Ensure journald Compress is configured"
-  REGULASI: "Pasal 35, Pasal 36"
+  NAMA: "Penyimpanan Log Journald Permanen"
+  KODE_CIS: "6.1.2.4"
+  JUDUL_CIS: "Ensure journald Storage is configured"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
+  REGULASI: "Pasal 31, Pasal 35"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan systemd-journald dikonfigurasi 
-    agar mengompresi log sistem saat ukurannya melebihi batas tertentu. 
-    Fungsinya untuk menghemat ruang penyimpanan disk dan menjaga efisiensi 
-    pencatatan log dalam jangka panjang tanpa mengganggu layanan.
-  RISIKO: "AMAN"
+    Aturan keamanan untuk memastikan systemd-journald dikonfigurasi
+    menggunakan penyimpanan log permanen (Storage=persistent) pada disk.
+    Fungsinya untuk menjaga ketersediaan log sistem setelah server 
+    mengalami reboot sehingga dapat digunakan untuk audit, 
+    pemantauan keamanan,dan investigasi insiden.
+  RISIKO: "SEDANG"
   KATEGORI: "Logging and Auditing"
   AUDIT_ONLY: false
+  PESAN_HARDENING: |
+    Aksi ini akan mengubah parameter 'Storage' menjadi 'persistent'pada 
+    konfigurasi systemd-journald dan merestart layanan systemd-journald.
+    ⚠️ PERINGATAN: 
+    Log sistem akan disimpan secara permanen pada disk.Pastikan 
+    kapasitas penyimpanan server mencukupi dan kebijakan retensi 
+    log telah dikonfigurasi dengan tepat.
+  PESAN_ROLLBACK: |
+    Aksi ini akan mengembalikan parameter 'Storage' ke nilai semula 
+    sebelum proses hardening dan merestart layanan systemd-journald.
+    ⚠️ RISIKO KEAMANAN: 
+    Jika nilai sebelumnya adalah 'volatile', log baru akan disimpan 
+    sementara di memori dan dapat hilang setelah reboot. Pastikan 
+    kebutuhan audit dan investigasi keamanan tetap terpenuhi.
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Konfigurasi Kompresi Journald
   audit:
-    desc: "Menjalankan audit pengaturan kompresi log systemd-journald"
+    desc: "Menjalankan audit pengaturan penyimpanan permanen log systemd-journald"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 2. Hardening Konfigurasi Kompresi Journald (Mengatur Compress=yes)
   hardening:
-    desc: "Menerapkan konfigurasi kompresi log journald secara permanen"
+    desc: "Menerapkan konfigurasi penyimpanan permanen log journald"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 3. Rollback Konfigurasi Kompresi Journald (Mengembalikan ke kondisi awal)
   rollback:
-    desc: "Mengembalikan konfigurasi kompresi log journald ke kondisi sebelum hardening"
+    desc: "Mengembalikan konfigurasi penyimpanan log journald ke kondisi sebelum hardening"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/rollback.py

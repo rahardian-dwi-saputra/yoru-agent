@@ -13,8 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config.settings import (
     SYSCTL_CONF,
-    SYSCTL_KEYS_ACCEPT_REDIRECTS,
-    SYSCTL_DEFAULT_ACCEPT_REDIRECTS,
+    SYSCTL_KEY_ICMP_ECHO_BROADCASTS,
+    SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS,
     CATALOG_LOCKS,
 )
 
@@ -25,66 +25,48 @@ from pipeline.catalogutils import (
 )
 
 
-def perform_sysctl_rollback_list(sysctl_keys: list[str]) -> tuple[str, str]:
+def perform_sysctl_rollback(sysctl_key: str) -> tuple[str, str]:
     """
-    Melakukan rollback sysctl untuk daftar kunci (list of keys) secara cerdas:
-    - Jika file conf tidak ditemukan -> CANCELLED
-    - Jika seluruh kunci tidak ditemukan di file -> CANCELLED
-    - Jika semua kunci sudah bernilai default (0) -> SKIPPED
-    - Jika ada kunci yang ditemukan dengan nilai lain -> SUCCESS (ubah ke 0)
+    Melakukan rollback sysctl secara cerdas:
+    - Jika file conf atau parameter tidak ditemukan -> CANCELLED
+    - Jika nilai parameter sudah 0 -> SKIPPED
+    - Jika parameter ditemukan dengan nilai lain -> SUCCESS (ubah ke 0)
     """
     try:
         if not SYSCTL_CONF.is_file():
             return "CANCELLED", f"Berkas konfigurasi {SYSCTL_CONF.name} tidak ditemukan."
 
-        existing_lines = []
+        lines = []
+        key_found = False
+        current_value = None
+
+       
         with open(SYSCTL_CONF, "r", encoding="utf-8", errors="ignore") as f:
-            existing_lines = f.readlines()
+            for line in f:
+                line_stripped = line.strip()
+                if not line_stripped.startswith("#") and "=" in line_stripped:
+                    key, val = [x.strip() for x in line_stripped.split("=", 1)]
+                    if key == sysctl_key:
+                        key_found = True
+                        current_value = val
+                        if val == SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS:
+                            return "SKIPPED", f"Parameter {sysctl_key} sudah bernilai default ({SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS})."
+                        else:
+                            lines.append(f"{sysctl_key} = {SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS}\n")
+                            continue
+                lines.append(line)
 
-        keys_found_count = 0
-        all_already_default = True
-        new_lines = []
+        if not key_found:
+            return "CANCELLED", f"Parameter {sysctl_key} tidak ditemukan di dalam {SYSCTL_CONF.name}."
 
-        # 1. Periksa dan ubah nilai kunci yang terdaftar
-        for line in existing_lines:
-            line_stripped = line.strip()
-            handled = False
-            if not line_stripped.startswith("#") and "=" in line_stripped:
-                parts = [x.strip() for x in line_stripped.split("=", 1)]
-
-                if len(parts) == 2:
-                    current_key = parts[0].strip()
-                    current_val = parts[1].strip()
-                    
-                    for target_key in sysctl_keys:
-                        if current_key == target_key:
-                            keys_found_count += 1
-                            if current_val != SYSCTL_DEFAULT_ACCEPT_REDIRECTS:
-                                all_already_default = False
-                                new_lines.append(f"{target_key} = {SYSCTL_DEFAULT_ACCEPT_REDIRECTS}\n")
-                            else:
-                                new_lines.append(line)  # Sudah bernilai default, pertahankan
-                            handled = True
-                            break
-            if not handled:
-                new_lines.append(line)
-
-        # 2. Validasi aturan status
-        if keys_found_count == 0:
-            keys_str = ", ".join(sysctl_keys)
-            return "CANCELLED", f"Tidak ada satupun parameter dari [{keys_str}] yang ditemukan di dalam {SYSCTL_CONF.name}."
-
-        if all_already_default:
-            return "SKIPPED", "Seluruh parameter accept_redirects sudah bernilai default (1)."
-
-        # 3. Tulis ulang file konfigurasi hasil rollback
+        # Tulis kembali file dengan nilai yang sudah di-rollback
         with open(SYSCTL_CONF, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
+            f.writelines(lines)
 
-        # 4. Amankan izin akses file (0o644)
+        # Amankan izin akses file (0o644)
         os.chmod(SYSCTL_CONF, 0o644)
 
-        # 5. Terapkan langsung via sysctl --system
+        # Terapkan langsung via sysctl --system
         res = subprocess.run(
             ["sysctl", "--system"],
             capture_output=True,
@@ -94,8 +76,7 @@ def perform_sysctl_rollback_list(sysctl_keys: list[str]) -> tuple[str, str]:
         if res.returncode != 0:
             return "FAILED", f"Gagal menerapkan sysctl system saat rollback: {res.stderr.strip()}"
 
-        keys_str = ", ".join(sysctl_keys)
-        return "SUCCESS", f"Parameter [{keys_str}] berhasil di-rollback ke nilai {SYSCTL_DEFAULT_ACCEPT_REDIRECTS}."
+        return "SUCCESS", f"Parameter {sysctl_key} berhasil di-rollback ke nilai {SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS}."
 
     except Exception as e:
         return "FAILED", f"Gagal melakukan rollback sysctl: {str(e)}"
@@ -105,16 +86,16 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
-        catalog="K17",
-        cis_id="3.3.5",
+        catalog="K16",
+        cis_id="3.3.4",
         log_type="rollback",
     )
 
-    lock_name = CATALOG_LOCKS.get("K17", "accept_redirects_audit")
+    lock_name = CATALOG_LOCKS.get("K16", "icmp_broadcast_audit")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        status, detail = perform_sysctl_rollback_list(SYSCTL_KEYS_ACCEPT_REDIRECTS)
+        status, detail = perform_sysctl_rollback(SYSCTL_KEY_ICMP_ECHO_BROADCASTS)
 
         if status == "SUCCESS":
             logger.log(
@@ -142,7 +123,7 @@ def main():
             )
 
     except Exception as e:
-        logger.log_error("K17", "rollback", e)
+        logger.log_error("K16", "rollback", e)
 
     finally:
         release_lock(lock_file)

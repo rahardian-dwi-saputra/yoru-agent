@@ -6,20 +6,21 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   ID: "K14"
-  NAMA: "Pengaturan Layanan Jaringan yang Mendengarkan Interface Network"
-  KODE_CIS: "2.1.22"
-  CIS_JUDUL: "2.1.22 Ensure only approved services are listening on a network interface"
-  REGULASI: "Pasal 35, Pasal 39"
+  NAMA: "Pengaturan Kebijakan Default UFW Firewall (Deny By Default)"
+  KODE_CIS: "4.2.7"
+  JUDUL_CIS: "Ensure ufw default deny firewall policy"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
+  REGULASI: "Pasal 35, Pasal 36"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Aturan keamanan untuk memastikan hanya layanan yang memang 
-    diperlukan dan telah disetujui yang dapat menerima koneksi melalui 
-    jaringan. Fungsinya untuk mengurangi port dan layanan yang terbuka 
-    sehingga memperkecil celah yang dapat dimanfaatkan oleh pihak yang 
-    tidak berwenang.
+    Aturan keamanan untuk memastikan UFW secara default menolak 
+    koneksi jaringan yang tidak secara khusus diizinkan oleh 
+    aturan firewall. Fungsinya untuk membatasi akses yang tidak 
+    diperlukan ke server, sehingga hanya koneksi atau layanan 
+    yang telah diizinkan yang dapat mengakses sistem.
   RISIKO: "TINGGI"
-  KATEGORI: "Services / Network Configuration"
+  KATEGORI: "Firewall"
   AUDIT_ONLY: true
   PESAN_HARDENING: "-"
   PESAN_ROLLBACK: "-"
@@ -31,7 +32,7 @@ tasks:
       - mkdir -p {{.LOG_DIR}}
 
   audit:
-    desc: "Menjalankan audit layanan yang mendengarkan pada network interface"
+    desc: "Menjalankan audit kebijakan default UFW firewall"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py

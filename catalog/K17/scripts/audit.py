@@ -10,7 +10,7 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE, CATALOG_LOCKS
+from config.settings import SYSCTL_KEYS_ACCEPT_REDIRECTS, CATALOG_LOCKS
 
 from pipeline.catalogutils import (
     BaseLogger,
@@ -20,12 +20,12 @@ from pipeline.catalogutils import (
 
 
 def check_sysctl_values() -> tuple[bool, str]:
-    """Memeriksa nilai parameter sysctl untuk penolakan source routed packets."""
+    """Memeriksa nilai parameter sysctl untuk penolakan ICMP redirects."""
     try:
         failed_keys = []
         details = []
 
-        for key in SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE:
+        for key in SYSCTL_KEYS_ACCEPT_REDIRECTS:
             res = subprocess.run(
                 ["sysctl", "-n", key],
                 capture_output=True,
@@ -46,7 +46,7 @@ def check_sysctl_values() -> tuple[bool, str]:
         if failed_keys:
             return False, f"Parameter belum sesuai standar CIS: {', '.join(details)}"
         
-        return True, f"Semua parameter source routed packets sudah aman: {', '.join(details)}"
+        return True, f"Semua parameter ICMP redirects sudah aman: {', '.join(details)}"
     except Exception as e:
         return False, f"Gagal mengecek sysctl: {str(e)}"
 
@@ -55,12 +55,12 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K18",
-        cis_id="3.3.8",
+        catalog="K17",
+        cis_id="3.3.5",
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K18", "source_route_audit")
+    lock_name = CATALOG_LOCKS.get("K17", "icmp_redirects_audit")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
@@ -80,7 +80,7 @@ def main():
             )
 
     except Exception as e:
-        logger.log_error("K18", "audit", e)
+        logger.log_error("K17", "audit", e)
 
     finally:
         release_lock(lock_file)

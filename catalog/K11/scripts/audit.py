@@ -1,8 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
+from time import perf_counter
 import sys
-import subprocess
-
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -11,77 +10,99 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import CATALOG_LOCKS
-from pipeline.catalogutils import (
-    BaseLogger,
-    acquire_lock,
-    release_lock,
+from config.settings import (
+    JOURNALD_ROTATION_BASELINE,
+    CATALOG_LOCKS
 )
 
+from pipeline.catalogutils import (
+    LogStatus,
+    BaseLogger,
+    load_taskfile_vars,
+    acquire_lock,
+    release_lock,
+    get_effective_journald_parameter
+)
 
-def check_system_patches_and_updates() -> tuple[bool, str]:
-    """
-    Mengecek status pembaruan sistem dan ketersediaan paket/patch keamanan.
-    Sesuai CIS 1.2.2.1: Ensure updates, patches, and additional security software are installed.
-    """
-    try:
-        # Cek ketersediaan dan respons manajer paket apt (untuk sistem Ubuntu/Debian)
-        result = subprocess.run(
-            ["apt-get", "-s", "upgrade"],
-            capture_output=True,
-            text=True,
-            check=False
-        )
-        
-        if result.returncode != 0:
-            return False, "Gagal mengakses manajer paket sistem (apt-get) atau repositori tidak valid."
-
-        output = result.stdout.lower()
-        
-        # Jika perintah berhasil dieksekusi, manajer paket berfungsi dan terkonfigurasi
-        if "upgraded" in output or "to be upgraded" in output or "installs" in output:
-            return True, "Manajer paket aktif, repositori terkonfigurasi, dan sistem siap memproses pembaruan keamanan."
-        
-        return True, "Status repositori dan paket sistem terverifikasi dengan baik."
-        
-    except FileNotFoundError:
-        return False, "Perintah manajer paket (apt-get) tidak ditemukan pada lingkungan sistem ini."
-    except Exception as e:
-        return False, f"Error saat memeriksa status pembaruan sistem: {str(e)}"
-
+def normalize_value(value: str) -> str:
+    """Menormalisasi nilai konfigurasi untuk perbandingan."""
+    return "".join(value.split()).lower()
 
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K11",
-        cis_id="1.2.2.1",
+        catalog=task_vars.get("ID", "K11"),
+        nama=task_vars.get("NAMA", "Konfigurasi Rotasi File Log Journald"),
+        kode_cis=task_vars.get("KODE_CIS", "6.1.1.3"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure journald log file rotation is configured"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 31, Pasal 35"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K11", "system_updates_audit")
+    lock_name = CATALOG_LOCKS.get("K11", "journald_audit")
     lock_file = acquire_lock(lock_name, logger)
 
-    try:
-        # Menjalankan pemeriksaan audit patch & update (CIS 1.2.2.1)
-        is_compliant, message = check_system_patches_and_updates()
+    start = perf_counter()
 
-        if is_compliant:
+    try:
+        results: list[str] = []
+        compliant = True
+
+        for parameter, expected_value in JOURNALD_ROTATION_BASELINE.items():
+            try:
+                actual_value = get_effective_journald_parameter(parameter)
+
+                if normalize_value(actual_value) != normalize_value(expected_value):
+                    compliant = False
+                    results.append(
+                        f"{parameter}: tidak sesuai (aktual: {actual_value}, baseline: {expected_value})"
+                    )
+                else:
+                    results.append(
+                        f"{parameter}: sesuai ({actual_value})"
+                    )
+            except RuntimeError as exc:
+                compliant = False
+                results.append(
+                    f"{parameter}: gagal diperiksa ({exc})"
+                )
+
+
+        message = (
+            "Konfigurasi Rotasi File Log Journald:\n"
+            + "\n".join(f"- {result}" for result in results)
+        )
+
+        if compliant:
             logger.log(
-                "COMPLIANT",
+                LogStatus.COMPLIANT,
                 "Result",
-                f"Hasil Audit: COMPLIANT - {message}",
+                "Hasil Audit: COMPLIANT - " + message,
+                duration_ms=(perf_counter() - start) * 1000,
             )
+            sys.exit(0)
         else:
             logger.log(
-                "NON_COMPLIANT",
+                LogStatus.NON_COMPLIANT,
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - {message}",
+                "Hasil Audit: NON_COMPLIANT - " + message,
+                duration_ms=(perf_counter() - start) * 1000,
             )
-            
-    except Exception as e:
-        logger.log_error("K11", "audit", e)
+            sys.exit(1)
 
+    except Exception as e:
+        logger.log_error(
+            "K11", 
+            "audit", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
     finally:
         release_lock(lock_file)
 

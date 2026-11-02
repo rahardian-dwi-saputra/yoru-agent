@@ -1,7 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import Dict
-import subprocess
+from time import perf_counter
 import sys
 
 
@@ -14,93 +13,78 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config.settings import (
     UFW_PACKAGE_NAME, 
+    UFW_SERVICE_NAME, 
     CATALOG_LOCKS
 )
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
     release_lock,
     is_package_installed,
+    check_systemd_service_status
 )
 
 
-def get_ufw_default_policies() -> Dict[str, str]:
-    """Mengambil status kebijakan default UFW (incoming, outgoing, routed)."""
-    policies = {"incoming": "", "outgoing": "", "routed": ""}
-    try:
-        res = subprocess.run(
-            ["ufw", "status", "verbose"],
-            capture_output=True,
-            text=True,
-        )
-        if res.returncode == 0:
-            for line in res.stdout.splitlines():
-                line_lower = line.strip().lower()
-                if "default:" in line_lower:
-                    # Contoh format output: Default: deny (incoming), allow (outgoing), disabled (routed)
-                    # atau: Default: deny (incoming), allow (outgoing), deny (routed)
-                    parts = line_lower.replace("default:", "").split(",")
-                    for part in parts:
-                        part = part.strip()
-                        if "(incoming)" in part:
-                            policies["incoming"] = part.split()[0]
-                        elif "(outgoing)" in part:
-                            policies["outgoing"] = part.split()[0]
-                        elif "(routed)" in part:
-                            policies["routed"] = part.split()[0]
-    except Exception:
-        pass
-
-    return policies
-
-
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K13",
-        cis_id="4.2.7",
+        catalog=task_vars.get("ID", "K13"),
+        nama=task_vars.get("NAMA", "Memastikan Layanan UFW Aktif"),
+        kode_cis=task_vars.get("KODE_CIS", "4.2.3"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure ufw service is enabled"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 35, Pasal 39"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="audit",
     )
 
     lock_name = CATALOG_LOCKS.get("K13", "ufw_audit")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+
     try:
         if not is_package_installed(UFW_PACKAGE_NAME):
             logger.log(
-                "FAILED",
+                LogStatus.FAILED,
                 "Result",
                 f"Hasil Audit: FAILED - Paket '{UFW_PACKAGE_NAME}' belum terinstall pada sistem.",
+                duration_ms=(perf_counter() - start) * 1000,
+            )
+            sys.exit(1)
+
+        is_compliant, runtime_state, startup_state = check_systemd_service_status(UFW_SERVICE_NAME)
+
+        if is_compliant:
+            logger.log(
+                LogStatus.COMPLIANT,
+                "Result",
+                f"Hasil Audit: COMPLIANT - Layanan '{UFW_SERVICE_NAME}' dalam status enabled dan active.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(0)
-
-        # Cek policy default UFW
-        policies = get_ufw_default_policies()
-
-        incoming = policies.get("incoming", "")
-        routed = policies.get("routed", "")
-
-        # Kebijakan CIS: incoming harus deny/reject, routed harus deny/reject/disabled
-        is_incoming_ok = incoming in ("deny", "reject")
-        is_routed_ok = routed in ("deny", "reject", "disabled")
-
-        if is_incoming_ok and is_routed_ok:
-            logger.log(
-                "COMPLIANT",
-                "Result",
-                f"Hasil Audit: COMPLIANT - Kebijakan default UFW sudah aman (incoming: {incoming}, routed: {routed}).",
-            )
         else:
             logger.log(
-                "NON_COMPLIANT",
+                LogStatus.NON_COMPLIANT,
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Kebijakan default UFW tidak aman (incoming: {incoming}, routed: {routed}).",
+                f"Hasil Audit: NON_COMPLIANT - Layanan '{UFW_SERVICE_NAME}' belum aktif/enabled (active={runtime_state}, enabled={startup_state}).",
+                duration_ms=(perf_counter() - start) * 1000,
             )
+            sys.exit(1)
 
     except Exception as e:
-        logger.log_error("K13", "audit", e)
+        logger.log_error(
+            "K13", 
+            "audit", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
 
     finally:
         release_lock(lock_file)

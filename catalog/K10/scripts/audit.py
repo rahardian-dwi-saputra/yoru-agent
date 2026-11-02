@@ -1,5 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
+from time import perf_counter
 import sys
 
 # Import modul catalogutils via sys.path
@@ -9,100 +10,79 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import JOURNALD_CONFIG, TARGET_SYSTEM_MAX_USE, CATALOG_LOCKS
+from config.settings import (
+    JOURNAL_LOG_DIR,
+    CATALOG_LOCKS
+)
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
     release_lock,
-    check_journald_config_exists,
+    get_effective_journald_parameter
 )
 
 
-def evaluate_journald_audit(config_path: Path) -> tuple[str, str]:
-    """
-    Mengevaluasi parameter journald.conf dan mengembalikan status (COMPLIANT/NON_COMPLIANT/WARNING) 
-    beserta pesan detailnya.
-    """
-    if not config_path.is_file():
-        return "NON_COMPLIANT", f"Berkas konfigurasi {config_path} tidak ditemukan."
-
-    found_persistent = False
-    found_compress = False
-    found_max_use = False
-    found_retention = False
-
-    with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_str = line.strip().lower()
-            # Abaikan baris komentar
-            if line_str.startswith("#") or line_str.startswith(";") or "=" not in line_str:
-                continue
-
-            key, val = [x.strip() for x in line_str.split("=", 1)]
-            
-            if key == "storage" and val == "persistent":
-                found_persistent = True
-            elif key == "compress" and val == "yes":
-                found_compress = True
-            elif key == "systemmaxuse" and val == TARGET_SYSTEM_MAX_USE.lower():
-                found_max_use = True
-            elif key == "maxretentionsec" in key:  # Fleksibel untuk varian penulisan durasi
-                found_retention = True
-
-    # Evaluasi kepatuhan penuh
-    if found_persistent and found_compress and found_max_use and found_retention:
-        return "COMPLIANT", "Parameter journald (Storage, Compress, SystemMaxUse, MaxRetentionSec) sudah sesuai standar CIS."
-    
-    # Jika sebagian ada tapi belum lengkap
-    missing = []
-    if not found_persistent: missing.append("Storage=persistent")
-    if not found_compress: missing.append("Compress=yes")
-    if not found_max_use: missing.append(f"SystemMaxUse={TARGET_SYSTEM_MAX_USE}")
-    if not found_retention: missing.append("MaxRetentionSec")
-
-    return "NON_COMPLIANT", f"Parameter journald belum sepenuhnya ter-hardening. Belum dikonfigurasi / belum sesuai: {', '.join(missing)}"
-
-
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K14",
-        cis_id="6.1.2.3",
+        catalog=task_vars.get("ID", "K10"),
+        nama=task_vars.get("NAMA", "Penyimpanan Log Journald Permanen"),
+        kode_cis=task_vars.get("KODE_CIS", "6.1.2.4"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure journald Storage is configured"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 31, Pasal 35"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K14", "journald_audit")
+    lock_name = CATALOG_LOCKS.get("K10", "journald_audit")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+
     try:
-        if not check_journald_config_exists(logger):
+        if not JOURNAL_LOG_DIR.is_dir():
             logger.log(
-                "NON_COMPLIANT",
+                LogStatus.FAILED,
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Berkas konfigurasi {JOURNALD_CONFIG} tidak ditemukan."
+                f"Hasil Audit: FAILED - Direktori {JOURNAL_LOG_DIR} tidak ditemukan.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(1)
 
-        status, message = evaluate_journald_audit(JOURNALD_CONFIG)
+        storage = get_effective_journald_parameter("Storage").lower()
 
-        if status == "COMPLIANT":
+        if storage != "persistent":
             logger.log(
-                "COMPLIANT", 
-                "Result", 
-                f"Hasil Audit: COMPLIANT - {message}"
+                LogStatus.NON_COMPLIANT,
+                "Result",
+                f"Hasil Audit: NON_COMPLIANT - Storage tidak sesuai: ditemukan {storage} diharapkan 'persistent'.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
+            sys.exit(1)
         else:
             logger.log(
-                "NON_COMPLIANT", 
-                "Result", 
-                f"Hasil Audit: NON_COMPLIANT - {message}"
+                LogStatus.COMPLIANT,
+                "Result",
+                f"Hasil Audit: COMPLIANT - Konfigurasi journald Storage=persistent telah sesuai.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
+            sys.exit(0)
 
     except Exception as e:
-        logger.log_error("K14", "audit", e)
-
+        logger.log_error(
+            "K10", 
+            "audit", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
     finally:
         release_lock(lock_file)
 

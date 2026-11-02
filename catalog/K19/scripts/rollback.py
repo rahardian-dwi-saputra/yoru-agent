@@ -13,8 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config.settings import (
     SYSCTL_CONF,
-    SYSCTL_KEY_ICMP_ECHO_BROADCASTS,
-    SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS,
+    SYSCTL_KEY_TCP_SYNCOOKIES,
+    SYSCTL_DEFAULT_TCP_SYNCOOKIES,
     CATALOG_LOCKS,
 )
 
@@ -49,10 +49,10 @@ def perform_sysctl_rollback(sysctl_key: str) -> tuple[str, str]:
                     if key == sysctl_key:
                         key_found = True
                         current_value = val
-                        if val == SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS:
-                            return "SKIPPED", f"Parameter {sysctl_key} sudah bernilai default ({SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS})."
+                        if val == SYSCTL_DEFAULT_TCP_SYNCOOKIES:
+                            return "SKIPPED", f"Parameter {sysctl_key} sudah bernilai default ({SYSCTL_DEFAULT_TCP_SYNCOOKIES})."
                         else:
-                            lines.append(f"{sysctl_key} = {SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS}\n")
+                            lines.append(f"{sysctl_key} = {SYSCTL_DEFAULT_TCP_SYNCOOKIES}\n")
                             continue
                 lines.append(line)
 
@@ -76,7 +76,7 @@ def perform_sysctl_rollback(sysctl_key: str) -> tuple[str, str]:
         if res.returncode != 0:
             return "FAILED", f"Gagal menerapkan sysctl system saat rollback: {res.stderr.strip()}"
 
-        return "SUCCESS", f"Parameter {sysctl_key} berhasil di-rollback ke nilai {SYSCTL_DEFAULT_ICMP_ECHO_BROADCASTS}."
+        return "SUCCESS", f"Parameter {sysctl_key} berhasil di-rollback ke nilai {SYSCTL_DEFAULT_TCP_SYNCOOKIES}."
 
     except Exception as e:
         return "FAILED", f"Gagal melakukan rollback sysctl: {str(e)}"
@@ -86,16 +86,17 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
-        catalog="K16",
-        cis_id="3.3.4",
+        catalog="K19",
+        cis_id="3.3.10",
         log_type="rollback",
     )
 
-    lock_name = CATALOG_LOCKS.get("K16", "icmp_broadcast_audit")
+    lock_name = CATALOG_LOCKS.get("K19", "tcp_syncookies_rollback")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        status, detail = perform_sysctl_rollback(SYSCTL_KEY_ICMP_ECHO_BROADCASTS)
+        
+        status, detail = perform_sysctl_rollback(SYSCTL_KEY_TCP_SYNCOOKIES)
 
         if status == "SUCCESS":
             logger.log(
@@ -123,7 +124,7 @@ def main():
             )
 
     except Exception as e:
-        logger.log_error("K16", "rollback", e)
+        logger.log_error("K19", "rollback", e)
 
     finally:
         release_lock(lock_file)

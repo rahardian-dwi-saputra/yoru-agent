@@ -46,6 +46,7 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
+        catalog=task_vars.get("ID", "K06"),
         nama=task_vars.get("NAMA", "Pengaturan MACs SSH yang Aman (Integritas Pesan)"),
         kode_cis=task_vars.get("KODE_CIS", "5.1.15"),
         judul_cis=task_vars.get("JUDUL_CIS", "Ensure sshd MACs are configured"),

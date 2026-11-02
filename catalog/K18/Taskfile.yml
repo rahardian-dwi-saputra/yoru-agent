@@ -6,16 +6,15 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   # Metadata CIS Benchmark
-  ID: "K19"
-  NAMA: "Pengaktifan TCP SYN Cookies"
-  KODE_CIS: "3.3.10"
-  CIS_JUDUL: "3.3.10 Ensure tcp syn cookies is enabled"
+  ID: "K18"
+  NAMA: "Penolakan Source Routed Packets"
+  KODE_CIS: "3.3.8"
+  CIS_JUDUL: "3.3.8 Ensure source routed packets are not accepted"
   DESKRIPSI: |
-    Aturan keamanan untuk mengonfigurasi parameter kernel agar mengaktifkan 
-    TCP SYN cookies (`net.ipv4.tcp_syncookies = 1`). 
-    Fungsinya untuk melindungi server dari serangan Denial of Service (DoS) 
-    jenis SYN flood dengan menggunakan teknik enkripsi state-less cookies 
-    pada handshake TCP.
+    Aturan keamanan untuk mengonfigurasi parameter kernel agar menolak 
+    paket jaringan yang menggunakan source routing (IP source routing). 
+    Fungsinya untuk mencegah pihak luar memanipulasi jalur perutean paket 
+    menuju server, sehingga terhindar dari potensi penyadapan atau IP spoofing.
   RISIKO: "AMAN"
   KATEGORI: "Network Configuration"
   AUDIT_ONLY: false
@@ -27,23 +26,23 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Konfigurasi TCP SYN Cookies
+  # 1. Audit Konfigurasi Source Routed Packets
   audit:
-    desc: "Menjalankan audit parameter kernel untuk TCP SYN cookies"
+    desc: "Menjalankan audit parameter kernel untuk penolakan source routed packets"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 2. Hardening Konfigurasi TCP SYN Cookies (Mengaktifkan tcp_syncookies = 1)
+  # 2. Hardening Konfigurasi Source Routed Packets (Mengatur accept_source_route = 0)
   hardening:
-    desc: "Menerapkan konfigurasi TCP SYN cookies secara permanen via sysctl"
+    desc: "Menerapkan konfigurasi penolakan source routed packets secara permanen via sysctl"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 3. Rollback Konfigurasi TCP SYN Cookies (Mengembalikan ke kondisi awal)
+  # 3. Rollback Konfigurasi Source Routed Packets (Mengembalikan ke kondisi awal)
   rollback:
-    desc: "Mengembalikan konfigurasi kernel TCP SYN cookies ke kondisi sebelum hardening"
+    desc: "Mengembalikan konfigurasi kernel source routed packets ke kondisi sebelum hardening"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/rollback.py

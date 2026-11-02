@@ -6,15 +6,14 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   # Metadata CIS Benchmark
-  ID: "K18"
-  NAMA: "Penolakan Source Routed Packets"
-  KODE_CIS: "3.3.8"
-  CIS_JUDUL: "3.3.8 Ensure source routed packets are not accepted"
+  ID: "K17"
+  NAMA: "Penolakan ICMP Redirect"
+  KODE_CIS: "3.3.5"
+  CIS_JUDUL: "3.3.5 Ensure icmp redirects are not accepted"
   DESKRIPSI: |
     Aturan keamanan untuk mengonfigurasi parameter kernel agar menolak 
-    paket jaringan yang menggunakan source routing (IP source routing). 
-    Fungsinya untuk mencegah pihak luar memanipulasi jalur perutean paket 
-    menuju server, sehingga terhindar dari potensi penyadapan atau IP spoofing.
+    paket ICMP redirect. Fungsinya untuk mencegah pihak luar atau entitas 
+    tidak berotoritas memanipulasi tabel routing lokal server (mitm attack).
   RISIKO: "AMAN"
   KATEGORI: "Network Configuration"
   AUDIT_ONLY: false
@@ -26,23 +25,23 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Konfigurasi Source Routed Packets
+  # 1. Audit Konfigurasi ICMP Redirect
   audit:
-    desc: "Menjalankan audit parameter kernel untuk penolakan source routed packets"
+    desc: "Menjalankan audit parameter kernel untuk penolakan ICMP redirect"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 2. Hardening Konfigurasi Source Routed Packets (Mengatur accept_source_route = 0)
+  # 2. Hardening Konfigurasi ICMP Redirect (Mengatur accept_redirects = 0)
   hardening:
-    desc: "Menerapkan konfigurasi penolakan source routed packets secara permanen via sysctl"
+    desc: "Menerapkan konfigurasi penolakan ICMP redirect secara permanen via sysctl"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 3. Rollback Konfigurasi Source Routed Packets (Mengembalikan ke kondisi awal)
+  # 3. Rollback Konfigurasi ICMP Redirect (Mengembalikan ke kondisi awal)
   rollback:
-    desc: "Mengembalikan konfigurasi kernel source routed packets ke kondisi sebelum hardening"
+    desc: "Mengembalikan konfigurasi kernel ICMP redirect ke kondisi sebelum hardening"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/rollback.py

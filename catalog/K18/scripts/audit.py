@@ -10,7 +10,7 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SYSCTL_KEY_TCP_SYNCOOKIES, CATALOG_LOCKS
+from config.settings import SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE, CATALOG_LOCKS
 
 from pipeline.catalogutils import (
     BaseLogger,
@@ -19,23 +19,34 @@ from pipeline.catalogutils import (
 )
 
 
-def check_sysctl_value() -> tuple[bool, str]:
-    """Memeriksa nilai parameter sysctl net.ipv4.tcp_syncookies."""
+def check_sysctl_values() -> tuple[bool, str]:
+    """Memeriksa nilai parameter sysctl untuk penolakan source routed packets."""
     try:
-        res = subprocess.run(
-            ["sysctl", "-n", SYSCTL_KEY_TCP_SYNCOOKIES],
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if res.returncode != 0:
-            return False, f"Parameter sysctl {SYSCTL_KEY_TCP_SYNCOOKIES} tidak ditemukan pada kernel."
+        failed_keys = []
+        details = []
 
-        val = res.stdout.strip()
-        if val == "1":
-            return True, f"Runtime sysctl {SYSCTL_KEY_TCP_SYNCOOKIES} sudah bernilai 1 (Compliant)."
-        else:
-            return False, f"Runtime sysctl {SYSCTL_KEY_TCP_SYNCOOKIES} bernilai {val} (Seharusnya 1)."
+        for key in SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE:
+            res = subprocess.run(
+                ["sysctl", "-n", key],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if res.returncode != 0:
+                failed_keys.append(key)
+                continue
+
+            val = res.stdout.strip()
+            if val != "0":
+                failed_keys.append(key)
+                details.append(f"{key}={val} (seharusnya 0)")
+            else:
+                details.append(f"{key}=0 (OK)")
+
+        if failed_keys:
+            return False, f"Parameter belum sesuai standar CIS: {', '.join(details)}"
+        
+        return True, f"Semua parameter source routed packets sudah aman: {', '.join(details)}"
     except Exception as e:
         return False, f"Gagal mengecek sysctl: {str(e)}"
 
@@ -44,16 +55,16 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K19",
-        cis_id="3.3.10",
+        catalog="K18",
+        cis_id="3.3.8",
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K19", "tcp_syncookies_audit")
+    lock_name = CATALOG_LOCKS.get("K18", "source_route_audit")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        is_compliant, detail = check_sysctl_value()
+        is_compliant, detail = check_sysctl_values()
 
         if is_compliant:
             logger.log(
@@ -69,7 +80,7 @@ def main():
             )
 
     except Exception as e:
-        logger.log_error("K19", "audit", e)
+        logger.log_error("K18", "audit", e)
 
     finally:
         release_lock(lock_file)

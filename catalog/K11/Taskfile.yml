@@ -6,32 +6,64 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   ID: "K11"
-  NAMA: "Pembaruan keamanan otomatis"
-  KODE_CIS: "1.2.2.1"
-  CIS_JUDUL: "1.2.2.1 Ensure updates, patches, and additional security software are installed"
-  REGULASI: "Pasal 39"
+  NAMA: "Konfigurasi Rotasi File Log Journald"
+  KODE_CIS: "6.1.1.3"
+  JUDUL_CIS: "Ensure journald log file rotation is configured"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
+  REGULASI: "Pasal 31, Pasal 35"
   KEPATUHAN: "UU PDP No. 27/2022"
   FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Aturan keamanan yang mewajibkan sistem memasang pembaruan, 
-    patch keamanan, dan perangkat lunak keamanan tambahan sesuai 
-    kebutuhan. Fungsinya adalah memperbaiki kerentanan yang diketahui, 
-    mengurangi risiko eksploitasi oleh penyerang, dan menjaga sistem 
-    tetap aman serta mutakhir.
-  RISIKO: "TINGGI"
-  KATEGORI: "System Security / Patch Management"
-  AUDIT_ONLY: true
-  PESAN_HARDENING: "-"
-  PESAN_ROLLBACK: "-"
+    Aturan keamanan yang memastikan konfigurasi rotasi file log 
+    systemd-journald diterapkan dengan tepat agar penggunaan ruang penyimpanan
+    dan retensi log tetap terkendali. Tujuannya adalah mencegah file 
+    log terus membesar hingga memenuhi kapasitas disk server serta 
+    menjaga ketersediaan ruang penyimpanan untuk operasional sistem.
+  RISIKO: "SEDANG"
+  KATEGORI: "Logging and Auditing"
+  AUDIT_ONLY: false
+  PESAN_HARDENING: |
+    Aksi ini akan menyesuaikan parameter konfigurasi rotasi log
+    systemd-journald sesuai dengan kebijakan yang ditetapkan,
+    kemudian merestart layanan systemd-journald agar konfigurasi
+    diterapkan.
+    ⚠️ PERINGATAN: 
+    Pastikan nilai batas penggunaan ruang penyimpanan dan retensi
+    log sesuai dengan kapasitas disk serta kebutuhan operasional
+    server. Konfigurasi yang terlalu ketat dapat menyebabkan
+    log lama terhapus lebih cepat dari kebutuhan audit dan
+    investigasi keamanan.
+  PESAN_ROLLBACK: |
+    Aksi ini akan mengembalikan konfigurasi rotasi log systemd-journald 
+    ke kondisi sebelum proses hardening, kemudian merestart layanan 
+    systemd-journald agar konfigurasi sebelumnya diterapkan.
+    ⚠️ RISIKO: 
+    Pengembalian konfigurasi dapat menyebabkan penggunaan ruang 
+    penyimpanan log meningkat atau retensi log berubah. Pastikan 
+    kapasitas disk server tetap mencukupi dan kebutuhan audit serta 
+    investigasi keamanan tetap terpenuhi.
 
 tasks:
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
   audit:
-    desc: "Menjalankan audit pembaruan keamanan dan patch sistem"
+    desc: "Menjalankan audit konfigurasi rotasi file log systemd-journald"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
+
+  hardening:
+    desc: "Menerapkan konfigurasi rotasi file log systemd-journald"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
+
+  rollback:
+    desc: "Mengembalikan konfigurasi rotasi file log journald ke kondisi sebelum hardening"
+    deps: [init-log-dir]
+    cmds:
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

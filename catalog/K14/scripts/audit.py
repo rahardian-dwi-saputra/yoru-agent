@@ -1,9 +1,10 @@
 from __future__ import annotations
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Dict
+from time import perf_counter
 import subprocess
 import sys
-
+import shutil
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -12,127 +13,159 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import APPROVED_SERVICES_SET, CATALOG_LOCKS
+from config.settings import (
+    UFW_PACKAGE_NAME, 
+    CATALOG_LOCKS
+)
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
-    release_lock
+    release_lock,
+    is_package_installed,
 )
 
 
-def get_listening_services() -> List[Dict[str, Any]]:
-    """Mendapatkan daftar socket/layanan yang sedang listening pada network interface."""
-    services = []
-    
-    # Mencoba menggunakan perintah 'ss' terlebih dahulu
+
+def get_ufw_default_policies() -> Dict[str, str]:
+    """Mengambil kebijakan default UFW untuk incoming, outgoing, dan routed."""
+    ufw_path = shutil.which("ufw")
+
+    if not ufw_path:
+        raise RuntimeError("Executable UFW tidak ditemukan.")
+
     try:
-        res = subprocess.run(
-            ["ss", "-tulnpt"],
+        result = subprocess.run(
+            [ufw_path, "status", "verbose"],
             capture_output=True,
             text=True,
+            timeout=15,
+            check=False,
         )
-        if res.returncode == 0:
-            lines = res.stdout.strip().splitlines()
-            if len(lines) > 1:
-                # Lewati header line
-                for line in lines[1:]:
-                    parts = line.split()
-                    if len(parts) >= 5:
-                        proto = parts[0]
-                        local_addr = parts[4]
-                        process_info = parts[6] if len(parts) >= 7 else ""
-                        
-                        services.append({
-                            "proto": proto,
-                            "address": local_addr,
-                            "process": process_info
-                        })
-            return services
-    except Exception:
-        pass
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            "Proses pembacaan kebijakan default UFW mengalami timeout."
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(
+            f"Gagal menjalankan perintah UFW: {exc}"
+        ) from exc
 
-    # Fallback ke netstat jika ss tidak tersedia/gagal
-    try:
-        res = subprocess.run(
-            ["netstat", "-tulnp"],
-            capture_output=True,
-            text=True,
+    if result.returncode != 0:
+        error_message = result.stderr.strip() or "Tidak ada pesan error."
+        raise RuntimeError(
+            f"Gagal membaca status UFW: {error_message}"
         )
-        if res.returncode == 0:
-            lines = res.stdout.strip().splitlines()
-            for line in lines:
-                if "LISTEN" in line or "udp" in line:
-                    parts = line.split()
-                    if len(parts) >= 4:
-                        proto = parts[0]
-                        local_addr = parts[3]
-                        process_info = parts[-1] if "/" in parts[-1] else ""
-                        
-                        services.append({
-                            "proto": proto,
-                            "address": local_addr,
-                            "process": process_info
-                        })
-    except Exception:
-        pass
 
-    return services
+    policies = {
+        "incoming": "",
+        "outgoing": "",
+        "routed": "",
+    }
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+
+        if not line.lower().startswith("default:"):
+            continue
+
+        entries = line.split(":", 1)[1].split(",")
+
+        for entry in entries:
+            entry = entry.strip().lower()
+
+            for policy in policies:
+                if f"({policy})" in entry:
+                    value = entry.split("(", 1)[0].strip()
+
+                    if value:
+                        policies[policy] = value
+
+        break
+
+    missing = [
+        policy
+        for policy, value in policies.items()
+        if not value
+    ]
+
+    if missing:
+        raise RuntimeError(
+            "Kebijakan default UFW tidak ditemukan atau tidak lengkap: "
+            + ", ".join(missing)
+        )
+
+    return policies
 
 
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K14",
-        cis_id="2.1.22",
+        catalog=task_vars.get("ID", "K14"),
+        nama=task_vars.get("NAMA", "Pengaturan Kebijakan Default UFW Firewall (Deny By Default)"),
+        kode_cis=task_vars.get("KODE_CIS", "4.2.7"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure ufw default deny firewall policy"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 35, Pasal 39"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K14", "network_audit")
+    lock_name = CATALOG_LOCKS.get("K14", "ufw_audit")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+
     try:
-        listening_services = get_listening_services()
-
-        if not listening_services:
+        if not is_package_installed(UFW_PACKAGE_NAME):
             logger.log(
-                "COMPLIANT",
+                LogStatus.FAILED,
                 "Result",
-                "Hasil Audit: COMPLIANT - Tidak ada layanan tak dikenal yang terdeteksi listening pada interface jaringan.",
+                f"Hasil Audit: FAILED - Paket '{UFW_PACKAGE_NAME}' belum terinstall pada sistem.",
+                duration_ms=(perf_counter() - start) * 1000,
             )
-            return
+            sys.exit(1)
 
-        unapproved_found = []
+        # Cek policy default UFW
+        policies = get_ufw_default_policies()
 
-        for svc in listening_services:
-            process_name = svc["process"].lower()
-            # Cek apakah nama proses mengandung salah satu dari daftar approved services
-            is_approved = any(approved in process_name for approved in APPROVED_SERVICES_SET)
-            
-            # Khusus loopback (127.0.0.1 atau ::1), biasanya diperbolehkan kecuali kebijakan mewajibkan sebaliknya
-            is_loopback = svc["address"].startswith("127.") or svc["address"].startswith("[::1]") or svc["address"].startswith("::1")
+        incoming = policies["incoming"]
+        outgoing = policies["outgoing"]
+        routed = policies["routed"]
 
-            if not is_approved and not is_loopback:
-                unapproved_found.append(f"{svc['proto']} {svc['address']} ({svc['process'] or 'Unknown Process'})")
+        # Validasi kebijakan default UFW
+        is_incoming_ok = incoming in ("deny", "reject")
+        is_routed_ok = routed in ("deny", "reject", "disabled")
 
-        if not unapproved_found:
+        if is_incoming_ok and is_routed_ok:
             logger.log(
-                "COMPLIANT",
+                LogStatus.COMPLIANT,
                 "Result",
-                "Hasil Audit: COMPLIANT - Semua layanan yang listening pada network interface sudah sesuai dengan daftar approved services.",
+                f"Hasil Audit: COMPLIANT - Kebijakan default UFW memenuhi baseline. (incoming: {incoming}, outgoing: {outgoing}, routed: {routed}).",
+                duration_ms=(perf_counter() - start) * 1000,
             )
+            sys.exit(0)
         else:
-            unapproved_str = ", ".join(unapproved_found)
             logger.log(
-                "NON_COMPLIANT",
+                LogStatus.NON_COMPLIANT,
                 "Result",
-                f"Hasil Audit: NON_COMPLIANT - Ditemukan layanan yang tidak disetujui listening pada network interface: {unapproved_str}.",
+                f"Hasil Audit: NON_COMPLIANT - Kebijakan default UFW tidak memenuhi baseline. (incoming: {incoming}, outgoing: {outgoing}, routed: {routed}).",
+                duration_ms=(perf_counter() - start) * 1000,
             )
-
+            sys.exit(1)
     except Exception as e:
-        logger.log_error("K14", "audit", e)
-
+        logger.log_error(
+            "K14", 
+            "audit", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
     finally:
         release_lock(lock_file)
 

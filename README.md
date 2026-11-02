@@ -12,26 +12,27 @@ This project is an independent open-source automation tool designed for system h
 ## Daftar Katalog CIS Compliance
 Yoru-agent menggunakan katalog berikut untuk melakukan audit dan hardening keamanan server berdasarkan standar CIS Ubuntu Linux 24.04 LTS Benchmark v2.0.0 dan Undang-Undang Nomor 27 Tahun 2022 tentang Pelindungan Data Pribadi (UU PDP).
 
-| ID | Referensi CIS | UU PDP | Kategori | Deskripsi Kontrol | Mode |
+| ID | Referensi CIS | UU PDP | Kategori | Nama Kontrol | Mode |
 | --- | --- | --- | --- | --- | --- |
-| K01 | 5.1.20 | Pasal 35, Pasal 36, Pasal 39 | SSH Security | Ensure sshd PermitRootLogin is disabled | Audit & Hardening |
-| K02 | - | Pasal 35, Pasal 36, Pasal 39 | SSH Security | Ensure SSH PasswordAuthentication is disabled |	Audit & Hardening |
-| K03 | 5.1.13 | Pasal 35, Pasal 39 | SSH Security | Ensure sshd LoginGraceTime is configured | Audit & Hardening |
-| K04 | 5.1.16 | Pasal 35, Pasal 39 | SSH Security | Ensure sshd MaxAuthTries is configured | Audit & Hardening |
-| K05 | 5.1.6 | Pasal 35, Pasal 39 | SSH Security | Ensure sshd Ciphers are configured | Audit & Hardening |
-| K06 | 5.1.15 | Pasal 35, Pasal 39 | SSH Security | Ensure sshd MACs are configured | Audit & Hardening |
-| K07 | 5.1.12 | Pasal 35, Pasal 39 | Security | Ensure sshd KexAlgorithms are configured	| Audit & Hardening |
-| K08 | 6.2.1.2 | Pasal 35, Pasal 39 | Logging and Auditing | Ensure auditd service is enabled and active | Audit Only |
-| K09 | 6.1.1.2 | Pasal 35, Pasal 36 | Logging and Auditing | Ensure journald log file access is configured | Audit & Hardening |
-| K10 | 6.1.2.3 | Pasal 35 | Logging and Auditing | Ensure journald Compress is configured | Audit & Hardening |
-| K11 | 1.2.2.1 | Pasal 35, Pasal 39 | System Security / Patch Management | Ensure updates, patches, and additional security software are installed | Audit Only |
-| K12 | 4.2.3 | Pasal 35, Pasal 39 | Firewall | Ensure ufw service is enabled | Audit Only |
-| K13 | 4.2.7 | Pasal 35, Pasal 39 | Firewall | Ensure ufw default deny firewall policy | Audit Only |
-| K14 | 2.1.22 | Pasal 35, Pasal 39 | Network Security | Ensure only approved services are listening on a network interface | Audit Only |
-| K15 | 3.3.4 | Pasal 35, Pasal 39 | Network Security | Ensure broadcast icmp requests are ignored |	Audit & Hardening |
-| K16 | 3.3.5 | Pasal 35, Pasal 39 | Network Security | Ensure icmp redirects are not accepted | Audit & Hardening |
-| K17 | 3.3.8 | Pasal 35, Pasal 39 | Network Security | Ensure source routed packets are not accepted | Audit & Hardening |
-| K18 | 3.3.10 | Pasal 35, Pasal 39 | Network Security | Ensure tcp syn cookies is enabled | Audit & Hardening |
+| K01 | 5.1.20 | Pasal 35, Pasal 36, Pasal 39 | SSH Security | Root Tidak Bisa Login Lewat SSH | Audit & Hardening |
+| K02 | - | Pasal 35, Pasal 36, Pasal 39 | SSH Security | Login SSH menggunakan Password Dimatikan (Khusus SSH Key) |	Audit & Hardening |
+| K03 | 5.1.13 | Pasal 35, Pasal 39 | SSH Security | Membatasi Waktu Login SSH (LoginGraceTime) | Audit & Hardening |
+| K04 | 5.1.16 | Pasal 35, Pasal 39 | SSH Security | Membatasi Percobaan Auth SSH (MaxAuthTries) | Audit & Hardening |
+| K05 | 5.1.6 | Pasal 35, Pasal 39 | SSH Security | Pengaturan Ciphers SSH yang Aman (Enkripsi Transport) | Audit & Hardening |
+| K06 | 5.1.15 | Pasal 35, Pasal 39 | SSH Security | Pengaturan MACs SSH yang Aman (Integritas Pesan) | Audit & Hardening |
+| K07 | 5.1.12 | Pasal 35, Pasal 39 | SSH Security | Pengaturan KexAlgorithms SSH yang Aman	| Audit & Hardening |
+| K08 | 6.2.1.2 | Pasal 35, Pasal 39 | Logging and Auditing | Layanan Auditd Aktif dan Berjalan | Audit Only |
+| K09 | 6.1.1.2 | Pasal 35, Pasal 36 | Logging and Auditing | Pengaturan Akses File Log Journald | Audit & Hardening |
+| K10 | 6.1.2.4 | Pasal 31, Pasal 35 | Logging and Auditing | Penyimpanan Log Journald Permanen | Audit & Hardening |
+| K11 | 6.1.1.3 | Pasal 31, Pasal 35 | Logging and Auditing | Konfigurasi Rotasi File Log Journald | Audit & Hardening |
+| K12 | 1.2.2.1 | Pasal 35, Pasal 39 | System Security / Patch Management | Memastikan Pembaruan, Patch, dan Perangkat Lunak Keamanan Terpasang | Audit Only |
+| K13 | 4.2.3 | Pasal 35, Pasal 39 | Firewall | Memastikan Layanan UFW Aktif | Audit Only |
+| K14 | 4.2.7 | Pasal 35, Pasal 39 | Firewall | Pengaturan Kebijakan Default UFW Firewall (Deny By Default) | Audit Only |
+| K15 | 2.1.22 | Pasal 35, Pasal 39 | Network Security | Pengaturan Layanan Jaringan yang Mendengarkan Interface Network | Audit Only |
+| K16 | 3.3.4 | Pasal 35, Pasal 39 | Network Security | Ensure broadcast icmp requests are ignored | Audit & Hardening |
+| K17 | 3.3.5 | Pasal 35, Pasal 39 | Network Security | Ensure icmp redirects are not accepted | Audit & Hardening |
+| K18 | 3.3.8 | Pasal 35, Pasal 39 | Network Security | Ensure source routed packets are not accepted | Audit & Hardening |
+| K19 | 3.3.10 | Pasal 35, Pasal 39 | Network Security | Ensure tcp syn cookies is enabled | Audit & Hardening |
 
 **Keterangan Kategori**
 - SSH Security: Mengamankan akses jarak jauh melalui SSH.

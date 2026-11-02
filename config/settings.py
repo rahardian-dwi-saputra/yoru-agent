@@ -17,10 +17,14 @@ PLANS_DIR = PROJECT_ROOT / "storage" / "plans"
 
 # Path konfigurasi layanan utama
 SSHD_CONFIG = Path("/etc/ssh/sshd_config")
-JOURNALD_CONFIG = Path("/etc/systemd/journald.conf")
-JOURNALD_DROPIN_DIR = Path("/etc/systemd/journald.conf.d")
+JOURNALD_CONFIG = Path("/etc/systemd/journald.conf.d/journald-yoru-agent.conf")
 JOURNAL_LOG_DIR = Path("/var/log/journal")
 SYSCTL_CONF = Path("/etc/sysctl.d/60-cis-icmp-broadcast.conf")
+
+# Direktori backup
+SSH_BACKUP_DIR = Path("/var/backups/yoru-agent/ssh")
+JOURNAL_ACCESS_BACKUP = Path("/var/lib/yoru-agent/backups/journald-access.json")
+JOURNALD_BACKUP_DIR = Path("/var/backups/yoru-agent/journald")
 
 # Daftar Nama Package
 AUDITD_PACKAGE_NAME = "auditd"
@@ -34,10 +38,6 @@ JOURNALD_SERVICE_NAME = "systemd-journald"
 
 # Daftar shell yang tidak valid / dibatasi untuk akses login
 INVALID_SHELLS = {"/bin/false", "/usr/sbin/nologin", "/sbin/nologin", "/bin/sync"}
-
-# Direktori backup
-SSH_BACKUP_DIR = Path("/var/backups/yoru-agent/ssh")
-JOURNALD_BACKUP_DIR = Path("/var/backups/yoru-agent/journald")
 
 # Daftar Ciphers untuk Katalog K05
 APPROVED_CIPHERS_LIST = [
@@ -72,17 +72,22 @@ APPROVED_KEX_LIST = [
     "sntrup761x25519-sha512@openssh.com",
 ]
 
-# Daftar layanan yang disetujui (Approved Services) untuk Katalog K11
-APPROVED_SERVICES_SET = {
-    "sshd",
-    "ntpd",
-    "uwsgi",
-    "chronyd",
-    "systemd-resolve"
+# Baseline rotasi log journald untuk Katalog K11
+JOURNALD_ROTATION_BASELINE = {
+    "SystemMaxUse": "1G",
+    "SystemKeepFree": "500M",
+    "RuntimeMaxUse": "200M",
+    "RuntimeKeepFree": "50M",
+    "MaxFileSec": "1month",
 }
 
-# Target nilai SystemMaxUse untuk Katalog K14
-TARGET_SYSTEM_MAX_USE = "500M"
+# Daftar layanan yang disetujui (Approved Services) untuk Katalog K15
+APPROVED_SERVICES_SET = {
+    "sshd",
+    "nginx",
+    "apache2",
+    "systemd-resolve",
+}
 
 # Konfigurasi Hardening Kernel SYSCTL untuk Katalog K16
 SYSCTL_KEY_ICMP_ECHO_BROADCASTS = "net.ipv4.icmp_echo_ignore_broadcasts"
@@ -122,16 +127,16 @@ CATALOG_LOCKS = {
     "K07": "ssh_kex_algorithms",
     "K08": "auditd_service",
     "K09": "journald_log_access",
-    "K10": "journald_compress",
-    "K11": "system_updates_audit",
-    "K12": "ufw_service",
-    "K13": "ufw_default_deny",
-    "K14": "approved_services_listening",
-    
-    "K22": "icmp_broadcast",
-    "K23": "icmp_redirects",
-    "K24": "source_route",
-    "K25": "tcp_syncookies",
+    "K10": "journald_storage",
+    "K11": "journald_log_rotation",
+    "K12": "system_updates_audit",
+    "K13": "ufw_service",
+    "K14": "ufw_default_deny",
+    "K15": "approved_services_listening",
+    "K16": "icmp_broadcast",
+    "K17": "icmp_redirects",
+    "K18": "source_route",
+    "K19": "tcp_syncookies",
 }
 
 # Helper function untuk mendapatkan waktu saat ini

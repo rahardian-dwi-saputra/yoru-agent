@@ -1,6 +1,6 @@
 from __future__ import annotations
 from pathlib import Path
-import os
+from time import perf_counter
 import sys
 
 # Import modul catalogutils via sys.path
@@ -13,75 +13,74 @@ if str(PROJECT_ROOT) not in sys.path:
 from config.settings import JOURNAL_LOG_DIR, CATALOG_LOCKS
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
     release_lock,
+    check_journald_access
 )
 
 
-def check_journald_access() -> tuple[bool, str]:
-    """Memeriksa apakah direktori dan berkas log journald memiliki izin akses yang aman.
-
-    Berdasarkan CIS 6.1.1.2: Direktori dan file log tidak boleh memiliki izin
-    yang terlalu longgar (world-writable atau group-writable yang tidak sah).
-    """
-    if not JOURNAL_LOG_DIR.exists():
-        return (
-            True,
-            "Direktori /var/log/journal belum ada (volatile mode aktif), tidak ada file persisten untuk diperiksa.",
-        )
-
-    try:
-        # Periksa direktori utama /var/log/journal
-        st = JOURNAL_LOG_DIR.stat()
-        # Cek apakah other memiliki write permission (bit o+w / 0o002)
-        if st.st_mode & 0o002:
-            return False, f"Direktori {JOURNAL_LOG_DIR} memiliki izin world-writable."
-
-        # Periksa file-file di dalam direktori log
-        for path in JOURNAL_LOG_DIR.glob("**/*"):
-            if path.is_file():
-                p_st = path.stat()
-                # Cek apakah group atau other memiliki write permission (g+w atau o+w)
-                if p_st.st_mode & 0o022:
-                    return False, f"File log ditemukan memiliki izin group/world-writable: {path}"
-
-        return True, "Izin akses direktori dan file log journald sudah aman dan sesuai standar CIS."
-    except Exception as e:
-        return False, f"Gagal memeriksa izin akses: {str(e)}"
-
-
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K13",
-        cis_id="6.1.1.2",
+        catalog=task_vars.get("ID", "K09"),
+        nama=task_vars.get("NAMA", "Pengaturan Akses File Log Journald"),
+        kode_cis=task_vars.get("KODE_CIS", "6.1.1.2"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure journald log file access is configured"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 35, Pasal 36"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K13", "journald_audit")
+    lock_name = CATALOG_LOCKS.get("K09", "journald_audit")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+
     try:
-        is_secure, detail = check_journald_access()
+        is_secure, detail = check_journald_access(JOURNAL_LOG_DIR)
 
         if not is_secure:
-            logger.log(
-                "NON_COMPLIANT",
-                "Result",
-                f"Hasil Audit: NON_COMPLIANT - {detail}",
-            )
+
+            if "Gagal memeriksa permission log journald" in detail:
+                logger.log(
+                    LogStatus.FAILED,
+                    "Result",
+                    f"Hasil Audit: FAILED - {detail}",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
+            else:
+                logger.log(
+                    LogStatus.NON_COMPLIANT,
+                    "Result",
+                    f"Hasil Audit: NON_COMPLIANT - {detail}",
+                    duration_ms=(perf_counter() - start) * 1000,
+                )
+                sys.exit(1)
         else:
             logger.log(
-                "COMPLIANT",
+                LogStatus.COMPLIANT,
                 "Result",
                 f"Hasil Audit: COMPLIANT - {detail}",
+                duration_ms=(perf_counter() - start) * 1000,
             )
+            sys.exit(0)
 
     except Exception as e:
-        logger.log_error("K13", "audit", e)
-
+        logger.log_error(
+            "K09", 
+            "audit", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
     finally:
         release_lock(lock_file)
 

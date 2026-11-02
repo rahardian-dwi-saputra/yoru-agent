@@ -1,10 +1,10 @@
 from __future__ import annotations
 from pathlib import Path
-import subprocess
+from time import perf_counter
 import sys
 import os
-import tempfile
 import shutil
+import subprocess
 
 # Import modul catalogutils via sys.path
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -13,150 +13,244 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import JOURNALD_CONFIG, TARGET_SYSTEM_MAX_USE, CATALOG_LOCKS
-
-from pipeline.catalogutils import (
-    BaseLogger,
-    acquire_lock,
-    release_lock,
-    check_journald_config_exists,
-    create_journald_backup,
-    check_journald_disk_space_prerequisite,
-    restart_journald_service,
+from config.settings import (
+    JOURNALD_CONFIG, 
+    JOURNALD_BACKUP_DIR,
+    JOURNAL_LOG_DIR,
+    JOURNALD_SERVICE_NAME,
+    CATALOG_LOCKS
 )
 
+from pipeline.catalogutils import (
+    LogStatus,
+    BaseLogger,
+    load_taskfile_vars,
+    acquire_lock,
+    release_lock,
+    get_effective_journald_parameter,
+    restart_system_service
+)
 
-def check_journald_hardening_status(config_path: Path) -> bool:
-    """Mengecek apakah Storage=persistent, SystemMaxUse, dan MaxRetentionSec sudah terpasang."""
-    if not config_path.is_file():
-        return False
+def backup_configuration() -> bool:
+    """
+    Membuat backup konfigurasi.
+
+    Returns:
+        True jika file konfigurasi sebelumnya tersedia.
+        False jika file belum tersedia.
+    """
+    JOURNALD_BACKUP_DIR.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    backup_file = JOURNALD_BACKUP_DIR / JOURNALD_CONFIG.name
+
+    if JOURNALD_CONFIG.is_file():
+        shutil.copy2(JOURNALD_CONFIG, backup_file)
+        return True
+
+    return False
+
+def apply_configuration() -> None:
+    """Menerapkan konfigurasi Storage=persistent."""
+
+    JOURNALD_CONFIG.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    content = (
+        "[Journal]\n"
+        "Storage=persistent\n"
+    )
+
+    temp_config = JOURNALD_CONFIG.with_name(
+        f".{JOURNALD_CONFIG.name}.tmp"
+    )
+
+    try:
+        temp_config.write_text(
+            content,
+            encoding="utf-8",
+        )
+
+        os.chmod(temp_config, 0o644)
+        os.replace(temp_config, JOURNALD_CONFIG)
+
+    finally:
+        temp_config.unlink(missing_ok=True)
+
+def run_command(command: list[str]) -> None:
+    """Menjalankan command sistem dan menangani kegagalan."""
+
+    executable = shutil.which(command[0])
+
+    if not executable:
+        raise RuntimeError(
+            f"Executable {command[0]} tidak ditemukan."
+        )
+
+    command[0] = executable
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Command {' '.join(command)} mengalami timeout."
+        ) from exc
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            result.stderr.strip()
+            or f"Command {' '.join(command)} gagal."
+        )
+
+def restore_configuration(original_exists: bool) -> None:
+    """Memulihkan konfigurasi jika hardening gagal."""
+
+    backup_file = JOURNALD_BACKUP_DIR / JOURNALD_CONFIG.name
+
+    if original_exists:
+        if not backup_file.is_file():
+            raise RuntimeError(
+                "Backup konfigurasi tidak ditemukan."
+            )
+
+        shutil.copy2(backup_file, JOURNALD_CONFIG)
+
+    else:
+        JOURNALD_CONFIG.unlink(missing_ok=True)
+
     
-    found_persistent = False
-    found_max_use = False
-    found_retention = False
-
-    with open(config_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_str = line.strip().lower()
-            if line_str.startswith("storage=persistent"):
-                found_persistent = True
-            elif line_str.startswith("systemmaxuse="):
-                found_max_use = True
-            elif line_str.startswith("maxretentionsec="):
-                found_retention = True
-
-    return found_persistent and found_max_use and found_retention
-
-
-def apply_journald_hardening(src_path: Path, dst_file_obj) -> None:
-    """Menulis atau memperbarui parameter journald secara eksplisit."""
-    
-    params_to_set = {
-        "Storage": "persistent",
-        "Compress": "yes",
-        "SystemMaxUse": TARGET_SYSTEM_MAX_USE,
-        "MaxRetentionSec": "1month"
-    }
-    
-    seen_keys = set()
-
-    with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
-            written = False
-            
-            if not line_stripped.startswith("#") and not line_stripped.startswith(";") and "=" in line_stripped:
-                key = line_stripped.split("=")[0].strip()
-                for target_key in params_to_set:
-                    if key.lower() == target_key.lower():
-                        dst_file_obj.write(f"{target_key}={params_to_set[target_key]}\n")
-                        seen_keys.add(target_key)
-                        written = True
-                        break
-            
-            if not written:
-                dst_file_obj.write(line)
-
-    # Tambahkan parameter yang belum ada di file
-    for target_key, val in params_to_set.items():
-        if target_key not in seen_keys:
-            dst_file_obj.write(f"{target_key}={val}\n")
-
-
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
-        catalog="K14",
-        cis_id="6.1.2.3",
+        catalog=task_vars.get("ID", "K10"),
+        nama=task_vars.get("NAMA", "Penyimpanan Log Journald Permanen"),
+        kode_cis=task_vars.get("KODE_CIS", "6.1.2.4"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure journald Storage is configured"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 31, Pasal 35"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="hardening",
     )
 
-    lock_name = CATALOG_LOCKS.get("K14", "journald_audit")
+    lock_name = CATALOG_LOCKS.get("K10", "journald_audit")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+    original_exists = False
+    configuration_changed = False
+
     try:
-        if not check_journald_config_exists(logger):
-            logger.log(
-                "FAILED", 
-                "Result", 
-                f"Hasil Hardening: FAILED - Berkas konfigurasi {JOURNALD_CONFIG} tidak ditemukan."
-            )
-            sys.exit(1)
+        # Cek apakah Storage sudah dihardening
+        storage = get_effective_journald_parameter("Storage").lower()
 
-        # 1. Jalankan Pre-Flight Check: Validasi Kapasitas Disk (Minimal 3x SystemMaxUse)
-        if not check_journald_disk_space_prerequisite(TARGET_SYSTEM_MAX_USE, logger):
+        if storage == "persistent":
             logger.log(
-                "FAILED", 
-                "Result", 
-                "Hasil Hardening: FAILED - Kapasitas disk /var/log tidak memenuhi prasyarat minimal 3x SystemMaxUse."
-            )
-            sys.exit(1)
-
-        # 2. Cek apakah sudah memenuhi seluruh prasyarat parameter secara eksplisit
-        if check_journald_hardening_status(JOURNALD_CONFIG):
-            logger.log(
-                "SKIPPED", 
-                "Result", 
-                "Hasil Hardening: SKIPPED - Parameter journald sudah ter-hardening secara lengkap."
+                LogStatus.SKIPPED,
+                "Result",
+                f"Hasil Hardening: SKIPPED - Konfigurasi Storage journald sudah bernilai 'persistent'",
+                duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(0)
 
-        # 3. Buat Backup Berversi
-        success_backup, backup_msg = create_journald_backup(logger)
-        if not success_backup:
-            logger.log(
-                "FAILED", 
-                "BackupFailed", 
-                backup_msg
-            )
-            sys.exit(1)
 
-        # 4. Terapkan Modifikasi via Tempfile (Atomic Write)
-        with tempfile.NamedTemporaryFile("w+", delete=False, prefix="journald_conf_") as tmp_file:
-            tmp_config_path = Path(tmp_file.name)
-            apply_journald_hardening(JOURNALD_CONFIG, tmp_file)
+        # Backup konfigurasi sebelumnya
+        original_exists = backup_configuration()
 
-        shutil.move(str(tmp_config_path), str(JOURNALD_CONFIG))
-        os.chmod(JOURNALD_CONFIG, 0o644)
+        # Buat direktori penyimpanan permanen
+        JOURNAL_LOG_DIR.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
 
-        # 5. Restart Service Journald
-        if restart_journald_service():
-            logger.log(
-                "SUCCESS", 
-                "Result", 
-                "Hasil Hardening: SUCCESS - Konfigurasi journald berhasil diperbarui dan service di-restart."
+        # Terapkan konfigurasi
+        apply_configuration()
+        configuration_changed = True
+
+        # Atur permission dan ownership direktori jurnal
+        run_command([
+            "systemd-tmpfiles",
+            "--create",
+            "--prefix",
+            str(JOURNAL_LOG_DIR),
+        ])
+
+        if not restart_system_service(JOURNALD_SERVICE_NAME):
+            raise RuntimeError(
+                f"Gagal merestart service {JOURNALD_SERVICE_NAME}."
             )
-        else:
-            logger.log(
-                "WARNING", 
-                "Result", 
-                "Hasil Hardening: WARNING - Konfigurasi diperbarui tetapi gagal merestart service systemd-journald."
+
+        # Flush log runtime ke penyimpanan permanen
+        run_command([
+            "journalctl",
+            "--flush",
+        ])
+
+        storage = get_effective_journald_parameter(
+            "Storage"
+        ).lower()
+
+        if storage != "persistent":
+            raise RuntimeError(
+                f"Validasi gagal: Storage ditemukan '{storage}', diharapkan 'persistent'."
             )
+
+        if not JOURNAL_LOG_DIR.is_dir():
+            raise RuntimeError(
+                f"Direktori {JOURNAL_LOG_DIR} tidak ditemukan."
+            )
+
+        # Pastikan layanan berjalan
+        run_command([
+            "systemctl",
+            "is-active",
+            "--quiet",
+            JOURNALD_SERVICE_NAME,
+        ])
+
+        logger.log(
+            LogStatus.SUCCESS,
+            "Result",
+            f"Hasil Hardening: SUCCEED - Storage=persistent berhasil diterapkan. dan service SSH berhasil direstart.",
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(0)
 
     except Exception as e:
-        logger.log_error("K14", "hardening", e)
+        if configuration_changed:
+            try:
+                restore_configuration(original_exists)
 
+                restart_system_service(
+                    JOURNALD_SERVICE_NAME
+                )
+
+            except Exception as rollback_error:
+                logger.log_error(
+                    "K10",
+                    "hardening-restore",
+                    rollback_error,
+                )
+
+        logger.log_error(
+            "K10", 
+            "hardening", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
     finally:
         release_lock(lock_file)
 

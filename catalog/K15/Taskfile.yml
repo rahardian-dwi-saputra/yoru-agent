@@ -5,44 +5,34 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS Benchmark
-  ID: "K16"
-  NAMA: "Pengabaian Permintaan ICMP Broadcast"
-  KODE_CIS: "3.3.4"
-  CIS_JUDUL: "3.3.4 Ensure broadcast icmp requests are ignored"
+  ID: "K15"
+  NAMA: "Pengaturan Layanan Jaringan yang Mendengarkan Interface Network"
+  KODE_CIS: "2.1.22"
+  JUDUL_CIS: "Ensure only approved services are listening on a network interface"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
+  REGULASI: "Pasal 35, Pasal 39"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
-    Aturan keamanan untuk mengonfigurasi parameter kernel agar mengabaikan 
-    permintaan ICMP (ping) yang dikirim ke alamat broadcast atau multicast. 
-    Fungsinya untuk melindungi server agar tidak dimanfaatkan dalam serangan 
-    Smurf Attack atau pemantulan paket ICMP masif ke jaringan lain.
-  RISIKO: "AMAN"
-  KATEGORI: "Network Configuration"
-  AUDIT_ONLY: false
+    Aturan keamanan untuk memastikan hanya layanan yang memang 
+    diperlukan dan telah disetujui yang dapat menerima koneksi melalui 
+    jaringan. Fungsinya untuk mengurangi port dan layanan yang terbuka 
+    sehingga memperkecil celah yang dapat dimanfaatkan oleh pihak yang 
+    tidak berwenang.
+  RISIKO: "TINGGI"
+  KATEGORI: "Services / Network Configuration"
+  AUDIT_ONLY: true
+  PESAN_HARDENING: "-"
+  PESAN_ROLLBACK: "-"
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Konfigurasi ICMP Broadcast
   audit:
-    desc: "Menjalankan audit parameter kernel untuk pengabaian ICMP broadcast"
+    desc: "Menjalankan audit layanan yang mendengarkan pada network interface"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
-
-  # 2. Hardening Konfigurasi ICMP Broadcast (Mengaktifkan icmp_echo_ignore_broadcasts)
-  hardening:
-    desc: "Menerapkan konfigurasi pengabaian ICMP broadcast secara permanen via sysctl"
-    deps: [init-log-dir]
-    cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
-
-  # 3. Rollback Konfigurasi ICMP Broadcast (Mengembalikan ke kondisi awal)
-  rollback:
-    desc: "Mengembalikan konfigurasi kernel ICMP broadcast ke kondisi sebelum hardening"
-    deps: [init-log-dir]
-    cmds:
-      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

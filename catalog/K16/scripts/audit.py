@@ -10,7 +10,7 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SYSCTL_KEYS_ACCEPT_REDIRECTS, CATALOG_LOCKS
+from config.settings import SYSCTL_KEY_ICMP_ECHO_BROADCASTS, CATALOG_LOCKS
 
 from pipeline.catalogutils import (
     BaseLogger,
@@ -19,34 +19,24 @@ from pipeline.catalogutils import (
 )
 
 
-def check_sysctl_values() -> tuple[bool, str]:
-    """Memeriksa nilai parameter sysctl untuk penolakan ICMP redirects."""
+def check_sysctl_value() -> tuple[bool, str]:
+    """Memeriksa nilai parameter sysctl net.ipv4.icmp_echo_ignore_broadcasts."""
     try:
-        failed_keys = []
-        details = []
+        # 1. Cek nilai runtime via sysctl
+        res = subprocess.run(
+            ["sysctl", "-n", SYSCTL_KEY_ICMP_ECHO_BROADCASTS],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode != 0:
+            return False, f"Parameter sysctl {SYSCTL_KEY_ICMP_ECHO_BROADCASTS} tidak ditemukan pada kernel."
 
-        for key in SYSCTL_KEYS_ACCEPT_REDIRECTS:
-            res = subprocess.run(
-                ["sysctl", "-n", key],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if res.returncode != 0:
-                failed_keys.append(key)
-                continue
-
-            val = res.stdout.strip()
-            if val != "0":
-                failed_keys.append(key)
-                details.append(f"{key}={val} (seharusnya 0)")
-            else:
-                details.append(f"{key}=0 (OK)")
-
-        if failed_keys:
-            return False, f"Parameter belum sesuai standar CIS: {', '.join(details)}"
-        
-        return True, f"Semua parameter ICMP redirects sudah aman: {', '.join(details)}"
+        val = res.stdout.strip()
+        if val == "1":
+            return True, f"Runtime sysctl {SYSCTL_KEY_ICMP_ECHO_BROADCASTS} sudah bernilai 1 (Compliant)."
+        else:
+            return False, f"Runtime sysctl {SYSCTL_KEY_ICMP_ECHO_BROADCASTS} bernilai {val} (Seharusnya 1)."
     except Exception as e:
         return False, f"Gagal mengecek sysctl: {str(e)}"
 
@@ -55,16 +45,16 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K17",
-        cis_id="3.3.5",
+        catalog="K16",
+        cis_id="3.3.4",
         log_type="audit",
     )
 
-    lock_name = CATALOG_LOCKS.get("K17", "icmp_redirects_audit")
+    lock_name = CATALOG_LOCKS.get("K16", "icmp_broadcast_audit")
     lock_file = acquire_lock(lock_name, logger)
-
+    
     try:
-        is_compliant, detail = check_sysctl_values()
+        is_compliant, detail = check_sysctl_value()
 
         if is_compliant:
             logger.log(
@@ -80,7 +70,7 @@ def main():
             )
 
     except Exception as e:
-        logger.log_error("K17", "audit", e)
+        logger.log_error("K16", "audit", e)
 
     finally:
         release_lock(lock_file)

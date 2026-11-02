@@ -13,8 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config.settings import (
     SYSCTL_CONF,
-    SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE,
-    SYSCTL_TARGET_ACCEPT_SOURCE_ROUTE,
+    SYSCTL_KEYS_ACCEPT_REDIRECTS,
+    SYSCTL_TARGET_ACCEPT_REDIRECTS,
     CATALOG_LOCKS,
 )
 
@@ -23,12 +23,6 @@ from pipeline.catalogutils import (
     acquire_lock,
     release_lock,
 )
-
-
-SYSCTL_CONTENT = """# CIS 3.3.8: Ensure source routed packets are not accepted
-net.ipv4.conf.all.accept_source_route = 0
-net.ipv4.conf.default.accept_source_route = 0
-"""
 
 
 def apply_sysctl_hardening_list(sysctl_keys: list[str], target_value: str, comment: str) -> tuple[bool, str]:
@@ -106,19 +100,19 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
-        catalog="K18",
-        cis_id="3.3.8",
+        catalog="K17",
+        cis_id="3.3.5",  
         log_type="hardening",
     )
 
-    lock_name = CATALOG_LOCKS.get("K18", "source_route_hardening")
+    lock_name = CATALOG_LOCKS.get("K17", "accept_redirects_audit")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
         success, detail = apply_sysctl_hardening_list(
-            sysctl_keys=SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE,
-            target_value=SYSCTL_TARGET_ACCEPT_SOURCE_ROUTE,
-            comment="CIS 3.3.8 Ensure source routed packets are not accepted",
+            sysctl_keys=SYSCTL_KEYS_ACCEPT_REDIRECTS,
+            target_value=SYSCTL_TARGET_ACCEPT_REDIRECTS,
+            comment="CIS: Ensure accept source/icmp redirects are disabled",
         )
 
         if success:
@@ -135,7 +129,7 @@ def main():
             )
 
     except Exception as e:
-        logger.log_error("K18", "hardening", e)
+        logger.log_error("K17", "hardening", e)
 
     finally:
         release_lock(lock_file)

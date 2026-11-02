@@ -13,8 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config.settings import (
     SYSCTL_CONF,
-    SYSCTL_KEY_ICMP_ECHO_BROADCASTS,
-    SYSCTL_TARGET_ICMP_ECHO_BROADCASTS,
+    SYSCTL_KEY_TCP_SYNCOOKIES,
+    SYSCTL_TARGET_TCP_SYNCOOKIES,
     CATALOG_LOCKS,
 )
 
@@ -89,19 +89,19 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
-        catalog="K16",
-        cis_id="3.3.4",
+        catalog="K19",
+        cis_id="3.3.10",
         log_type="hardening",
     )
 
-    lock_name = CATALOG_LOCKS.get("K16", "icmp_broadcast_audit")
+    lock_name = CATALOG_LOCKS.get("K19", "tcp_syncookies_hardening")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
         success, detail = apply_sysctl_hardening(
-            sysctl_key=SYSCTL_KEY_ICMP_ECHO_BROADCASTS,
-            target_value=SYSCTL_TARGET_ICMP_ECHO_BROADCASTS,
-            comment="CIS 3.3.4: Ensure broadcast icmp requests are ignored",
+            sysctl_key=SYSCTL_KEY_TCP_SYNCOOKIES,
+            target_value=SYSCTL_TARGET_TCP_SYNCOOKIES,
+            comment="CIS 3.3.10 Ensure tcp syn cookies is enabled",
         )
 
         if success:
@@ -118,7 +118,7 @@ def main():
             )
 
     except Exception as e:
-        logger.log_error("K16", "hardening", e)
+        logger.log_error("K19", "hardening", e)
 
     finally:
         release_lock(lock_file)

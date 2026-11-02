@@ -16,6 +16,7 @@ import getpass
 import socket
 import stat
 import yaml
+import re
 
 
 from config.settings import (
@@ -23,10 +24,7 @@ from config.settings import (
     APP_TIMEZONE,
     SSHD_CONFIG,
     INVALID_SHELLS, 
-    SSH_BACKUP_DIR, 
-    JOURNALD_CONFIG, 
-    JOURNALD_BACKUP_DIR,
-    JOURNALD_SERVICE_NAME
+    SSH_BACKUP_DIR
 )
 
 class LogStatus(str, Enum):
@@ -410,7 +408,7 @@ def check_config_exists(
     if not config_path.is_file():
         if logger:
             logger.log(
-                "ERROR",
+                LogStatus.ERROR,
                 "Note",
                 f"File {config_name} ({config_path}) tidak ditemukan atau tidak valid.",
             )
@@ -465,6 +463,80 @@ def get_effective_sshd_parameter(
     raise RuntimeError(
         f"Parameter {parameter} tidak ditemukan pada output sshd -T."
     )
+
+
+def get_effective_journald_parameter(parameter: str) -> str:
+    """
+    Membaca nilai parameter efektif systemd-journald, termasuk konfigurasi drop-in.
+    """
+    systemd_analyze = shutil.which("systemd-analyze")
+
+    if not systemd_analyze:
+        raise RuntimeError(
+            "Executable systemd-analyze tidak ditemukan."
+        )
+
+    try:
+        result = subprocess.run(
+            [
+                systemd_analyze,
+                "cat-config",
+                "systemd/journald.conf",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            "Pembacaan konfigurasi journald mengalami timeout."
+        ) from exc
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            result.stderr.strip()
+            or "Gagal membaca konfigurasi journald."
+        )
+
+    value = None
+    in_journal_section = False
+
+    for line in result.stdout.splitlines():
+        line = line.strip()
+
+        # Awal file konfigurasi berikutnya.
+        if re.match(r"^#\s+/(?:etc|run|usr)/", line):
+            in_journal_section = False
+            continue
+
+        if not line or line.startswith("#"):
+            continue
+
+        # Hanya membaca section [Journal].
+        if line.startswith("["):
+            in_journal_section = line.lower() == "[journal]"
+            continue
+
+        if not in_journal_section or "=" not in line:
+            continue
+
+        key, _, current_value = line.partition("=")
+
+        if key.strip().lower() == parameter.lower():
+            value = current_value.strip()
+
+    # Default Storage menurut systemd adalah auto.
+    if value is None and parameter.lower() == "storage":
+        return "auto"
+
+    if value is None:
+        raise RuntimeError(
+            f"Parameter {parameter} tidak ditemukan."
+        )
+
+    return value
+
 
 
 ParameterStatus = Literal["not_found", "commented", "active"]
@@ -532,7 +604,6 @@ def check_config_parameter_value(
 
     except Exception:
         return "not_found", None
-
 
 
 def set_config_parameter_value(
@@ -618,38 +689,37 @@ def set_config_parameter_value(
 
     
 def is_package_installed(package_name: str, binary_name: str | None = None) -> bool:
-    """
-    Mengecek apakah suatu paket atau binary sudah terinstall pada sistem.
-    
-    Args:
-        package_name: Nama paket di system package manager (contoh: "auditd", "ufw", "nginx").
-        binary_name: Nama perintah/binary opsional untuk dicek via PATH (contoh: "auditd", "ufw"). 
-                     Jika None, akan menggunakan nilai dari `package_name`.
-        
-    Returns:
-        bool: True jika terinstall, False jika tidak.
-    """
-    target_binary = binary_name if binary_name is not None else package_name
+    """Memeriksa apakah paket atau binary sudah terinstal pada sistem."""
 
-    # 1. Cek keberadaan binary melalui PATH sistem (paling cepat & aman)
-    if shutil.which(target_binary) is not None:
+    target_binary = binary_name or package_name
+
+    # Periksa keberadaan binary melalui PATH.
+    if shutil.which(target_binary):
         return True
 
-    # 2. Cadangan pengecekan menggunakan package manager dpkg (untuk Debian/Ubuntu)
+    # Periksa status instalasi paket menggunakan dpkg.
     try:
-        res = subprocess.run(
-            ["dpkg-query", "-W", "-f=${Status}", package_name],
+        result = subprocess.run(
+            [
+                "dpkg-query",
+                "-W",
+                "-f=${Status}",
+                package_name,
+            ],
             capture_output=True,
             text=True,
-            check=False
+            timeout=10,
+            check=False,
         )
-        # Status 'install ok installed' menandakan paket terpasang sempurna
-        if res.returncode == 0 and "install ok installed" in res.stdout:
-            return True
-    except Exception:
-        pass
 
-    return False
+        return (
+            result.returncode == 0
+            and result.stdout.strip() == "install ok installed"
+        )
+
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
 
 
 ServiceState = Literal["running", "stopped", "failed", "unknown"]
@@ -668,52 +738,53 @@ def check_systemd_service_status(service_name: str) -> Tuple[bool, ServiceState,
             - active_status: Status runtime ("running", "stopped", "failed", "unknown")
             - enable_status: Status startup ("enabled", "disabled", "masked", "unknown")
     """
+
     active_state: ServiceState = "unknown"
     enable_state: ServiceEnableState = "unknown"
 
     try:
-        # 1. Cek apakah service aktif (running) menggunakan 'systemctl is-active'
-        result_active = subprocess.run(
+        # Periksa status runtime service.
+        result = subprocess.run(
             ["systemctl", "is-active", service_name],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
-            check=False
+            timeout=10,
+            check=False,
         )
-        active_output = result_active.stdout.strip()
-        if active_output == "active":
-            active_state = "running"
-        elif active_output in ("inactive", "dead"):
-            active_state = "stopped"
-        elif active_output == "failed":
-            active_state = "failed"
-        else:
-            active_state = "unknown"
 
-        # 2. Cek apakah service enabled menggunakan 'systemctl is-enabled'
-        result_enable = subprocess.run(
+        active_output = result.stdout.strip()
+
+        active_state = {
+            "active": "running",
+            "inactive": "stopped",
+            "dead": "stopped",
+            "failed": "failed",
+        }.get(active_output, "unknown")
+
+        # Periksa status startup service.
+        result = subprocess.run(
             ["systemctl", "is-enabled", service_name],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             text=True,
-            check=False
+            timeout=10,
+            check=False,
         )
-        enable_output = result_enable.stdout.strip()
-        if enable_output == "enabled":
-            enable_state = "enabled"
-        elif enable_output in ("disabled", "static"):
-            enable_state = "disabled"
-        elif enable_output == "masked":
-            enable_state = "masked"
-        else:
-            enable_state = "unknown"
 
-    except Exception:
-        # Jika terjadi error saat eksekusi subprocess (misal bukan sistem Linux / systemctl tidak ada)
+        enable_output = result.stdout.strip()
+
+        enable_state = {
+            "enabled": "enabled",
+            "disabled": "disabled",
+            "masked": "masked",
+        }.get(enable_output, "unknown")
+
+    except (OSError, subprocess.TimeoutExpired):
         return False, "unknown", "unknown"
 
-    # Layanan dianggap sukses (compliant) jika berjalan (running) dan diatur menyala otomatis (enabled)
-    is_compliant = (active_state == "running" and enable_state == "enabled")
+    is_compliant = (
+        active_state == "running"
+        and enable_state == "enabled"
+    )
 
     return is_compliant, active_state, enable_state
 
@@ -768,9 +839,7 @@ def create_ssh_backup(logger=None) -> tuple[bool, str]:
 
 def restart_system_service(service_names: Union[str, List[str]]) -> bool:
     """
-    Mencoba merestart satu atau beberapa layanan systemd.
-    Mendukung argumen berupa string tunggal atau list string.
-    Akan mengembalikan True jika salah satu layanan berhasil direstart.
+    Merestart satu atau beberapa layanan systemd.
     
     Args:
         service_names: Nama service (string) atau daftar nama service (list of strings).
@@ -778,34 +847,38 @@ def restart_system_service(service_names: Union[str, List[str]]) -> bool:
     Returns:
         bool: True jika restart berhasil, False jika semua percobaan gagal.
     """
-    # Normalisasi argumen: Jika berupa string, ubah menjadi list berisi 1 elemen
+  
     if isinstance(service_names, str):
-        services_to_try = [service_names]
+        services = [service_names]
     elif isinstance(service_names, list):
-        services_to_try = service_names
+        services = service_names
     else:
         return False
 
     # Hapus duplikat jika ada, sambil mempertahankan urutan
-    services_to_try = list(dict.fromkeys(services_to_try))
+    services = list(dict.fromkeys(
+        service.strip()
+        for service in services
+        if isinstance(service, str) and service.strip()
+    ))
 
-    for service in services_to_try:
-        if not service:
-            continue
-            
+    systemctl = shutil.which("systemctl")
+    if not systemctl:
+        return False
+
+    for service in services:
         try:
             result = subprocess.run(
                 ["systemctl", "restart", service],
                 capture_output=True,
                 text=True,
+                timeout=30,
                 check=False
             )
             
-            # Jika returncode 0, berarti perintah systemctl restart berhasil dieksekusi
             if result.returncode == 0:
                 return True
-        except Exception:
-            # Lanjut ke kandidat service berikutnya jika terjadi error sistem/subprocess
+        except (subprocess.TimeoutExpired, OSError):
             continue
 
     return False
@@ -827,139 +900,47 @@ def get_non_root_users(
     return valid_users
 
 
-def is_ufw_installed() -> bool:
-    """Memeriksa apakah paket UFW terinstall pada sistem Debian/Ubuntu."""
-    try:
-        res = subprocess.run(
-            ["dpkg-query", "-s", "ufw"],
-            capture_output=True,
-            text=True,
+def check_journald_access(
+    log_dir: Path,
+) -> tuple[bool, str]:
+    """Memeriksa keamanan permission direktori dan file log journald."""
+
+    if not log_dir.exists():
+        return (
+            True,
+            "Direktori log journald belum tersedia (volatile mode).",
         )
-        return res.returncode == 0 and "Status: install ok installed" in res.stdout
-    except Exception:
-        return False
 
-
-def check_journald_config_exists(
-    logger: BaseLogger | None = None,
-    config_path: Path = JOURNALD_CONFIG,
-) -> bool:
-    """Mengecek apakah file journald.conf ada dan merupakan file valid."""
-    if not config_path.is_file():
-        if logger:
-            logger.log(
-                "ERROR",
-                "Note",
-                f"File konfigurasi {config_path} tidak ditemukan.",
-            )
-        return False
-    return True
-
-
-def parse_size_to_bytes(size_str: str) -> int:
-    """
-    Mengubah string ukuran systemd (misal: '500M', '2G', '1024K', '1048576') 
-    menjadi bentuk integer dalam satuan Bytes.
-    """
-    size_str = size_str.strip().upper()
-    multiplier = 1
-    
-    if size_str.endswith('K'):
-        multiplier = 1024
-        size_str = size_str[:-1]
-    elif size_str.endswith('M'):
-        multiplier = 1024 * 1024
-        size_str = size_str[:-1]
-    elif size_str.endswith('G'):
-        multiplier = 1024 * 1024 * 1024
-        size_str = size_str[:-1]
-    elif size_str.endswith('T'):
-        multiplier = 1024 * 1024 * 1024 * 1024
-        size_str = size_str[:-1]
-        
     try:
-        return int(float(size_str) * multiplier)
-    except ValueError:
-        return 0
+        paths = [log_dir, *log_dir.rglob("*")]
 
+        for path in paths:
+            file_stat = path.lstat()
 
-def check_journald_disk_space_prerequisite(target_max_use_str: str, logger=None) -> bool:
-    """
-    Prasyarat: Memeriksa apakah sisa disk di /var/log minimal 3x dari nilai SystemMaxUse yang akan dipasang.
-    """
-    try:
-        max_bytes = parse_size_to_bytes(target_max_use_str)
-        if max_bytes == 0:
-            return True # Jika parsing gagal, lewati validasi ukuran untuk menghindari false positive
+            if not (
+                stat.S_ISDIR(file_stat.st_mode)
+                or stat.S_ISREG(file_stat.st_mode)
+            ):
+                continue
 
-        required_space = max_bytes * 3
-        usage = shutil.disk_usage("/var/log")
+            mode = file_stat.st_mode
 
-        if usage.free < required_space:
-            if logger:
-                logger.log(
-                    "WARNING",
-                    "PreFlightCheck",
-                    f"Peringatan Disk: Sisa ruang /var/log ({usage.free} bytes) kurang dari 3x SystemMaxUse yang diminta ({required_space} bytes)."
+            if path == log_dir:
+                if mode & stat.S_IWOTH:
+                    return (
+                        False,
+                        f"Direktori {path} memiliki permission world-writable.",
+                    )
+            elif mode & (stat.S_IWGRP | stat.S_IWOTH):
+                return (
+                    False,
+                    f"Objek {path} memiliki permission group/world-writable.",
                 )
-            return False
-        return True
-    except Exception as e:
-        if logger:
-            logger.log_error("SYSTEM", "disk_check", e)
-        return True
 
-
-def create_journald_backup(logger=None) -> Tuple[bool, str]:
-    """Membuat backup versioned untuk journald.conf mirip dengan skrip SSH."""
-    try:
-        if not JOURNALD_CONFIG.is_file():
-            return False, f"File konfigurasi journald tidak ditemukan di {JOURNALD_CONFIG}"
-
-        JOURNALD_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-        backup_file = JOURNALD_BACKUP_DIR / "journald.conf.bak"
-
-        if not backup_file.exists():
-            shutil.copy2(JOURNALD_CONFIG, backup_file)
-            msg = f"Backup awal journald.conf berhasil dibuat di {backup_file}."
-            if logger:
-                logger.log("SUCCESS", "BackupCreated", msg)
-            return True, msg
-
-        # Jika isi file sama persis, gunakan yang sudah ada
-        if filecmp.cmp(JOURNALD_CONFIG, backup_file, shallow=False):
-            return True, "Konfigurasi journald tidak berubah. Menggunakan backup yang sudah ada."
-
-        # Jika berubah, buat versi timestamp historis
-        from datetime import datetime, timezone
-        timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        versioned_backup = JOURNALD_BACKUP_DIR / f"journald.conf_{timestamp_str}.bak"
-        shutil.copy2(JOURNALD_CONFIG, versioned_backup)
-        shutil.copy2(JOURNALD_CONFIG, backup_file)
-
-        msg = f"Perubahan terdeteksi pada journald.conf. Backup historis dibuat: {versioned_backup.name}"
-        if logger:
-            logger.log("SUCCESS", "BackupVersioned", msg)
-        return True, msg
-
-    except Exception as e:
-        err_msg = f"Gagal membuat backup journald: {str(e)}"
-        if logger:
-            logger.log_error("SYSTEM", "backup", e)
-        return False, err_msg
-
-
-def restart_journald_service() -> bool:
-    """
-    Fungsi terpusat untuk merestart service systemd-journald.
-    """
-    try:
-        res = subprocess.run(
-            ["systemctl", "restart", JOURNALD_SERVICE_NAME],
-            capture_output=True,
-            text=True,
-            check=False,
+        return (
+            True,
+            "Permission direktori dan file log journald sudah aman.",
         )
-        return res.returncode == 0
-    except Exception:
-        return False
+
+    except OSError as exc:
+        return False, f"Gagal memeriksa permission log journald: {exc}"

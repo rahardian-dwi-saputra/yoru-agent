@@ -13,8 +13,8 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from config.settings import (
     SYSCTL_CONF,
-    SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE,
-    SYSCTL_DEFAULT_ACCEPT_SOURCE_ROUTE,
+    SYSCTL_KEYS_ACCEPT_REDIRECTS,
+    SYSCTL_DEFAULT_ACCEPT_REDIRECTS,
     CATALOG_LOCKS,
 )
 
@@ -59,9 +59,9 @@ def perform_sysctl_rollback_list(sysctl_keys: list[str]) -> tuple[str, str]:
                     for target_key in sysctl_keys:
                         if current_key == target_key:
                             keys_found_count += 1
-                            if current_val != SYSCTL_DEFAULT_ACCEPT_SOURCE_ROUTE:
+                            if current_val != SYSCTL_DEFAULT_ACCEPT_REDIRECTS:
                                 all_already_default = False
-                                new_lines.append(f"{target_key} = {SYSCTL_DEFAULT_ACCEPT_SOURCE_ROUTE}\n")
+                                new_lines.append(f"{target_key} = {SYSCTL_DEFAULT_ACCEPT_REDIRECTS}\n")
                             else:
                                 new_lines.append(line)  # Sudah bernilai default, pertahankan
                             handled = True
@@ -95,7 +95,7 @@ def perform_sysctl_rollback_list(sysctl_keys: list[str]) -> tuple[str, str]:
             return "FAILED", f"Gagal menerapkan sysctl system saat rollback: {res.stderr.strip()}"
 
         keys_str = ", ".join(sysctl_keys)
-        return "SUCCESS", f"Parameter [{keys_str}] berhasil di-rollback ke nilai {SYSCTL_DEFAULT_ACCEPT_SOURCE_ROUTE}."
+        return "SUCCESS", f"Parameter [{keys_str}] berhasil di-rollback ke nilai {SYSCTL_DEFAULT_ACCEPT_REDIRECTS}."
 
     except Exception as e:
         return "FAILED", f"Gagal melakukan rollback sysctl: {str(e)}"
@@ -105,16 +105,16 @@ def main():
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="rollback.json",
-        catalog="K18",
-        cis_id="3.3.8",
+        catalog="K17",
+        cis_id="3.3.5",
         log_type="rollback",
     )
 
-    lock_name = CATALOG_LOCKS.get("K18", "source_route_rollback")
+    lock_name = CATALOG_LOCKS.get("K17", "accept_redirects_audit")
     lock_file = acquire_lock(lock_name, logger)
 
     try:
-        status, detail = perform_sysctl_rollback_list(SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE)
+        status, detail = perform_sysctl_rollback_list(SYSCTL_KEYS_ACCEPT_REDIRECTS)
 
         if status == "SUCCESS":
             logger.log(
@@ -142,7 +142,7 @@ def main():
             )
 
     except Exception as e:
-        logger.log_error("K18", "rollback", e)
+        logger.log_error("K17", "rollback", e)
 
     finally:
         release_lock(lock_file)

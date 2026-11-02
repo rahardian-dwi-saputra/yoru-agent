@@ -6,14 +6,15 @@ vars:
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
   # Metadata CIS Benchmark
-  ID: "K17"
-  NAMA: "Penolakan ICMP Redirect"
-  KODE_CIS: "3.3.5"
-  CIS_JUDUL: "3.3.5 Ensure icmp redirects are not accepted"
+  ID: "K16"
+  NAMA: "Pengabaian Permintaan ICMP Broadcast"
+  KODE_CIS: "3.3.4"
+  CIS_JUDUL: "3.3.4 Ensure broadcast icmp requests are ignored"
   DESKRIPSI: |
-    Aturan keamanan untuk mengonfigurasi parameter kernel agar menolak 
-    paket ICMP redirect. Fungsinya untuk mencegah pihak luar atau entitas 
-    tidak berotoritas memanipulasi tabel routing lokal server (mitm attack).
+    Aturan keamanan untuk mengonfigurasi parameter kernel agar mengabaikan 
+    permintaan ICMP (ping) yang dikirim ke alamat broadcast atau multicast. 
+    Fungsinya untuk melindungi server agar tidak dimanfaatkan dalam serangan 
+    Smurf Attack atau pemantulan paket ICMP masif ke jaringan lain.
   RISIKO: "AMAN"
   KATEGORI: "Network Configuration"
   AUDIT_ONLY: false
@@ -25,23 +26,23 @@ tasks:
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Konfigurasi ICMP Redirect
+  # 1. Audit Konfigurasi ICMP Broadcast
   audit:
-    desc: "Menjalankan audit parameter kernel untuk penolakan ICMP redirect"
+    desc: "Menjalankan audit parameter kernel untuk pengabaian ICMP broadcast"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 2. Hardening Konfigurasi ICMP Redirect (Mengatur accept_redirects = 0)
+  # 2. Hardening Konfigurasi ICMP Broadcast (Mengaktifkan icmp_echo_ignore_broadcasts)
   hardening:
-    desc: "Menerapkan konfigurasi penolakan ICMP redirect secara permanen via sysctl"
+    desc: "Menerapkan konfigurasi pengabaian ICMP broadcast secara permanen via sysctl"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 3. Rollback Konfigurasi ICMP Redirect (Mengembalikan ke kondisi awal)
+  # 3. Rollback Konfigurasi ICMP Broadcast (Mengembalikan ke kondisi awal)
   rollback:
-    desc: "Mengembalikan konfigurasi kernel ICMP redirect ke kondisi sebelum hardening"
+    desc: "Mengembalikan konfigurasi kernel ICMP broadcast ke kondisi sebelum hardening"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/rollback.py
