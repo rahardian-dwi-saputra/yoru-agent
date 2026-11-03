@@ -28,6 +28,7 @@ vars:
 tasks:
   init-log-dir:
     internal: true
+    desc: 'Membuat direktori log jika belum tersedia'
     cmds:
       - mkdir -p {{.LOG_DIR}}
 

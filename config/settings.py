@@ -83,9 +83,24 @@ JOURNALD_ROTATION_BASELINE = {
 
 # Daftar layanan yang disetujui (Approved Services) untuk Katalog K15
 APPROVED_SERVICES_SET = {
+    # Yoru-Agent Backend
+    "uvicorn",
+
+    # Yoru-Agent Web Dashboard
+    "streamlit",
+
+    # Python Runtime
+    "python",
+    "python3",
+    
+    # Remote Administration
     "sshd",
+
+    # Web server
     "nginx",
     "apache2",
+
+    # System Services
     "systemd-resolve",
 }
 

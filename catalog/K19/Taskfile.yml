@@ -5,43 +5,59 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS Benchmark
   ID: "K19"
   NAMA: "Pengaktifan TCP SYN Cookies"
   KODE_CIS: "3.3.10"
-  CIS_JUDUL: "3.3.10 Ensure tcp syn cookies is enabled"
+  JUDUL_CIS: "Ensure tcp syn cookies is enabled"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
+  REGULASI: "Pasal 35, Pasal 39"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
     Aturan keamanan untuk mengonfigurasi parameter kernel agar mengaktifkan 
     TCP SYN cookies (`net.ipv4.tcp_syncookies = 1`). 
     Fungsinya untuk melindungi server dari serangan Denial of Service (DoS) 
     jenis SYN flood dengan menggunakan teknik enkripsi state-less cookies 
     pada handshake TCP.
-  RISIKO: "AMAN"
-  KATEGORI: "Network Configuration"
+  RISIKO: "RENDAH"
+  KATEGORI: "Network Security"
   AUDIT_ONLY: false
+  PESAN_HARDENING: |
+    Aksi ini akan mengubah parameter kernel 'net.ipv4.tcp_syncookies' 
+    menjadi '1' (diaktifkan) melalui file konfigurasi sysctl, kemudian 
+    menerapkannya ke sistem secara langsung.
+    ⚠️ PERINGATAN: 
+    Server akan mengaktifkan mekanisme TCP SYN cookies untuk melindungi 
+    infrastruktur dari ancaman serangan Denial of Service (DoS) tipe 
+    SYN Flood tanpa mengganggu koneksi jaringan yang sah.
+  PESAN_ROLLBACK: |
+    Aksi ini akan mengembalikan parameter kernel 'net.ipv4.tcp_syncookies' 
+    ke nilai semula ('0') pada konfigurasi sysctl dan menerapkannya 
+    kembali ke sistem.
+    ⚠️ RISIKO KEAMANAN: 
+    Server Anda tidak lagi menggunakan perlindungan SYN cookies. 
+    Hal ini dapat membuat server lebih rentan terhadap serangan SYN Flood 
+    yang dapat menghabiskan sumber daya koneksi (connection exhaustion).
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Konfigurasi TCP SYN Cookies
   audit:
     desc: "Menjalankan audit parameter kernel untuk TCP SYN cookies"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 2. Hardening Konfigurasi TCP SYN Cookies (Mengaktifkan tcp_syncookies = 1)
   hardening:
     desc: "Menerapkan konfigurasi TCP SYN cookies secara permanen via sysctl"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 3. Rollback Konfigurasi TCP SYN Cookies (Mengembalikan ke kondisi awal)
   rollback:
     desc: "Mengembalikan konfigurasi kernel TCP SYN cookies ke kondisi sebelum hardening"
     deps: [init-log-dir]

@@ -5,42 +5,58 @@ vars:
   SCRIPT_DIR: "{{.PROJECT_DIR}}/scripts"
   LOG_DIR: "{{.PROJECT_DIR}}/logs"
 
-  # Metadata CIS Benchmark
   ID: "K18"
   NAMA: "Penolakan Source Routed Packets"
   KODE_CIS: "3.3.8"
-  CIS_JUDUL: "3.3.8 Ensure source routed packets are not accepted"
+  JUDUL_CIS: "Ensure source routed packets are not accepted"
+  VERSI_CIS: "Ubuntu 24.04 LTS Benchmark v2.0.0"
+  REGULASI: "Pasal 35, Pasal 39"
+  KEPATUHAN: "UU PDP No. 27/2022"
+  FRAMEWORK: "CIS Benchmark & UU PDP"
   DESKRIPSI: |
     Aturan keamanan untuk mengonfigurasi parameter kernel agar menolak 
     paket jaringan yang menggunakan source routing (IP source routing). 
     Fungsinya untuk mencegah pihak luar memanipulasi jalur perutean paket 
     menuju server, sehingga terhindar dari potensi penyadapan atau IP spoofing.
-  RISIKO: "AMAN"
-  KATEGORI: "Network Configuration"
+  RISIKO: "RENDAH"
+  KATEGORI: "Network Security"
   AUDIT_ONLY: false
+  PESAN_HARDENING: |
+    Aksi ini akan mengubah parameter kernel untuk menolak paket source 
+    routed ('net.ipv4.conf.all.accept_source_route' dan 
+    'net.ipv4.conf.default.accept_source_route') menjadi '0' melalui 
+    file konfigurasi sysctl, kemudian menerapkannya ke sistem.
+    ⚠️ PERINGATAN: 
+    Server akan mengabaikan paket IP dengan opsi source routing 
+    yang masuk guna mencegah manipulasi jalur perutean jaringan.
+  PESAN_ROLLBACK: |
+    Aksi ini akan mengembalikan parameter kernel penolakan source 
+    routed packets ke nilai semula pada konfigurasi sysctl dan 
+    menerapkannya kembali ke sistem.
+    ⚠️ RISIKO KEAMANAN: 
+    Server Anda dapat kembali menerima paket jaringan dengan opsi 
+    source routing. Hal ini berisiko membuka celah bagi pihak luar 
+    untuk memanipulasi jalur rute paket menuju server Anda.
 
 tasks:
-  # Task internal untuk memastikan folder logs/ selalu ada
   init-log-dir:
+    desc: 'Membuat direktori log jika belum tersedia'
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
 
-  # 1. Audit Konfigurasi Source Routed Packets
   audit:
     desc: "Menjalankan audit parameter kernel untuk penolakan source routed packets"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
-  # 2. Hardening Konfigurasi Source Routed Packets (Mengatur accept_source_route = 0)
   hardening:
     desc: "Menerapkan konfigurasi penolakan source routed packets secara permanen via sysctl"
     deps: [init-log-dir]
     cmds:
       - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
-  # 3. Rollback Konfigurasi Source Routed Packets (Mengembalikan ke kondisi awal)
   rollback:
     desc: "Mengembalikan konfigurasi kernel source routed packets ke kondisi sebelum hardening"
     deps: [init-log-dir]

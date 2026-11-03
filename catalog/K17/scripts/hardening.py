@@ -1,10 +1,11 @@
 from __future__ import annotations
 from pathlib import Path
-import subprocess
+from time import perf_counter
 import sys
-import os
+import stat
+import shutil
 
-# Import modul catalogutils via sys.path
+
 SCRIPT_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 
@@ -19,118 +20,283 @@ from config.settings import (
 )
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
     release_lock,
+    run_command,
+    get_runtime_sysctl_value,
+    write_config_atomically,
 )
 
-
-def apply_sysctl_hardening_list(sysctl_keys: list[str], target_value: str, comment: str) -> tuple[bool, str]:
-    """
-    Menerapkan konfigurasi sysctl untuk daftar kunci (list of keys) secara cerdas:
-    - Jika file belum ada, buat baru.
-    - Untuk setiap kunci dalam list: jika kunci sudah ada, update nilainya; jika belum, append ke file.
-    """
-    try:
-        SYSCTL_CONF.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 1. Baca seluruh baris file yang sudah ada (jika ada)
-        existing_lines = []
-        if SYSCTL_CONF.is_file():
-            with open(SYSCTL_CONF, "r", encoding="utf-8", errors="ignore") as f:
-                existing_lines = f.readlines()
-
-        # 2. Proses pembaruan atau penambahan untuk setiap key dalam target list
-        processed_keys = set()
-        new_lines = []
-
-        # Jika file belum ada sama sekali, buat dengan header komentar awal
-        if not SYSCTL_CONF.is_file():
-            new_lines.append(f"# {comment}\n")
-            for key in sysctl_keys:
-                new_lines.append(f"{key} = {target_value}\n")
-                processed_keys.add(key)
-        else:
-            # Periksa baris demi baris untuk meng-update key yang sudah ada
-            for line in existing_lines:
-                line_stripped = line.strip()
-                updated = False
-                if not line_stripped.startswith("#") and "=" in line_stripped:
-                    current_key = line_stripped.split("=")[0].strip()
-                    for key in sysctl_keys:
-                        if current_key == key:
-                            new_lines.append(f"{key} = {target_value}\n")
-                            processed_keys.add(key)
-                            updated = True
-                            break
-                if not updated:
-                    new_lines.append(line)
-
-            # Tambahkan key yang belum ada sama sekali di dalam file
-            for key in sysctl_keys:
-                if key not in processed_keys:
-                    if new_lines and not new_lines[-1].endswith("\n"):
-                        new_lines.append("\n")
-                    new_lines.append(f"{key} = {target_value}\n")
-
-        # 3. Tulis ulang file konfigurasi
-        with open(SYSCTL_CONF, "w", encoding="utf-8") as f:
-            f.writelines(new_lines)
-
-        # 4. Amankan izin akses file (0o644)
-        os.chmod(SYSCTL_CONF, 0o644)
-
-        # 5. Terapkan langsung via sysctl --system
-        res = subprocess.run(
-            ["sysctl", "--system"],
-            capture_output=True,
-            text=True,
-            check=False,
+def get_config_mode(config_file: Path) -> int:
+    """Mengambil permission file konfigurasi."""
+    if config_file.is_symlink():
+        raise RuntimeError(
+            f"File konfigurasi tidak boleh berupa symbolic link: {config_file}"
         )
-        if res.returncode != 0:
-            return False, f"Gagal menerapkan sysctl system: {res.stderr.strip()}"
 
-        keys_str = ", ".join(sysctl_keys)
-        return True, f"Parameter [{keys_str}] = {target_value} berhasil diterapkan di {SYSCTL_CONF.name}."
-    except Exception as e:
-        return False, f"Gagal menerapkan hardening sysctl: {str(e)}"
+    if config_file.exists():
+        if not config_file.is_file():
+            raise RuntimeError(
+                f"Path konfigurasi bukan file biasa: {config_file}"
+            )
+        return stat.S_IMODE(config_file.stat().st_mode)
 
+    return 0o644
+
+
+def build_sysctl_config(
+    existing_content: str,
+    sysctl_keys: list[str],
+    target_value: str,
+    comment: str,
+) -> str:
+    """Memperbarui atau menambahkan parameter sysctl."""
+    processed_keys = set()
+    new_lines = []
+
+    for line in existing_content.splitlines(keepends=True):
+        stripped = line.strip()
+
+        if stripped and not stripped.startswith("#") and "=" in stripped:
+            current_key, _, _ = stripped.partition("=")
+            current_key = current_key.strip()
+
+            if current_key in sysctl_keys:
+                new_lines.append(f"{current_key} = {target_value}\n")
+                processed_keys.add(current_key)
+                continue
+
+        new_lines.append(line)
+
+    missing_keys = [
+        key for key in sysctl_keys if key not in processed_keys
+    ]
+
+    if missing_keys:
+        if new_lines and not new_lines[-1].endswith("\n"):
+            new_lines.append("\n")
+
+        if not existing_content:
+            new_lines.append(f"# {comment}\n")
+        elif new_lines and new_lines[-1].strip():
+            new_lines.append("\n")
+
+        for key in missing_keys:
+            new_lines.append(f"{key} = {target_value}\n")
+
+    return "".join(new_lines)
+
+
+def is_config_compliant(
+    config_content: str,
+    sysctl_keys: list[str],
+    target_value: str,
+) -> bool:
+    """Memeriksa nilai parameter dalam file konfigurasi."""
+    values = {key: [] for key in sysctl_keys}
+
+    for line in config_content.splitlines():
+        stripped = line.strip()
+
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+
+        key, _, value = stripped.partition("=")
+        key = key.strip()
+
+        if key in values:
+            values[key].append(value.strip())
+
+    return all(
+        values[key] and all(value == target_value for value in values[key])
+        for key in sysctl_keys
+    )
+
+
+def restore_config(
+    config_file: Path,
+    original_content: bytes | None,
+    original_mode: int,
+    sysctl_path: str,
+) -> None:
+    """Mengembalikan konfigurasi dan menerapkan ulang sysctl."""
+    if original_content is None:
+        if config_file.exists():
+            config_file.unlink()
+    else:
+        write_config_atomically(
+            config_file,
+            original_content,
+            original_mode,
+        )
+
+    run_command([sysctl_path, "--system"])
+
+
+def apply_sysctl_hardening_list(
+    sysctl_keys: list[str],
+    target_value: str,
+    comment: str,
+) -> tuple[str, str]:
+    """
+    Menerapkan hardening ICMP Redirect.
+
+    Memperbarui konfigurasi persisten, menerapkan sysctl,
+    dan memvalidasi nilai runtime.
+    """
+
+    if not sysctl_keys:
+        raise ValueError("Daftar parameter sysctl tidak boleh kosong.")
+
+    sysctl_path = shutil.which("sysctl")
+
+    if not sysctl_path:
+        raise RuntimeError("Executable sysctl tidak ditemukan.")
+
+    config_file = Path(SYSCTL_CONF)
+    original_content = None
+    original_mode = get_config_mode(config_file)
+
+    if config_file.exists():
+        original_content = config_file.read_bytes()
+        existing_content = original_content.decode(
+            "utf-8",
+            errors="replace",
+        )
+    else:
+        existing_content = ""
+
+    target_value = str(target_value)
+
+    # Periksa konfigurasi persisten dan runtime.
+    runtime_compliant = all(
+        get_runtime_sysctl_value(key) == target_value
+        for key in sysctl_keys
+    )
+
+    persistent_compliant = is_config_compliant(
+        existing_content,
+        sysctl_keys,
+        target_value,
+    )
+
+    if runtime_compliant and persistent_compliant:
+        return (
+            "SKIPPED",
+            "Semua parameter ICMP Redirect sudah sesuai target "
+            "pada konfigurasi dan runtime.",
+        )
+
+    try:
+        new_content = build_sysctl_config(
+            existing_content=existing_content,
+            sysctl_keys=sysctl_keys,
+            target_value=target_value,
+            comment=comment,
+        )
+
+        write_config_atomically(
+            config_file,
+            new_content.encode("utf-8"),
+            original_mode,
+        )
+
+        run_command([sysctl_path, "--system"])
+
+        # Validasi nilai runtime setelah penerapan.
+        details = []
+
+        for key in sysctl_keys:
+            value = get_runtime_sysctl_value(key)
+
+            if value != target_value:
+                raise RuntimeError(
+                    f"Validasi gagal: {key}={value}, "
+                    f"seharusnya {target_value}."
+                )
+
+            details.append(f"{key}={value}")
+
+        return (
+            "SUCCESS",
+            "Hardening ICMP Redirect berhasil diterapkan: "
+            + ", ".join(details),
+        )
+
+    except Exception as exc:
+        try:
+            restore_config(
+                config_file,
+                original_content,
+                original_mode,
+                sysctl_path,
+            )
+        except Exception as restore_exc:
+            raise RuntimeError(
+                f"{exc}. Pemulihan konfigurasi juga gagal: {restore_exc}"
+            ) from exc
+
+        raise RuntimeError(
+            f"{exc}. Konfigurasi sebelumnya berhasil dipulihkan."
+        ) from exc
+    
 
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="hardening.json",
-        catalog="K17",
-        cis_id="3.3.5",  
+        catalog=task_vars.get("ID", "K17"),
+        nama=task_vars.get("NAMA", "Penolakan ICMP Redirect"),
+        kode_cis=task_vars.get("KODE_CIS", "3.3.5"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure icmp redirects are not accepted"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 35, Pasal 39"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="hardening",
     )
 
     lock_name = CATALOG_LOCKS.get("K17", "accept_redirects_audit")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+
     try:
-        success, detail = apply_sysctl_hardening_list(
+        status, detail = apply_sysctl_hardening_list(
             sysctl_keys=SYSCTL_KEYS_ACCEPT_REDIRECTS,
             target_value=SYSCTL_TARGET_ACCEPT_REDIRECTS,
-            comment="CIS: Ensure accept source/icmp redirects are disabled",
+            comment="CIS 3.3.5: Ensure ICMP redirects are not accepted",
         )
 
-        if success:
+        if status == "SUCCESS":
             logger.log(
-                "SUCCESS",
+                LogStatus.SUCCESS,
                 "Result",
                 f"Hasil Hardening: SUCCESS - {detail}",
+                duration_ms=(perf_counter() - start) * 1000,
             )
         else:
             logger.log(
-                "FAILED",
+                LogStatus.SKIPPED,
                 "Result",
-                f"Hasil Hardening: FAILED - {detail}",
+                f"Hasil Hardening: SKIPPED - {detail}",
+                duration_ms=(perf_counter() - start) * 1000,
             )
+        
+        sys.exit(0)
 
     except Exception as e:
-        logger.log_error("K17", "hardening", e)
-
+        logger.log_error(
+            "K17", 
+            "hardening", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(1)
     finally:
         release_lock(lock_file)
 

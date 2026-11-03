@@ -17,6 +17,7 @@ import socket
 import stat
 import yaml
 import re
+import tempfile
 
 
 from config.settings import (
@@ -944,3 +945,120 @@ def check_journald_access(
 
     except OSError as exc:
         return False, f"Gagal memeriksa permission log journald: {exc}"
+
+
+
+def run_command(command: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
+    """Menjalankan perintah sistem dengan timeout dan validasi error."""
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise RuntimeError(
+            f"Perintah {' '.join(command)} mengalami timeout."
+        ) from exc
+    except OSError as exc:
+        raise RuntimeError(
+            f"Gagal menjalankan perintah {' '.join(command)}: {exc}"
+        ) from exc
+
+    if result.returncode != 0:
+        error_message = result.stderr.strip() or "Tidak ada pesan error."
+        raise RuntimeError(
+            f"Perintah {' '.join(command)} gagal: {error_message}"
+        )
+
+    return result
+
+def get_runtime_sysctl_value(sysctl_key: str, timeout: int = 30) -> str:
+    """Mengambil nilai runtime parameter sysctl."""
+    
+    sysctl_path = shutil.which("sysctl")
+    if not sysctl_path:
+        raise RuntimeError("Executable sysctl tidak ditemukan.")
+
+    result = run_command([
+        sysctl_path,
+        "-n",
+        sysctl_key,
+    ], timeout=timeout)
+
+    value = result.stdout.strip()
+    if not value:
+        raise RuntimeError(
+            f"Nilai runtime {sysctl_key} kosong."
+        )
+    return value
+
+def get_persistent_sysctl_value(sysctl_key: str, timeout: int = 30) -> str | None:
+    """Mengambil nilai konfigurasi persisten sysctl dari sysctl.d dan /etc/sysctl.conf."""
+    
+    systemd_analyze_path = shutil.which("systemd-analyze")
+    if not systemd_analyze_path:
+        raise RuntimeError("Executable systemd-analyze tidak ditemukan.")
+
+    result = run_command([
+        systemd_analyze_path,
+        "cat-config",
+        "sysctl.d",
+    ], timeout=timeout)
+
+    config_text = result.stdout
+    sysctl_conf = Path("/etc/sysctl.conf")
+
+    if sysctl_conf.exists():
+        try:
+            config_text += "\n" + sysctl_conf.read_text(encoding="utf-8")
+        except OSError as exc:
+            raise RuntimeError(f"Gagal membaca {sysctl_conf}: {exc}") from exc
+
+    persistent_value = None
+    for line in config_text.splitlines():
+        line = line.split("#", 1)[0].strip()
+        if not line or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip().replace("/", ".")
+        value = value.strip()
+
+        if key == sysctl_key:
+            if not value:
+                raise RuntimeError(f"Konfigurasi {sysctl_key} memiliki nilai kosong.")
+            persistent_value = value
+
+    return persistent_value
+
+def write_config_atomically(
+    config_file: Path,
+    content: str | bytes,
+    mode: int = 0o644,
+) -> None:
+    """Menulis konfigurasi secara atomik untuk menghindari file parsial."""
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    temp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=config_file.parent,
+            prefix=f".{config_file.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as temp_file:
+            temp_path = Path(temp_file.name)
+            if isinstance(content, str):
+                content = content.encode("utf-8")
+            temp_file.write(content)
+            temp_file.flush()
+            os.fsync(temp_file.fileno())
+
+        os.chmod(temp_path, mode)
+        os.replace(temp_path, config_file)
+    finally:
+        if temp_path is not None and temp_path.exists():
+            temp_path.unlink()
