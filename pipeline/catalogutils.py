@@ -975,6 +975,7 @@ def run_command(command: list[str], timeout: int = 30) -> subprocess.CompletedPr
 
     return result
 
+
 def get_runtime_sysctl_value(sysctl_key: str, timeout: int = 30) -> str:
     """Mengambil nilai runtime parameter sysctl."""
     
@@ -1033,6 +1034,7 @@ def get_persistent_sysctl_value(sysctl_key: str, timeout: int = 30) -> str | Non
 
     return persistent_value
 
+
 def write_config_atomically(
     config_file: Path,
     content: str | bytes,
@@ -1062,3 +1064,46 @@ def write_config_atomically(
     finally:
         if temp_path is not None and temp_path.exists():
             temp_path.unlink()
+
+
+def get_config_mode(config_file: Path) -> int:
+    """
+    Mengambil permission file konfigurasi dengan validasi keamanan 
+    untuk mencegah symbolic link dan memastikan berupa file biasa.
+    """
+    if config_file.is_symlink():
+        raise RuntimeError(
+            f"File konfigurasi tidak boleh berupa symbolic link: {config_file}"
+        )
+
+    if config_file.exists():
+        if not config_file.is_file():
+            raise RuntimeError(
+                f"Path konfigurasi bukan file biasa: {config_file}"
+            )
+        return stat.S_IMODE(config_file.stat().st_mode)
+
+    return 0o644
+
+
+def restore_config(
+    config_file: Path,
+    original_content: bytes | None,
+    original_mode: int,
+    sysctl_path: str,
+) -> None:
+    """
+    Mengembalikan konfigurasi awal file (atau menghapusnya jika aslinya belum ada) 
+    serta menerapkan ulang perintah sysctl --system.
+    """
+    if original_content is None:
+        if config_file.exists():
+            config_file.unlink()
+    else:
+        write_config_atomically(
+            config_file,
+            original_content,
+            original_mode,
+        )
+
+    run_command([sysctl_path, "--system"])

@@ -1,10 +1,7 @@
 from __future__ import annotations
 from pathlib import Path
 from time import perf_counter
-import subprocess
 import sys
-import os
-import stat
 import shutil
 
 # Import modul catalogutils via sys.path
@@ -30,24 +27,9 @@ from pipeline.catalogutils import (
     run_command,
     get_runtime_sysctl_value,
     write_config_atomically,
+    get_config_mode,
+    restore_config
 )
-
-def get_config_mode(config_file: Path) -> int:
-    """Mengambil permission file konfigurasi."""
-    if config_file.is_symlink():
-        raise RuntimeError(
-            f"File konfigurasi tidak boleh berupa symbolic link: {config_file}"
-        )
-
-    if config_file.exists():
-        if not config_file.is_file():
-            raise RuntimeError(
-                f"Path konfigurasi bukan file biasa: {config_file}"
-            )
-
-        return stat.S_IMODE(config_file.stat().st_mode)
-
-    return 
 
 
 def get_config_values(
@@ -111,22 +93,6 @@ def build_rollback_config(
             new_lines.append(f"{key} = {default_value}\n")
 
     return "".join(new_lines)
-
-
-def restore_config(
-    config_file: Path,
-    original_content: bytes,
-    original_mode: int,
-    sysctl_path: str,
-) -> None:
-    """Mengembalikan konfigurasi sebelum rollback."""
-    write_config_atomically(
-        config_file,
-        original_content,
-        original_mode,
-    )
-
-    run_command([sysctl_path, "--system"])
 
 
 def perform_sysctl_rollback(
@@ -321,7 +287,7 @@ def main():
             e,
             duration_ms=(perf_counter() - start) * 1000,
         )
-
+        sys.exit(1)
     finally:
         release_lock(lock_file)
 

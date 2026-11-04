@@ -2,7 +2,6 @@ from __future__ import annotations
 from pathlib import Path
 from time import perf_counter
 import sys
-import stat
 import shutil
 
 
@@ -28,23 +27,9 @@ from pipeline.catalogutils import (
     run_command,
     get_runtime_sysctl_value,
     write_config_atomically,
+    get_config_mode,
+    restore_config
 )
-
-def get_config_mode(config_file: Path) -> int:
-    """Mengambil permission file konfigurasi."""
-    if config_file.is_symlink():
-        raise RuntimeError(
-            f"File konfigurasi tidak boleh berupa symbolic link: {config_file}"
-        )
-
-    if config_file.exists():
-        if not config_file.is_file():
-            raise RuntimeError(
-                f"Path konfigurasi bukan file biasa: {config_file}"
-            )
-        return stat.S_IMODE(config_file.stat().st_mode)
-
-    return 0o644
 
 
 def build_sysctl_config(
@@ -114,26 +99,6 @@ def is_config_compliant(
         values[key] and all(value == target_value for value in values[key])
         for key in sysctl_keys
     )
-
-
-def restore_config(
-    config_file: Path,
-    original_content: bytes | None,
-    original_mode: int,
-    sysctl_path: str,
-) -> None:
-    """Mengembalikan konfigurasi dan menerapkan ulang sysctl."""
-    if original_content is None:
-        if config_file.exists():
-            config_file.unlink()
-    else:
-        write_config_atomically(
-            config_file,
-            original_content,
-            original_mode,
-        )
-
-    run_command([sysctl_path, "--system"])
 
 
 def apply_sysctl_hardening_list(

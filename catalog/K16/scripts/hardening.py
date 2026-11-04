@@ -328,7 +328,7 @@ def main():
             e,
             duration_ms=(perf_counter() - start) * 1000,
         )
-
+        sys.exit(2)
     finally:
         release_lock(lock_file)
 

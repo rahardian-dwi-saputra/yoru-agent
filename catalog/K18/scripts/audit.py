@@ -1,6 +1,8 @@
 from __future__ import annotations
 from pathlib import Path
+from time import perf_counter
 import subprocess
+import shutil
 import sys
 
 # Import modul catalogutils via sys.path
@@ -10,10 +12,16 @@ PROJECT_ROOT = SCRIPT_DIR.parents[2]  # Naik 3 level ke yoru-agent/
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from config.settings import SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE, CATALOG_LOCKS
+from config.settings import (
+    SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE,
+    SYSCTL_TARGET_ACCEPT_SOURCE_ROUTE, 
+    CATALOG_LOCKS
+)
 
 from pipeline.catalogutils import (
+    LogStatus,
     BaseLogger,
+    load_taskfile_vars,
     acquire_lock,
     release_lock,
 )
@@ -21,66 +29,114 @@ from pipeline.catalogutils import (
 
 def check_sysctl_values() -> tuple[bool, str]:
     """Memeriksa nilai parameter sysctl untuk penolakan source routed packets."""
-    try:
-        failed_keys = []
-        details = []
+    sysctl_path = shutil.which("sysctl")
 
-        for key in SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE:
-            res = subprocess.run(
-                ["sysctl", "-n", key],
+    if not sysctl_path:
+        raise RuntimeError("Executable sysctl tidak ditemukan.")
+
+    if not SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE:
+        raise RuntimeError("Daftar parameter ICMP Redirect tidak tersedia.")
+
+    details = []
+    errors = []
+    non_compliant = False
+
+    for key in SYSCTL_KEYS_ACCEPT_SOURCE_ROUTE:
+        try:
+            result = subprocess.run(
+                [sysctl_path, "-n", key],
                 capture_output=True,
                 text=True,
+                timeout=10,
                 check=False,
             )
-            if res.returncode != 0:
-                failed_keys.append(key)
+
+            if result.returncode != 0:
+                error_message = result.stderr.strip() or "Gagal membaca nilai parameter."
+                errors.append(f"{key}: {error_message}")
                 continue
 
-            val = res.stdout.strip()
-            if val != "0":
-                failed_keys.append(key)
-                details.append(f"{key}={val} (seharusnya 0)")
-            else:
-                details.append(f"{key}=0 (OK)")
+            value = result.stdout.strip()
 
-        if failed_keys:
-            return False, f"Parameter belum sesuai standar CIS: {', '.join(details)}"
-        
-        return True, f"Semua parameter source routed packets sudah aman: {', '.join(details)}"
-    except Exception as e:
-        return False, f"Gagal mengecek sysctl: {str(e)}"
+            if value != SYSCTL_TARGET_ACCEPT_SOURCE_ROUTE:
+                non_compliant = True
+                details.append(f"{key}={value} (seharusnya {SYSCTL_TARGET_ACCEPT_SOURCE_ROUTE})")
+            else:
+                details.append(f"{key}={value} (OK)")
+
+        except subprocess.TimeoutExpired:
+            errors.append(f"{key}: Pemeriksaan mengalami timeout.")
+
+        except OSError as exc:
+            errors.append(f"{key}: {exc}")
+
+    if errors:
+        raise RuntimeError(
+            "Gagal membaca satu atau lebih parameter sysctl: "
+            + "; ".join(errors)
+        )
+
+    if non_compliant:
+        return False, (
+            "Parameter ICMP Redirect belum sesuai standar CIS: "
+            + ", ".join(details)
+        )
+
+    return True, (
+        "Semua parameter ICMP Redirect telah sesuai standar CIS: "
+        + ", ".join(details)
+    )
 
 
 def main():
+    task_vars = load_taskfile_vars(SCRIPT_DIR)
+
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
         log_file_name="audit.json",
-        catalog="K18",
-        cis_id="3.3.8",
+        catalog=task_vars.get("ID", "K18"),
+        nama=task_vars.get("NAMA", "Penolakan Source Routed Packets"),
+        kode_cis=task_vars.get("KODE_CIS", "3.3.8"),
+        judul_cis=task_vars.get("JUDUL_CIS", "Ensure source routed packets are not accepted"),
+        versi_cis=task_vars.get("VERSI_CIS", "Ubuntu 24.04 LTS Benchmark v2.0.0"),
+        regulasi=task_vars.get("REGULASI", "Pasal 35, Pasal 39"),
+        kepatuhan=task_vars.get("KEPATUHAN", "UU PDP No. 27/2022"),
         log_type="audit",
     )
 
     lock_name = CATALOG_LOCKS.get("K18", "source_route_audit")
     lock_file = acquire_lock(lock_name, logger)
 
+    start = perf_counter()
+
     try:
         is_compliant, detail = check_sysctl_values()
 
         if is_compliant:
             logger.log(
-                "COMPLIANT",
+                LogStatus.COMPLIANT,
                 "Result",
                 f"Hasil Audit: COMPLIANT - {detail}",
+                duration_ms=(perf_counter() - start) * 1000,
             )
+            sys.exit(0)
         else:
             logger.log(
-                "NON_COMPLIANT",
+                LogStatus.NON_COMPLIANT,
                 "Result",
                 f"Hasil Audit: NON_COMPLIANT - {detail}",
+                duration_ms=(perf_counter() - start) * 1000,
             )
+            sys.exit(1)
 
     except Exception as e:
-        logger.log_error("K18", "audit", e)
+        logger.log_error(
+            "K18", 
+            "audit", 
+            e,
+            duration_ms=(perf_counter() - start) * 1000,
+        )
+        sys.exit(2)
 
     finally:
         release_lock(lock_file)
