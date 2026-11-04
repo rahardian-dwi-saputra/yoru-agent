@@ -104,6 +104,9 @@ def get_available_catalogs() -> List[CatalogMetadata]:
                     deskripsi="-",
                     risiko="-",
                     kategori="-",
+                    audit_only=False,
+                    pesan_hardening="-",
+                    pesan_rollback="-",
                 )
             )
 

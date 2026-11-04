@@ -11,14 +11,20 @@ class CatalogMetadata(BaseModel):
     id: str
     nama: str
     kode_cis: str
-    cis_judul: str
+    judul_cis: str
+    versi_cis: str
+    regulasi: str
+    kepatuhan: str
+    framework: str
     deskripsi: Optional[str] = ""
-    resiko: str
+    risiko: str
     kategori: str
     audit_only: bool = Field(
         default=False, 
         description="Indikator apakah katalog ini hanya mengizinkan audit tanpa hardening/rollback."
     )
+    pesan_hardening: Optional[str] = ""
+    pesan_rollback: Optional[str] = ""
 
 
 class CatalogListResponse(BaseModel):
