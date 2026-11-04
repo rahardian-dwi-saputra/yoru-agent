@@ -21,13 +21,17 @@ def parse_taskfile_metadata(taskfile_path: Path) -> Optional[CatalogMetadata]:
         catalog_id = str(vars_data.get("ID") or taskfile_path.parent.name)
         nama = str(vars_data.get("NAMA") or "")
         kode_cis = str(vars_data.get("KODE_CIS") or "")
-        cis_judul = str(vars_data.get("CIS_JUDUL") or "")
+        judul_cis = str(vars_data.get("JUDUL_CIS") or "")
+        versi_cis = str(vars_data.get("VERSI_CIS") or "")
+        regulasi = str(vars_data.get("REGULASI") or "")
+        kepatuhan = str(vars_data.get("KEPATUHAN") or "")
+        framework = str(vars_data.get("FRAMEWORK") or "")
         
         # Penanganan multiline string deskripsi yang aman dari None
         deskripsi_raw = vars_data.get("DESKRIPSI") or ""
         deskripsi = str(deskripsi_raw).strip()
         
-        resiko = str(vars_data.get("RISIKO") or "")
+        risiko = str(vars_data.get("RISIKO") or "")
         kategori = str(vars_data.get("KATEGORI") or "")
         
         # Konversi fleksibel untuk boolean AUDIT_ONLY
@@ -37,15 +41,28 @@ def parse_taskfile_metadata(taskfile_path: Path) -> Optional[CatalogMetadata]:
         else:
             audit_only = bool(audit_only_val)
 
+        # Penanganan multiline string deskripsi yang aman dari None
+        pesan_hardening_raw = vars_data.get("PESAN_HARDENING") or ""
+        pesan_hardening = str(pesan_hardening_raw).strip()
+
+        pesan_rollback_raw = vars_data.get("PESAN_ROLLBACK") or ""
+        pesan_rollback = str(pesan_rollback_raw).strip()
+
         return CatalogMetadata(
             id=catalog_id,
             nama=nama,
             kode_cis=kode_cis,
-            cis_judul=cis_judul,
+            judul_cis=judul_cis,
+            versi_cis=versi_cis,
+            regulasi=regulasi,
+            kepatuhan=kepatuhan,
+            framework=framework,
             deskripsi=deskripsi,
-            resiko=resiko,
+            risiko=risiko,
             kategori=kategori,
             audit_only=audit_only,
+            pesan_hardening=pesan_hardening,
+            pesan_rollback=pesan_rollback,
         )
     except Exception:
         return None
@@ -79,8 +96,13 @@ def get_available_catalogs() -> List[CatalogMetadata]:
                     id=cat_dir.name,
                     nama="Katalog " + cat_dir.name,
                     kode_cis="-",
-                    cis_judul="-",
-                    resiko="-",
+                    judul_cis="-",
+                    versi_cis="-",
+                    regulasi="-",
+                    kepatuhan="-",
+                    framework="-",
+                    deskripsi="-",
+                    risiko="-",
                     kategori="-",
                 )
             )
