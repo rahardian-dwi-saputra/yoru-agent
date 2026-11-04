@@ -1,13 +1,16 @@
-import sys
-import os
-import requests
+from __future__ import annotations
 from datetime import datetime
+from pathlib import Path
+from typing import Any
+import sys
+import requests
 
 
-CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
-PROJECT_DIR = os.path.abspath(os.path.join(CURRENT_DIR, ".."))
-if PROJECT_DIR not in sys.path:
-    sys.path.insert(0, PROJECT_DIR)
+CURRENT_DIR = Path(__file__).resolve().parent
+PROJECT_DIR = CURRENT_DIR.parent
+
+if str(PROJECT_DIR) not in sys.path:
+    sys.path.insert(0, str(PROJECT_DIR))
 
 from config.api import API_HOST, API_PORT, API_KEY_PATH
 
@@ -17,391 +20,314 @@ from database import (
     save_or_update_catalogs,
     update_execution_status,
     get_dashboard_metrics,
+    save_server_info,
 )
 
 API_BASE_URL = f"http://{API_HOST}:{API_PORT}/api/v1"
+REQUEST_TIMEOUT = 10
+ACTION_TIMEOUT = 30
+CONFIRM_TIMEOUT = 60
 
-init_db()
+
 
 def get_api_key() -> str:
-    """Membaca isi file API key dari path yang ditentukan di config/api.py."""
-    # Jika path bersifat relatif, ubah menjadi absolut berdasarkan root proyek
-    full_key_path = (
-        API_KEY_PATH
-        if os.path.isabs(API_KEY_PATH)
-        else os.path.join(PROJECT_DIR, API_KEY_PATH)
+    """Membaca API key dari file konfigurasi."""
+    key_path = Path(API_KEY_PATH)
+    if not key_path.is_absolute():
+        key_path = PROJECT_DIR / key_path
+
+    try:
+        return key_path.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return ""
+    except OSError:
+        return ""
+
+
+def _get_headers(*, json_content: bool = False) -> dict[str, str]:
+    """Membuat header request dan menyertakan API key jika tersedia."""
+    headers = {}
+    api_key = get_api_key()
+
+    if api_key:
+        headers["X-API-Key"] = api_key
+    if json_content:
+        headers["Content-Type"] = "application/json"
+
+    return headers
+
+
+def _request(
+    method: str,
+    endpoint: str,
+    *,
+    payload: dict[str, Any] | None = None,
+    timeout: int = REQUEST_TIMEOUT,
+) -> tuple[bool, dict[str, Any], str]:
+    """
+    Menjalankan request ke API.
+
+    Return: (berhasil, response_json, pesan_error).
+    """
+    url = f"{API_BASE_URL}{endpoint}"
+
+    try:
+        response = requests.request(
+            method=method,
+            url=url,
+            headers=_get_headers(json_content=payload is not None),
+            json=payload,
+            timeout=timeout,
+        )
+    except requests.Timeout:
+        return False, {}, f"Request ke {endpoint} mengalami timeout."
+    except requests.RequestException as exc:
+        return False, {}, f"Tidak dapat menghubungi API ({endpoint}): {exc}"
+
+    if not response.ok:
+        detail = response.text.strip()[:500]
+        message = f"API mengembalikan HTTP {response.status_code}"
+        if detail:
+            message += f": {detail}"
+        return False, {}, message
+
+    if not response.content:
+        return True, {}, ""
+
+    try:
+        data = response.json()
+    except requests.exceptions.JSONDecodeError:
+        return False, {}, f"Respons API {endpoint} bukan JSON yang valid."
+
+    if not isinstance(data, dict):
+        return False, {}, f"Format respons API {endpoint} tidak sesuai."
+
+    return True, data, ""
+
+
+def _update_result_status(results: list[dict[str, Any]], action_type: str) -> None:
+    """Menyimpan status setiap hasil eksekusi ke database lokal."""
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+
+        catalog_id = result.get("catalog")
+        log_data = result.get("log_data") or {}
+
+        if not catalog_id or not isinstance(log_data, dict):
+            continue
+
+        status = (
+            log_data.get("level")
+            or result.get("level")
+            or result.get("status")
+        )
+        if not status:
+            continue
+
+        update_execution_status(
+            rule_id=str(catalog_id),
+            action_type=action_type,
+            status=str(status).upper(),
+            timestamp=timestamp,
+        )
+
+
+def _trigger_audit(catalogs: list[str]) -> tuple[bool, str]:
+    """Menjalankan audit untuk satu atau beberapa katalog."""
+    success, data, error = _request(
+        "POST",
+        "/agent/audit",
+        payload={"catalogs": catalogs},
+        timeout=ACTION_TIMEOUT,
+    )
+    if not success:
+        return False, error
+
+    results = data.get("results", [])
+    if isinstance(results, list):
+        _update_result_status(results, "audit")
+
+    return True, data.get("message", "Audit selesai diproses.")
+
+
+def _init_plan(
+    action: str,
+    catalogs: list[str],
+) -> tuple[bool, dict[str, Any]]:
+    """Meminta plan hardening atau rollback ke API."""
+    endpoint = f"/agent/{action}/init"
+    success, data, error = _request(
+        "POST",
+        endpoint,
+        payload={"catalogs": catalogs},
+        timeout=ACTION_TIMEOUT,
     )
 
-    try:
-        if os.path.exists(full_key_path):
-            with open(full_key_path, "r", encoding="utf-8") as f:
-                return f.read().strip()
-    except Exception:
-        pass
-    return ""
+    if not success:
+        return False, {"message": error}
+
+    return True, data
 
 
-def fetch_system_info():
-    """Mengambil informasi Sistem dari FastAPI."""
-    api_key = get_api_key()
+def _confirm_plan(
+    action: str,
+    plan_id: str,
+    approved: bool,
+    catalog: str | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    """Mengirim keputusan persetujuan plan hardening atau rollback."""
+    payload: dict[str, Any] = {
+        "plan_id": plan_id,
+        "approved": approved,
+    }
+    if catalog:
+        payload["catalog"] = catalog
 
-    headers = {}
-    if api_key:
-        headers["X-API-Key"] = api_key
+    endpoint = f"/agent/{action}/confirm"
+    success, data, error = _request(
+        "POST",
+        endpoint,
+        payload=payload,
+        timeout=CONFIRM_TIMEOUT,
+    )
 
-    try:
-        response = requests.get(
-            f"{API_BASE_URL}/system/info", 
-            headers=headers, 
-            timeout=3
-        )
+    if not success:
+        return False, {"message": error}
 
-        if response.status_code == 200:
-            return response.json()
-    except Exception:
-        pass
-    
-    return {
-        "os_platform": "",
-        "architecture": "",
+    if approved:
+        results = data.get("results", [])
+        if isinstance(results, list):
+            _update_result_status(results, action)
+
+    return True, data
+
+
+def fetch_system_info() -> dict[str, Any]:
+    """Mengambil dan menyimpan informasi sistem dari FastAPI."""
+
+    success, data, _ = _request("GET", "/system/info", timeout=3)
+
+    if not success:
+        return {
+            "os_platform": "",
+            "architecture": "",
+        }
+
+    system_info = {
+        "os_platform": data.get("os_platform", ""),
+        "architecture": data.get("architecture", ""),
     }
 
+    save_server_info(system_info)
 
-def fetch_catalog_data(page: int = 1, per_page: int = 10):
-    """Menarik daftar katalog dari endpoint /catalogs dan menyimpannya ke database lokal."""
+    return system_info
 
-    api_key = get_api_key()
-    
-    headers = {}
-    if api_key:
-        headers["X-API-Key"] = api_key
 
-    try:
-        response = requests.get(
-            f"{API_BASE_URL}/catalogs", 
-            headers=headers, 
-            timeout=5
-        )
+def fetch_catalog_data(
+    page: int = 1,
+    per_page: int = 10,
+) -> tuple[list[dict[str, Any]], int]:
+    """
+    Mengambil katalog dari API, menyimpannya ke SQLite, lalu
+    mengembalikan data lokal sesuai pagination.
+    """
+    success, data, _ = _request("GET", "/catalogs", timeout=REQUEST_TIMEOUT)
 
-        if response.status_code == 200:
-            data = response.json()
-            catalogs_list = data.get("catalogs", [])
-
-            if catalogs_list:
-                save_or_update_catalogs(catalogs_list)
-
-    except Exception:
-        pass
+    if success:
+        catalogs = data.get("catalogs", [])
+        if isinstance(catalogs, list) and catalogs:
+            system_info = fetch_system_info()
+            save_or_update_catalogs(catalogs, server_info=system_info)
 
     return get_paginated_catalogs(page=page, per_page=per_page)
 
 
-def fetch_dashboard_metrics():
-    """Mengambil metrik statistik dari database lokal dan memformatnya
+def fetch_dashboard_metrics() -> dict[str, Any]:
+    """Mengambil metrik SQLite dan memformatnya untuk dashboard."""
+    metrics = get_dashboard_metrics()
 
-    untuk rasio Total Audit dan Total Hardening.
-    """
-    try:
-        metrics = get_dashboard_metrics()
-        
-        total_audit_roles = metrics.get("total_audit_roles", 0)
-        total_audit_berhasil = metrics.get("total_audit_berhasil", 0)
-        
-        total_hardening_roles = metrics.get("total_hardening_roles", 0)
-        total_hardening_berhasil = metrics.get("total_hardening_berhasil", 0)
+    audit_done = metrics.get("total_audit_berhasil", 0)
+    audit_total = metrics.get("total_audit_roles", 0)
+    hardening_done = metrics.get("total_hardening_berhasil", 0)
+    hardening_total = metrics.get("total_hardening_roles", 0)
+    rollback_done = metrics.get("total_rollback_berhasil", 0)
+    rollback_total = metrics.get("total_rollback_roles", 0)
 
-        total_rollback_roles = metrics.get("total_rollback_roles", 0)
-        total_rollback_berhasil = metrics.get("total_rollback_berhasil", 0)
-        
-        return {
-            "audit_ratio": f"{total_audit_berhasil} / {total_audit_roles}",
-            "hardening_ratio": f"{total_hardening_berhasil} / {total_hardening_roles}",
-            "rollback_ratio": f"{total_rollback_berhasil} / {total_rollback_roles}",
-            "raw": metrics
-        }
-    except Exception:
-        pass
-    
-    # Fallback jika terjadi kendala
     return {
-        "audit_ratio": "0 / 0",
-        "hardening_ratio": "0 / 0",
-        "rollback_ratio": "0 / 0",
-        "raw": {}
+        "audit_ratio": f"{audit_done} / {audit_total}",
+        "hardening_ratio": f"{hardening_done} / {hardening_total}",
+        "rollback_ratio": f"{rollback_done} / {rollback_total}",
+        "raw": metrics,
     }
 
 
-def refresh_catalog_data():
-    """Memaksa penarikan data katalog terbaru dari endpoint /catalogs
+def refresh_catalog_data() -> bool:
+    """Memperbarui cache katalog lokal dari API."""
+    success, data, _ = _request("GET", "/catalogs", timeout=REQUEST_TIMEOUT)
+    if not success:
+        return False
 
-    dan memperbarui database lokal SQLite. Mengembalikan True jika berhasil.
-    """
-    api_key = get_api_key()
-    headers = {}
-    if api_key:
-        headers["X-API-Key"] = api_key
+    catalogs = data.get("catalogs", [])
+    if not isinstance(catalogs, list):
+        return False
 
-    try:
-        response = requests.get(
-            f"{API_BASE_URL}/catalogs", 
-            headers=headers, 
-            timeout=5
-        )
-        if response.status_code == 200:
-            data = response.json()
-            catalogs_list = data.get("catalogs", [])
-            if catalogs_list:
-                save_or_update_catalogs(catalogs_list)
-                return True
-    except Exception:
-        pass
-    return False
+    # Respons sukses dengan daftar kosong tetap dianggap berhasil.
+    if catalogs:
+        system_info = fetch_system_info()
+        save_or_update_catalogs(catalogs, server_info=system_info)
+
+    return True
 
 
-def trigger_audit_all():
-    """Mengirim request POST /agent/audit untuk seluruh katalog ('ALL'),
-
-    lalu memperbarui status audit dan waktu audit menggunakan update_execution_status.
-    """
-    api_key = get_api_key()
-    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
-    payload = {"catalogs": ["ALL"]}
-
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/agent/audit", 
-            headers=headers, 
-            json=payload, 
-            timeout=30
-        )
-        if response.status_code == 200:
-            data = response.json()
-            results = data.get("results", [])
-
-            if results:
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                for res in results:
-                    catalog_id = res.get("catalog")
-                    log_data = res.get("log_data", {})
-                    
-                    if catalog_id and log_data:
-                        audit_level = log_data.get("level", "PENDING")
-                        
-                        update_execution_status(
-                            rule_id=catalog_id,
-                            action_type="audit",
-                            status=audit_level,
-                            timestamp=current_time
-                        )
-
-            return True, data.get("message", "Audit selesai diproses.")
-    except Exception as e:
-        pass
-    
-    return False, "Gagal menghubungi endpoint /agent/audit."
+def trigger_audit_all() -> tuple[bool, str]:
+    """Menjalankan audit untuk seluruh katalog."""
+    return _trigger_audit(["ALL"])
 
 
-def trigger_single_audit(rule_id: str):
-    """Mengirim request POST /agent/audit untuk satu katalog tertentu,
-
-    lalu memperbarui status audit dan waktu audit menggunakan update_execution_status.
-    """
-    api_key = get_api_key()
-    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
-    payload = {"catalogs": [rule_id]}
-
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/agent/audit", 
-            headers=headers, 
-            json=payload, 
-            timeout=30
-        )
-        if response.status_code == 200:
-            data = response.json()
-            results = data.get("results", [])
-
-            if results:
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-                for res in results:
-                    catalog_id = res.get("catalog")
-                    log_data = res.get("log_data", {})
-                    
-                    if catalog_id and log_data:
-                        audit_level = log_data.get("level", "PENDING")
-                        
-                        update_execution_status(
-                            rule_id=catalog_id,
-                            action_type="audit",
-                            status=audit_level,
-                            timestamp=current_time
-                        )
-
-            return True, data.get(
-                "message", f"Audit untuk rule {rule_id} selesai diproses."
-            )
-    except Exception:
-        pass
-    
-    return False, f"Gagal menjalankan audit untuk rule {rule_id}."
+def trigger_single_audit(rule_id: str) -> tuple[bool, str]:
+    """Menjalankan audit untuk satu katalog."""
+    return _trigger_audit([rule_id])
 
 
-def init_hardening_all():
-    """Meminta plan hardening untuk seluruh katalog (/agent/hardening/init)."""
-    api_key = get_api_key()
-    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
-    payload = {"catalogs": ["ALL"]}
-
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/agent/hardening/init", 
-            headers=headers, 
-            json=payload, 
-            timeout=30
-        )
-        if response.status_code == 200:
-            return True, response.json()
-    except Exception:
-        pass
-    return False, {"message": "Gagal menghubungi endpoint /agent/hardening/init."}
+def init_hardening_all() -> tuple[bool, dict[str, Any]]:
+    """Membuat plan hardening untuk seluruh katalog."""
+    return _init_plan("hardening", ["ALL"])
 
 
-def init_single_hardening(rule_id: str):
-    """Meminta plan hardening untuk satu katalog tertentu (/agent/hardening/init)."""
-    api_key = get_api_key()
-    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
-    payload = {"catalogs": [rule_id]}
-
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/agent/hardening/init", 
-            headers=headers, 
-            json=payload, 
-            timeout=30
-        )
-        if response.status_code == 200:
-            return True, response.json()
-    except Exception:
-        pass
-    return False, {"message": f"Gagal menginisialisasi plan hardening untuk rule {rule_id}."}
+def init_single_hardening(rule_id: str) -> tuple[bool, dict[str, Any]]:
+    """Membuat plan hardening untuk satu katalog."""
+    return _init_plan("hardening", [rule_id])
 
 
-def confirm_hardening_plan(plan_id: str, approved: bool, catalog: str = None):
-    """Mengirim konfirmasi persetujuan atau pembatalan plan hardening (/agent/hardening/confirm)."""
-    api_key = get_api_key()
-    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
-    payload = {"plan_id": plan_id, "approved": approved}
-
-    if catalog:
-        payload["catalog"] = catalog
-
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/agent/hardening/confirm", 
-            headers=headers, 
-            json=payload, 
-            timeout=60
-        )
-        if response.status_code == 200:
-            data = response.json()
-            
-            # Jika disetujui (approved=True), lakukan update status ke database lokal
-            if approved and "results" in data:
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                for res in data.get("results", []):
-                    catalog_id = res.get("catalog")
-                    log_data = res.get("log_data", {})
-                    
-                    if catalog_id and log_data:
-
-                        hardening_level = log_data.get("level", "PENDING")
-                        
-                        update_execution_status(
-                            rule_id=catalog_id,
-                            action_type="hardening",
-                            status=hardening_level,
-                            timestamp=current_time
-                        )
-                        
-            return True, data
-    except Exception:
-        pass
-    
-    return False, {"message": "Gagal menghubungi endpoint /agent/hardening/confirm."}
+def confirm_hardening_plan(
+    plan_id: str,
+    approved: bool,
+    catalog: str | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    """Menyetujui atau membatalkan plan hardening."""
+    return _confirm_plan("hardening", plan_id, approved, catalog)
 
 
-def init_rollback_all():
-    """Meminta plan rollback untuk seluruh katalog (/agent/rollback/init)."""
-    api_key = get_api_key()
-    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
-    payload = {"catalogs": ["ALL"]}
-
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/agent/rollback/init", headers=headers, json=payload, timeout=30
-        )
-        if response.status_code == 200:
-            return True, response.json()
-    except Exception:
-        pass
-    return False, {"message": "Gagal menghubungi endpoint /agent/rollback/init."}
+def init_rollback_all() -> tuple[bool, dict[str, Any]]:
+    """Membuat plan rollback untuk seluruh katalog."""
+    return _init_plan("rollback", ["ALL"])
 
 
-def init_single_rollback(rule_id: str):
-    """Meminta plan rollback untuk satu katalog tertentu (/agent/rollback/init)."""
-    api_key = get_api_key()
-    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
-    payload = {"catalogs": [rule_id]}
-
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/agent/rollback/init", headers=headers, json=payload, timeout=30
-        )
-        if response.status_code == 200:
-            return True, response.json()
-    except Exception:
-        pass
-    return False, {"message": f"Gagal menginisialisasi plan rollback untuk rule {rule_id}."}
+def init_single_rollback(rule_id: str) -> tuple[bool, dict[str, Any]]:
+    """Membuat plan rollback untuk satu katalog."""
+    return _init_plan("rollback", [rule_id])
 
 
-def confirm_rollback_plan(plan_id: str, approved: bool, catalog: str = None):
-    """Mengirim konfirmasi persetujuan atau pembatalan plan rollback (/agent/rollback/confirm)."""
-    api_key = get_api_key()
-    headers = {"X-API-Key": api_key, "Content-Type": "application/json"} if api_key else {"Content-Type": "application/json"}
-    payload = {"plan_id": plan_id, "approved": approved}
+def confirm_rollback_plan(
+    plan_id: str,
+    approved: bool,
+    catalog: str | None = None,
+) -> tuple[bool, dict[str, Any]]:
+    """Menyetujui atau membatalkan plan rollback."""
+    return _confirm_plan("rollback", plan_id, approved, catalog)
 
-    if catalog:
-        payload["catalog"] = catalog
-
-    try:
-        response = requests.post(
-            f"{API_BASE_URL}/agent/rollback/confirm", headers=headers, json=payload, timeout=60
-        )
-        if response.status_code == 200:
-            data = response.json()
-            
-            # Jika disetujui (approved=True), update status rollback ke database lokal
-            if approved and "results" in data:
-                current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                for res in data.get("results", []):
-                    catalog_id = res.get("catalog")
-                    log_data = res.get("log_data", {})
-                    
-                    if catalog_id and log_data:
-                        rollback_level = log_data.get("level", "PENDING") # Contoh: SUCCESS / FAILED
-                        
-                        # Memanggil fungsi database yang sudah ada
-                        update_execution_status(
-                            rule_id=catalog_id,
-                            action_type="rollback",
-                            status=rollback_level,
-                            timestamp=current_time
-                        )
-                        
-            return True, data
-    except Exception:
-        pass
-    
-    return False, {"message": "Gagal menghubungi endpoint /agent/rollback/confirm."}
+# Inisialisasi database ketika modul service pertama kali dimuat.
+init_db()

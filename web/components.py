@@ -1,644 +1,558 @@
+from __future__ import annotations
+
+import html
 import math
-import streamlit as st
-import os
 from datetime import datetime
-from services import (
-  refresh_catalog_data, 
-  trigger_audit_all, 
-  trigger_single_audit,
-  init_hardening_all,
-  init_single_hardening,
-  confirm_hardening_plan,
-  init_rollback_all,
-  init_single_rollback,
-  confirm_rollback_plan
-)
+from pathlib import Path
+from typing import Any
+
+import streamlit as st
+
 from database import get_catalog_detail, get_paginated_catalogs
+from services import (
+    confirm_hardening_plan,
+    confirm_rollback_plan,
+    init_hardening_all,
+    init_rollback_all,
+    init_single_hardening,
+    init_single_rollback,
+    refresh_catalog_data,
+    trigger_audit_all,
+    trigger_single_audit,
+)
 from utils_pdf import generate_pentest_pdf
 
 
-def render_styles():
-    """Memuat kustomisasi CSS tema Grafana."""
+ITEMS_PER_PAGE = 10
+PDF_FILENAME = "Yoru_Agent_Pentest_Report.pdf"
+
+
+def _safe(value: Any, default: str = "-") -> str:
+    """Mengubah nilai menjadi teks aman untuk ditampilkan pada HTML."""
+    if value is None or str(value).strip() == "":
+        return default
+    return html.escape(str(value))
+
+
+def _as_bool(value: Any) -> bool:
+    """Normalisasi boolean dari SQLite/API, termasuk nilai string '0'."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "ya", "on"}
+
+
+def _catalog_value(item: dict, *keys: str, default: Any = "-") -> Any:
+    """Mengambil field dengan dukungan nama lama dan nama alternatif."""
+    for key in keys:
+        value = item.get(key)
+        if value not in (None, ""):
+            return value
+    return default
+
+
+def _format_timestamp(value: Any) -> str:
+    if not value or str(value).strip().lower() in {"-", "none"}:
+        return "-"
+    text = str(value)
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+        try:
+            return datetime.strptime(text.split(".")[0], fmt).strftime(
+                "%d-%m-%Y %H:%M:%S"
+            )
+        except ValueError:
+            continue
+    return text
+
+
+def render_styles() -> None:
+    """Memuat tema gelap bergaya Grafana."""
     st.markdown(
         """
         <style>
             .stApp {
                 background-color: #111217;
                 color: #d8d9db;
-                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+                font-family: -apple-system, BlinkMacSystemFont, "Segoe UI",
+                    Roboto, Helvetica, Arial, sans-serif;
             }
             .grafana-panel {
-                background-color: #1e1f2b;
+                background: #1e1f2b;
                 border: 1px solid #2d2f3d;
-                border-radius: 4px;
+                border-radius: 6px;
                 padding: 16px;
-                margin-bottom: 16px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+                margin-bottom: 12px;
             }
             .metric-title {
-                font-size: 12px;
                 color: #8e8f99;
+                font-size: 12px;
+                letter-spacing: .4px;
                 text-transform: uppercase;
-                letter-spacing: 0.5px;
-                margin-bottom: 4px;
+                margin-bottom: 5px;
             }
             .metric-value {
+                color: #f7f8f9;
                 font-size: 20px;
                 font-weight: 600;
-                color: #f7f8f9;
             }
-            #MainMenu {visibility: hidden;}
-            footer {visibility: hidden;}
+            #MainMenu, footer { visibility: hidden; }
         </style>
-    """,
+        """,
         unsafe_allow_html=True,
     )
 
-def render_metrics_row(sys_info, metrics_data):
-    """Baris pertama: Kotak Informasi Sistem & Total Rules."""
 
-    audit_ratio = metrics_data.get("audit_ratio", "0 / 0")
-    hardening_ratio = metrics_data.get("hardening_ratio", "0 / 0")
-    rollback_ratio = metrics_data.get("rollback_ratio", "0 / 0")
+def render_metrics_row(sys_info: dict, metrics_data: dict) -> None:
+    """Menampilkan informasi sistem dan ringkasan status katalog."""
+    sys_info = sys_info or {}
+    metrics_data = metrics_data or {}
 
-    col1, col2, col3, col4 = st.columns(4)
+    metrics = [
+        (
+            "Informasi Sistem Operasi",
+            _catalog_value(sys_info, "os_platform", default="Tidak diketahui"),
+            f"Arch: {_safe(sys_info.get('architecture'), 'Tidak diketahui')}",
+            "#f7f8f9",
+        ),
+        (
+            "Total Audit (Berhasil / Total)",
+            metrics_data.get("audit_ratio", "0 / 0"),
+            "Status: Berdasarkan katalog",
+            "#36a2eb",
+        ),
+        (
+            "Total Hardening (Berhasil / Total)",
+            metrics_data.get("hardening_ratio", "0 / 0"),
+            "Status: Standar CIS Benchmark",
+            "#4bc0c0",
+        ),
+        (
+            "Total Rollback (Berhasil / Total)",
+            metrics_data.get("rollback_ratio", "0 / 0"),
+            "Status: Pemulihan sistem",
+            "#ff6384",
+        ),
+    ]
 
-    with col1:
-        st.markdown(
-            f"""
-            <div class="grafana-panel">
-                <div class="metric-title">Informasi Sistem Operasi</div>
-                <div class="metric-value">{sys_info.get('os_platform', '')}</div>
-                <div style="font-size: 11px; color: #8e8f99; margin-top: 4px;">Arch: {sys_info.get('architecture', 'x86_64')}</div>
-            </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
-    with col2:
-        st.markdown(
-            f"""
-            <div class="grafana-panel">
-                <div class="metric-title">Total Audit (Berhasil / Total)</div>
-                <div class="metric-value">{audit_ratio} <span style="font-size:13px; color:#36a2eb;">(Compliant)</span></div>
-                <div style="font-size: 11px; color: #8e8f99; margin-top: 4px;">Status: Berdasarkan Katalog</div>
-            </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
-    with col3:
-        st.markdown(
-            f"""
-            <div class="grafana-panel">
-                <div class="metric-title">Total Hardening (Berhasil / Total)</div>
-                <div class="metric-value">{hardening_ratio} <span style="font-size:13px; color:#4bc0c0;">(Applied)</span></div>
-                <div style="font-size: 11px; color: #8e8f99; margin-top: 4px;">Status: Standar CIS Benchmark</div>
-            </div>
-        """,
-            unsafe_allow_html=True,
-        )
-
-    with col4:
-        st.markdown(
-            f"""
-            <div class="grafana-panel">
-                <div class="metric-title">Total Rollback (Berhasil / Total)</div>
-                <div class="metric-value">{rollback_ratio} <span style="font-size:13px; color:#ff6384;">(Restored)</span></div>
-                <div style="font-size: 11px; color: #8e8f99; margin-top: 4px;">Status: Pemulihan Sistem</div>
-            </div>
-        """,
-            unsafe_allow_html=True,
-        )
+    columns = st.columns(4)
+    for column, (title, value, caption, accent) in zip(columns, metrics):
+        with column:
+            st.markdown(
+                f"""
+                <div class="grafana-panel">
+                    <div class="metric-title">{_safe(title)}</div>
+                    <div class="metric-value" style="color:{accent}">
+                        {_safe(value)}
+                    </div>
+                    <div style="font-size:11px;color:#8e8f99;margin-top:5px">
+                        {_safe(caption)}
+                    </div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
 
 
-@st.dialog("⚠️ Konfirmasi Hardening All")
-def show_hardening_confirmation_modal(plan_data):
-    message = plan_data.get("message", "Apakah Anda yakin ingin menjalankan aksi hardening?")
-    plans_list = plan_data.get("plans", [])
-    
-    plan_id = plans_list[0].get("plan_id") if plans_list else None
-    expires_at = plans_list[0].get("expires_at") if plans_list else "-"
-    catalogs_affected = plans_list[0].get("catalogs", [])
+def _get_plan_details(plan_data: dict) -> tuple[str | None, str, list]:
+    plans = plan_data.get("plans") or []
+    plan = plans[0] if plans and isinstance(plans[0], dict) else {}
+    return (
+        plan.get("plan_id"),
+        plan.get("expires_at", "-"),
+        plan.get("catalogs") or [],
+    )
 
-    st.markdown(f"**Pesan Sistem:**\n> {message}")
-    st.markdown(f"- **Plan ID:** `{plan_id}`")
-    st.markdown(f"- **Total Katalog Terdampak:** `{len(catalogs_affected)} rules`")
-    st.markdown(f"- **Kedaluwarsa:** `{expires_at}`")
-    
-    st.markdown("---")
-    st.warning("Aksi ini akan mengubah konfigurasi sistem server. Lanjutkan?")
 
-    col_yes, col_no = st.columns(2)
-    
-    with col_yes:
-      if st.button("✅ Iya, Lanjutkan", use_container_width=True, type="primary"):
-        if plan_id:
-          success, response = confirm_hardening_plan(plan_id, approved=True)
-          if success:
-            st.success(response.get("message", "Hardening selesai diproses."))
+@st.dialog("⚠️ Konfirmasi Aksi")
+def _show_action_confirmation(
+    action: str,
+    scope: str,
+    plan_data: dict,
+    rule_id: str | None = None,
+) -> None:
+    """Dialog konfirmasi tunggal untuk hardening dan rollback."""
+    confirm_fn = (
+        confirm_hardening_plan if action == "hardening" else confirm_rollback_plan
+    )
+    action_label = "Hardening" if action == "hardening" else "Rollback"
+    is_all = scope == "all"
+    plan_id, expires_at, affected_catalogs = _get_plan_details(plan_data)
+
+    if rule_id:
+      detail = get_catalog_detail(rule_id)
+
+      message_key = (
+        "pesan_hardening"
+        if action == "hardening"
+        else "pesan_rollback"
+      )
+
+      message = (
+        detail.get(message_key)
+        if detail
+        else None
+      )
+    else:
+      message = None
+
+    message = message or plan_data.get(
+      "message",
+      f"Apakah Anda yakin ingin menjalankan {action_label.lower()}?",
+    )
+
+    if rule_id:
+        st.markdown(f"**Rule ID:** `{_safe(rule_id)}`")
+
+    st.markdown(f"**Pesan sistem:**\n\n> {message}")
+    st.markdown(f"- **Plan ID:** `{_safe(plan_id)}`")
+    if is_all:
+        st.markdown(f"- **Total katalog terdampak:** {len(affected_catalogs)} rules")
+    st.markdown(f"- **Kedaluwarsa:** `{_safe(expires_at)}`")
+    st.divider()
+
+    warning = (
+        "Aksi ini akan mengubah konfigurasi sistem server."
+        if action == "hardening"
+        else "Aksi ini akan mengembalikan konfigurasi sistem ke kondisi sebelumnya."
+    )
+    st.warning(f"{warning} Lanjutkan?")
+
+    yes_col, no_col = st.columns(2)
+
+    with yes_col:
+        if st.button(
+            "✅ Iya, Lanjutkan",
+            key=f"{action}_{scope}_{rule_id or 'all'}_approve",
+            type="primary",
+            use_container_width=True,
+        ):
+            if not plan_id:
+                st.error("Plan ID tidak ditemukan.")
+                return
+
+            success, response = confirm_fn(
+                plan_id=plan_id,
+                approved=True,
+                **({"catalog": rule_id} if rule_id else {}),
+            )
+            if success:
+                st.success(response.get("message", f"{action_label} berhasil diproses."))
+                st.rerun()
+            st.error(response.get("message", f"Gagal menjalankan {action_label.lower()}."))
+
+    with no_col:
+        if st.button(
+            "❌ Tidak, Batalkan",
+            key=f"{action}_{scope}_{rule_id or 'all'}_reject",
+            use_container_width=True,
+        ):
+            if plan_id:
+                success, response = confirm_fn(
+                    plan_id=plan_id,
+                    approved=False,
+                    **({"catalog": rule_id} if rule_id else {}),
+                )
+                if success and response.get("message"):
+                    st.warning(response["message"])
+                else:
+                    st.warning(f"{action_label} dibatalkan.")
+            else:
+                st.warning(f"{action_label} dibatalkan.")
             st.rerun()
-          else:
-            st.error(response.get("message", "Gagal mengeksekusi hardening."))
-        else:
-          st.error("Plan ID tidak ditemukan.")
-
-    with col_no:
-      if st.button("❌ Tidak, Batalkan", use_container_width=True):
-        if plan_id:
-          success, response = confirm_hardening_plan(plan_id, approved=False)
-
-          if success and response.get("status") == "REJECTED":
-            msg = response.get("message", "Hardening ALL dibatalkan.")
-            st.warning(msg)
-          else:
-            st.warning("Hardening ALL dibatalkan.")
-        else:
-          st.warning("Hardening ALL dibatalkan.")
-           
-        st.rerun()
 
 
-@st.dialog("⚠️ Konfirmasi Single Hardening")
-def show_single_hardening_modal(rule_id, plan_data):
-  message = plan_data.get(
-    "message",
-    f"Apakah Anda yakin ingin melakukan hardening untuk rule {rule_id}?",
-  )
-  plans_list = plan_data.get("plans", [])
-
-  plan_id = plans_list[0].get("plan_id") if plans_list else None
-  expires_at = plans_list[0].get("expires_at") if plans_list else "-"
-
-  st.markdown(f"**Rule ID:** `{rule_id}`")
-  st.markdown(f"**Pesan Sistem:**\n> {message}")
-  st.markdown(f"- **Plan ID:** `{plan_id}`")
-  st.markdown(f"- **Kedaluwarsa:** `{expires_at}`")
-
-  st.markdown("---")
-  st.warning("Aksi ini akan mengubah konfigurasi spesifik pada server. Lanjutkan?")
-
-  col_yes, col_no = st.columns(2)
-
-  with col_yes:
-    if st.button(
-      "✅ Iya, Lanjutkan",
-      key=f"conf_yes_{rule_id}",
-      use_container_width=True,
-      type="primary",
-    ):
-      if plan_id:
-        
-        success, response = confirm_hardening_plan(
-          plan_id=plan_id, 
-          approved=True, 
-          catalog=rule_id
-        )
-
-        if success:
-          st.success(
-            response.get(
-              "message", f"Hardening rule {rule_id} selesai diproses."
-            )
-          )
-          st.rerun()
-        else:
-          st.error(response.get("message", "Gagal mengeksekusi hardening."))
-      else:
-        st.error("Plan ID tidak ditemukan.")
-
-  with col_no:
-    if st.button(
-      "❌ Tidak, Batalkan", key=f"conf_no_{rule_id}", use_container_width=True
-    ):
-      if plan_id:
-       
-        success, response = confirm_hardening_plan(
-          plan_id=plan_id, 
-          approved=False, 
-          catalog=rule_id
-        )
-
-        if success and response.get("status") == "REJECTED":
-          st.warning(
-            response.get(
-              "message", "Permintaan hardening ditolak oleh user."
-            )
-          )
-        else:
-          st.warning("Hardening dibatalkan.")
-      else:
-        st.warning("Hardening dibatalkan.")
-      st.rerun()
+# Nama fungsi berikut dipertahankan agar kompatibel dengan pemanggil sebelumnya.
+def show_hardening_confirmation_modal(plan_data: dict) -> None:
+    _show_action_confirmation("hardening", "all", plan_data)
 
 
-@st.dialog("🔄 Konfirmasi Rollback All")
-def show_rollback_all_confirmation_modal(plan_data):
-  message = plan_data.get("message", "Apakah Anda yakin ingin menjalankan aksi rollback untuk seluruh katalog?")
-  plans_list = plan_data.get("plans", [])
-    
-  plan_id = plans_list[0].get("plan_id") if plans_list else None
-  expires_at = plans_list[0].get("expires_at") if plans_list else "-"
-  catalogs_affected = plans_list[0].get("catalogs", [])
-
-  st.markdown(f"**Pesan Sistem:**\n> {message}")
-  st.markdown(f"- **Plan ID:** `{plan_id}`")
-  st.markdown(f"- **Total Katalog Terdampak:** `{len(catalogs_affected)} rules`")
-  st.markdown(f"- **Kedaluwarsa:** `{expires_at}`")
-    
-  st.markdown("---")
-  st.warning("Aksi ini akan mengembalikan konfigurasi sistem server ke kondisi semula. Lanjutkan?")
-
-  col_yes, col_no = st.columns(2)
-    
-  with col_yes:
-    if st.button("✅ Iya, Lanjutkan", key="rollback_all_yes", use_container_width=True, type="primary"):
-      if plan_id:        
-        success, response = confirm_rollback_plan(plan_id, approved=True)
-        if success:
-          st.success(response.get("message", "Rollback selesai diproses."))
-          st.rerun()
-        else:
-          st.error(response.get("message", "Gagal mengeksekusi rollback."))
-      else:
-        st.error("Plan ID tidak ditemukan.")
-
-    with col_no:
-      if st.button("❌ Tidak, Batalkan", key="rollback_all_no", use_container_width=True):
-        if plan_id:
-          success, response = confirm_rollback_plan(plan_id, approved=False)
-          if success and response.get("status") == "REJECTED":
-            st.warning(response.get("message", "Permintaan rollback ditolak oleh user."))
-          else:
-            st.warning("Rollback All dibatalkan.")
-        else:
-          st.warning("Rollback All dibatalkan.")
-        st.rerun()
+def show_single_hardening_modal(rule_id: str, plan_data: dict) -> None:
+    _show_action_confirmation("hardening", "single", plan_data, rule_id)
 
 
-@st.dialog("🔄 Konfirmasi Single Rollback")
-def show_single_rollback_modal(rule_id, plan_data):
-  message = plan_data.get("message", f"Apakah Anda yakin ingin melakukan rollback untuk rule {rule_id}?")
-  plans_list = plan_data.get("plans", [])
-    
-  plan_id = plans_list[0].get("plan_id") if plans_list else None
-  expires_at = plans_list[0].get("expires_at") if plans_list else "-"
+def show_rollback_all_confirmation_modal(plan_data: dict) -> None:
+    _show_action_confirmation("rollback", "all", plan_data)
 
-  st.markdown(f"**Rule ID:** `{rule_id}`")
-  st.markdown(f"**Pesan Sistem:**\n> {message}")
-  st.markdown(f"- **Plan ID:** `{plan_id}`")
-  st.markdown(f"- **Kedaluwarsa:** `{expires_at}`")
-    
-  st.markdown("---")
-  st.warning("Aksi ini akan mengembalikan konfigurasi sistem spesifik ke kondisi semula. Lanjutkan?")
 
-  col_yes, col_no = st.columns(2)
-    
-  with col_yes:
-    if st.button("✅ Iya, Lanjutkan", key=f"rollback_yes_{rule_id}", use_container_width=True, type="primary"):
-      if plan_id:       
-        success, response = confirm_rollback_plan(plan_id=plan_id, approved=True, catalog=rule_id)
-        if success:
-          st.success(response.get("message", f"Rollback rule {rule_id} selesai diproses."))
-          st.rerun()
-        else:
-          st.error(response.get("message", "Gagal mengeksekusi rollback."))
-      else:
-        st.error("Plan ID tidak ditemukan.")
-
-  with col_no:
-    if st.button("❌ Tidak, Batalkan", key=f"rollback_no_{rule_id}", use_container_width=True):
-      if plan_id:       
-        success, response = confirm_rollback_plan(plan_id=plan_id, approved=False, catalog=rule_id)
-        if success and response.get("status") == "REJECTED":
-          st.warning(response.get("message", "Permintaan rollback ditolak oleh user."))
-        else:
-          st.warning("Rollback dibatalkan.")
-      else:
-        st.warning("Rollback dibatalkan.")
-      st.rerun()
+def show_single_rollback_modal(rule_id: str, plan_data: dict) -> None:
+    _show_action_confirmation("rollback", "single", plan_data, rule_id)
 
 
 @st.dialog("📄 Detail Katalog Rule")
-def show_catalog_detail_modal(rule_id):
+def show_catalog_detail_modal(rule_id: str) -> None:
+    """Menampilkan metadata, deskripsi, dan riwayat eksekusi katalog."""
     detail = get_catalog_detail(rule_id)
-    
     if not detail:
         st.error(f"Data untuk rule {rule_id} tidak ditemukan.")
-        if st.button("Tutup"):
+        if st.button("Tutup", use_container_width=True):
             st.rerun()
         return
 
-    raw_desc = detail.get('deskripsi', '-')
-    clean_desc = raw_desc.replace('\n', ' ') if raw_desc else '-'
+    st.markdown(f"### `{_safe(detail.get('id'))}` — {_safe(detail.get('nama'))}")
+    st.divider()
 
-    audit_only_val = detail.get('audit_only', 0)
-    audit_only_label = "Iya" if audit_only_val in [1, "1", True, "true"] else "Tidak"
+    left, right = st.columns(2)
+    with left:
+        st.markdown(f"**Kode CIS:** `{_safe(detail.get('kode_cis'))}`")
+        st.markdown(f"**Kategori:** {_safe(detail.get('kategori'))}")
+        st.markdown(
+            f"**Audit Only:** {'Iya' if _as_bool(detail.get('audit_only')) else 'Tidak'}"
+        )
+    with right:
+        risiko = _catalog_value(detail, "risiko", "resiko")
+        judul_cis = _catalog_value(detail, "judul_cis", "cis_judul")
+        st.markdown(f"**Risiko:** {_safe(risiko)}")
+        st.markdown(f"**Judul CIS:** {_safe(judul_cis)}")
 
-    def format_timestamp(ts):
-      if not ts or ts == '-' or ts == 'None':
-        return '-'
-      try:    
-        dt = datetime.strptime(str(ts).split('.')[0], "%Y-%m-%d %H:%M:%S")
-        return dt.strftime("%d-%m-%Y %H:%M:%S")
-      except Exception:
-        return ts
+    st.divider()
+    st.markdown("**Deskripsi**")
+    st.write(detail.get("deskripsi") or "-")
 
-    w_audit = format_timestamp(detail.get('waktu_audit'))
-    w_hard = format_timestamp(detail.get('waktu_hardening'))
-    w_roll = format_timestamp(detail.get('waktu_rollback'))
-
-    st.markdown(f"### `{detail.get('id')}` - {detail.get('nama', '-')}")
-    st.markdown("---")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-      st.markdown(f"**Kode CIS:** `{detail.get('kode_cis', '-')}`")
-      st.markdown(f"**Kategori:** {detail.get('kategori', '-')}")
-      st.markdown(f"**Audit Only:** `{audit_only_label}`")
-    with col2:
-      st.markdown(f"**Risiko:** {detail.get('resiko', '-')}")
-      st.markdown(f"**CIS Judul:** {detail.get('cis_judul', '-')}")
-
-    st.markdown("---")
-    st.markdown("**Deskripsi:**")
-    st.markdown(
-        f"""<div style="text-align: justify; color: #cfd0d7; background-color: #1e1e24; padding: 10px; border-radius: 6px; font-size: 13px;">
-            {clean_desc}
-        </div>""",
-        unsafe_allow_html=True
+    st.markdown("**Status & Riwayat Eksekusi**")
+    status_columns = st.columns(3)
+    history = (
+        ("Audit", "status_audit", "waktu_audit"),
+        ("Hardening", "status_hardening", "waktu_hardening"),
+        ("Rollback", "status_rollback", "waktu_rollback"),
     )
-    
-    st.markdown("---")
-    st.markdown("**Status & Riwayat Eksekusi:**")
-    
-    status_col1, status_col2, status_col3 = st.columns(3)
-    with status_col1:
-      st.markdown(f"**Audit:** `{detail.get('status_audit', '-')}`")
-      st.markdown(f"<span style='font-size:11px; color:#8e8f99;'>Waktu: {w_audit}</span>", unsafe_allow_html=True)
-    with status_col2:
-      st.markdown(f"**Hardening:** `{detail.get('status_hardening', '-')}`")
-      st.markdown(f"<span style='font-size:11px; color:#8e8f99;'>Waktu: {w_hard}</span>", unsafe_allow_html=True)
-    with status_col3:
-      st.markdown(f"**Rollback:** `{detail.get('status_rollback', '-')}`")
-      st.markdown(f"<span style='font-size:11px; color:#8e8f99;'>Waktu: {w_roll}</span>", unsafe_allow_html=True)
+    for column, (label, status_key, time_key) in zip(status_columns, history):
+        with column:
+            st.markdown(f"**{label}**")
+            st.code(str(detail.get(status_key) or "-"), language=None)
+            st.caption(f"Waktu: {_format_timestamp(detail.get(time_key))}")
 
-    st.markdown("<br>", unsafe_allow_html=True)
     if st.button("Tutup", use_container_width=True):
-      st.rerun()
-
-
-def render_control_bar():
-    """Baris kedua: Tombol Refresh & Aksi Global."""
-    c_left, c_right = st.columns([1, 2])
-    
-    with c_left:
-      if st.button("🔄 Refresh Katalog", use_container_width=True):
-        st.cache_data.clear()
-
-        success = refresh_catalog_data()
-
-        if success:
-          st.success("Data katalog berhasil diperbarui")
-        else:
-          st.warning("Gagal memperbarui dari API (menggunakan data lokal)")
-            
         st.rerun()
 
-    with c_right:
-        btn_col1, btn_col2, btn_col3 = st.columns(3)
 
-        with btn_col1:
-          if st.button("🚀 Audit All", use_container_width=True, type="primary"):
-            with st.spinner("Menjalankan seluruh prosedur Audit pada server..."):
-              success, message = trigger_audit_all()
+def _run_audit(rule_id: str | None = None) -> None:
+    label = f"Audit {rule_id}" if rule_id else "Audit All"
+    with st.spinner(f"Menjalankan {label}..."):
+        success, message = (
+            trigger_single_audit(rule_id) if rule_id else trigger_audit_all()
+        )
 
-              if success:
-                st.success(f"Audit All Berhasil! {message}")
-                st.rerun()
-              else:
-                st.error(f"Gagal menjalankan Audit All: {message}")
-
-        with btn_col2:
-          if st.button("🔒 Hardening All", use_container_width=True):
-            with st.spinner("Membuat plan hardening (/init)..."):
-              success, response = init_hardening_all()
-
-              if success and response.get("status") == "PENDING_APPROVAL":
-                show_hardening_confirmation_modal(response)
-              else:
-                st.error(response.get("message", "Gagal menginisialisasi plan hardening."))
-
-        with btn_col3:
-          if st.button("🔄 Rollback All", use_container_width=True):
-            with st.spinner("Membuat plan rollback (/init)..."):
-              success, response = init_rollback_all()
-
-              if success and response.get("status") == "PENDING_APPROVAL":       
-                show_rollback_all_confirmation_modal(response)
-              else:
-                st.error(response.get("message", "Gagal menginisialisasi plan rollback."))
-
-    st.markdown("<br>", unsafe_allow_html=True)
+    if success:
+        st.success(message or f"{label} berhasil dijalankan.")
+        st.rerun()
+    st.error(message or f"Gagal menjalankan {label}.")
 
 
-def render_catalog_table(catalog_list, total_items):
-  """Merender tabel katalog interaktif dengan pagination, tata letak kolom kustom,
+def _start_plan(action: str, rule_id: str | None = None) -> None:
+    is_hardening = action == "hardening"
+    action_label = "hardening" if is_hardening else "rollback"
+    init_fn = (
+        init_single_hardening if is_hardening and rule_id
+        else init_hardening_all if is_hardening
+        else init_single_rollback if rule_id
+        else init_rollback_all
+    )
 
-  dan tombol aksi bersyarat (Audit, Hardening, Rollback, Detail) berdasarkan nilai audit_only.
-  """
+    with st.spinner(f"Membuat plan {action_label}..."):
+        success, response = init_fn(rule_id) if rule_id else init_fn()
 
-  h_col1, h_col2 = st.columns([3, 1])
-  
-  with h_col1:
-    st.markdown("### 📋 Katalog Rules Keamanan & Aksi Eksekusi")
-  with h_col2:
-    if st.button("📥 Export PDF Report", use_container_width=True, type="secondary"):
-      with st.spinner("Menyiapkan laporan pentest PDF..."):        
-        all_catalogs, _ = get_paginated_catalogs(page=1, per_page=1000)        
-        pdf_path = generate_pentest_pdf(all_catalogs)
-                
-        if os.path.exists(pdf_path):
-          with open(pdf_path, "rb") as f:
-            st.download_button(
-              label="💾 Unduh File PDF",
-              data=f,
-              file_name="Yoru_Agent_Pentest_Report.pdf",
-              mime="application/pdf",
-              key="download_pdf_top_table"
-            )
-          st.success("PDF siap diunduh!")
+    if not success or response.get("status") != "PENDING_APPROVAL":
+        st.error(response.get("message", f"Gagal menginisialisasi plan {action_label}."))
+        return
+
+    if is_hardening:
+        if rule_id:
+            show_single_hardening_modal(rule_id, response)
         else:
-          st.error("Gagal membuat file PDF.")
+            show_hardening_confirmation_modal(response)
+    elif rule_id:
+        show_single_rollback_modal(rule_id, response)
+    else:
+        show_rollback_all_confirmation_modal(response)
 
-    st.markdown("---")
+
+def render_control_bar() -> None:
+    """Menampilkan tombol sinkronisasi dan aksi global."""
+    refresh_col, action_col = st.columns([1, 2])
+
+    with refresh_col:
+        if st.button("🔄 Refresh Katalog", use_container_width=True):
+            st.cache_data.clear()
+            if refresh_catalog_data():
+                st.success("Data katalog berhasil diperbarui.")
+            else:
+                st.warning("Gagal memperbarui dari API. Data lokal tetap digunakan.")
+            st.rerun()
+
+    with action_col:
+        audit_col, hardening_col, rollback_col = st.columns(3)
+        with audit_col:
+            if st.button("🚀 Audit All", type="primary", use_container_width=True):
+                _run_audit()
+        with hardening_col:
+            if st.button("🔒 Hardening All", use_container_width=True):
+                _start_plan("hardening")
+        with rollback_col:
+            if st.button("🔄 Rollback All", use_container_width=True):
+                _start_plan("rollback")
 
 
-  items_per_page = 10
-  total_pages = math.ceil(total_items / items_per_page) if total_items > 0 else 1
+def _render_pdf_export() -> None:
+    """Membuat laporan PDF dan menyediakan tombol unduh."""
+    if st.button("📥 Export PDF Report", use_container_width=True):
+        try:
+            with st.spinner("Menyiapkan laporan PDF..."):
+                catalogs, _ = get_paginated_catalogs(page=1, per_page=10000)
+                pdf_path = Path(generate_pentest_pdf(catalogs))
+                if not pdf_path.is_file():
+                    raise FileNotFoundError("File PDF tidak ditemukan.")
 
-  if "page_num" not in st.session_state:
-    st.session_state.page_num = 1
+                st.session_state["yoru_pdf_data"] = pdf_path.read_bytes()
+            st.success("PDF siap diunduh.")
+        except Exception as exc:
+            st.error(f"Gagal membuat laporan PDF: {exc}")
 
-  # Navigasi Pagination di Bagian Atas
-  nav_col1, _, nav_col3 = st.columns([2, 6, 2])
-  with nav_col1:
-    current_page = st.number_input(
-        "Halaman",
-        min_value=1,
-        max_value=max(1, total_pages),
-        value=st.session_state.page_num,
-        step=1,
-        key="page_input_num",
-    )
-    if current_page != st.session_state.page_num:
-      st.session_state.page_num = current_page
-      st.rerun()
+    pdf_data = st.session_state.get("yoru_pdf_data")
+    if pdf_data:
+        st.download_button(
+            "💾 Unduh File PDF",
+            data=pdf_data,
+            file_name=PDF_FILENAME,
+            mime="application/pdf",
+            key="download_pdf_report",
+            use_container_width=True,
+        )
 
-  with nav_col3:
-    st.markdown(
-        f"<div style='text-align: right; padding-top: 28px; color: #8e8f99;"
-        f" font-size: 13px;'>Total: {total_items} rules</div>",
-        unsafe_allow_html=True,
-    )
 
-  st.markdown("---")
-
-  if not catalog_list:
-    st.info(
-      "Belum ada data katalog. Pastikan backend API aktif atau lakukan sinkronisasi."
-    )
-    return
-
-  # Render Header Tabel Kustom (Agar selaras dengan kolom data di bawahnya)
-  header_cols = st.columns([1, 1.2, 3, 1.2, 1.2, 2.5])
-  with header_cols[0]:
-    st.markdown("**ID**")
-  with header_cols[1]:
-    st.markdown("**Kode CIS**")
-  with header_cols[2]:
-    st.markdown("**Judul & Nama Rule**")
-  with header_cols[3]:
-    st.markdown("**Kategori**")
-  with header_cols[4]:
-    st.markdown("**Status Audit**")
-  with header_cols[5]:
-    st.markdown("**Aksi**")
-
-  st.markdown("---")
-
-  # Render Baris Data Katalog Secara Interaktif
-  for idx, item in enumerate(catalog_list):
-    rule_id = item.get("id")
-    kode_cis = item.get("kode_cis")
-    cis_judul = item.get("cis_judul", "-")
-    nama_rule = item.get("nama", "-")
-    kategori = item.get("kategori", "-")
-    status_audit = item.get("status_audit", "Pending")
-    audit_only = bool(item.get("audit_only", False))
-
-    row_cols = st.columns([1, 1.2, 3, 1.2, 1.2, 2.5])
-
-    # Kolom 1: ID
-    with row_cols[0]:
-      st.markdown(
-        f"<p style='padding-top: 10px;'>{rule_id}</p>", 
-        unsafe_allow_html=True
-      )
-
-    # Kolom 2: Kode CIS
-    with row_cols[1]:
-      st.markdown(
-        f"<p style='padding-top: 10px;'>{kode_cis}</p>", 
-        unsafe_allow_html=True
-      )
-
-    # Kolom 3: CIS Judul dan Nama Rule
-    with row_cols[2]:
-      st.markdown(
-        f"<div style='font-size: 13px; font-weight: 600; color: #f7f8f9;'>{cis_judul}</div>"
-        f"<div style='font-size: 12px; color: #8e8f99; margin-top: 2px;'>{nama_rule}</div>",
-        unsafe_allow_html=True,
-      )
-
-    # Kolom 4: Kategori
-    with row_cols[3]:
-      st.markdown(
-        f"<p style='padding-top: 10px;'>{kategori}</p>", 
-        unsafe_allow_html=True
-      )
-
-    # Kolom 5: Status Audit dalam bentuk label (Badge warna dinamis)
-    with row_cols[4]:
-      color_map = {
+def _render_status_badge(status: Any) -> None:
+    status_text = str(status or "PENDING").upper()
+    colors = {
         "COMPLIANT": "#28a745",
         "NON_COMPLIANT": "#ffc107",
         "PENDING": "#ffc107",
         "SKIPPED": "#17a2b8",
+        "SUCCESS": "#28a745",
         "FAILED": "#dc3545",
-      }
-      badge_color = color_map.get(status_audit.upper(), "#6c757d")
-      st.markdown(
-        f"<div style='padding-top: 8px;'><span style='background-color: {badge_color}; color: white; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: 600;'>{status_audit}</span></div>",
+        "ERROR": "#dc3545",
+    }
+    color = colors.get(status_text, "#6c757d")
+    st.markdown(
+        f"""
+        <span style="
+            background:{color};color:#fff;padding:3px 8px;
+            border-radius:4px;font-size:11px;font-weight:600">
+            {_safe(status_text)}
+        </span>
+        """,
         unsafe_allow_html=True,
-      )
+    )
 
-    # Kolom 6: Tombol Aksi (Audit, Hardening, Rollback, Detail / Audit & Detail jika audit_only)
-    with row_cols[5]:
-      if audit_only:
-        # Jika audit_only = true, tampilkan 2 tombol saja
-        b_col1, b_col2 = st.columns(2)
-        with b_col1:
-          if st.button("🔍 Audit", key=f"audit_{rule_id}_{idx}", use_container_width=True):
-            with st.spinner(f"Menjalankan Audit {rule_id}..."):
-              success, message = trigger_single_audit(rule_id)
-              if success:
-                st.success(f"Berhasil: {message}")
-                st.rerun()
-              else:
-                st.error(f"Gagal: {message}")
-        with b_col2:
-          if st.button("📄 Detail", key=f"detail_{rule_id}_{idx}", use_container_width=True):
-            show_catalog_detail_modal(rule_id)
-      else:
-        # Jika audit_only = false, tampilkan 4 tombol lengkap
-        b_col1, b_col2, b_col3, b_col4 = st.columns(4)
-        with b_col1:
-          if st.button("🔍", key=f"audit_{rule_id}_{idx}", use_container_width=True, help="Audit"):
-            with st.spinner(f"Menjalankan Audit {rule_id}..."):
-              success, message = trigger_single_audit(rule_id)
-              if success:
-                st.success(f"Berhasil: {message}")
-                st.rerun()
-              else:
-                st.error(f"Gagal: {message}")
 
-        with b_col2:
-          if st.button("🔒", key=f"hard_{rule_id}_{idx}", use_container_width=True, help="Hardening"):
-            with st.spinner(f"Membuat plan hardening untuk {rule_id}..."):
-              success, response = init_single_hardening(rule_id)
-              if success and response.get("status") == "PENDING_APPROVAL":
-                show_single_hardening_modal(rule_id, response)
-              else:
-                st.error(response.get("message", "Gagal menginisialisasi plan hardening."))
+def _render_catalog_actions(item: dict, index: int) -> None:
+    rule_id = str(item.get("id", ""))
+    audit_only = _as_bool(item.get("audit_only"))
 
-        with b_col3:
-          if st.button("🔄", key=f"roll_{rule_id}_{idx}", use_container_width=True, help="Rollback"):
-            with st.spinner(f"Membuat plan rollback untuk {rule_id}..."):
-              success, response = init_single_rollback(rule_id)
-              if success and response.get("status") == "PENDING_APPROVAL":
-                show_single_rollback_modal(rule_id, response)
-              else:
-                st.error(response.get("message", "Gagal menginisialisasi plan rollback."))
+    if audit_only:
+        audit_col, detail_col = st.columns(2)
+        with audit_col:
+            if st.button(
+                "🔍 Audit",
+                key=f"audit_{rule_id}_{index}",
+                use_container_width=True,
+            ):
+                _run_audit(rule_id)
+        with detail_col:
+            if st.button(
+                "📄 Detail",
+                key=f"detail_{rule_id}_{index}",
+                use_container_width=True,
+            ):
+                show_catalog_detail_modal(rule_id)
+        return
 
-        with b_col4:
-          if st.button("📄", key=f"det_{rule_id}_{idx}", use_container_width=True, help="Detail"):
+    audit_col, hard_col, rollback_col, detail_col = st.columns(4)
+    with audit_col:
+        if st.button("🔍", key=f"audit_{rule_id}_{index}", help="Audit", use_container_width=True):
+            _run_audit(rule_id)
+    with hard_col:
+        if st.button("🔒", key=f"hard_{rule_id}_{index}", help="Hardening", use_container_width=True):
+            _start_plan("hardening", rule_id)
+    with rollback_col:
+        if st.button("🔄", key=f"roll_{rule_id}_{index}", help="Rollback", use_container_width=True):
+            _start_plan("rollback", rule_id)
+    with detail_col:
+        if st.button("📄", key=f"detail_{rule_id}_{index}", help="Detail", use_container_width=True):
             show_catalog_detail_modal(rule_id)
 
-    st.markdown("<hr style='margin: 4px 0px; border-color: #2d2f3d;'>", unsafe_allow_html=True)
 
-  # Indikator Halaman di Bawah
-  st.markdown(
-    f"<p style='text-align: center; color: #8e8f99; font-size: 12px; margin-top: 15px;'>Halaman {st.session_state.page_num} dari {total_pages}</p>",
-    unsafe_allow_html=True,
-  )
+def render_catalog_table(catalog_list: list[dict], total_items: int) -> None:
+    """Merender tabel katalog, pagination, tombol aksi, dan ekspor PDF."""
+    title_col, export_col = st.columns([3, 1])
+    with title_col:
+        st.markdown("### 📋 Katalog Rules Keamanan & Aksi Eksekusi")
+    with export_col:
+        _render_pdf_export()
+
+    total_pages = max(1, math.ceil(total_items / ITEMS_PER_PAGE))
+    current_page = min(max(int(st.session_state.get("page_num", 1)), 1), total_pages)
+    if current_page != st.session_state.get("page_num", 1):
+        st.session_state.page_num = current_page
+
+    nav_col, _, total_col = st.columns([2, 6, 2])
+    with nav_col:
+        selected_page = st.number_input(
+            "Halaman",
+            min_value=1,
+            max_value=total_pages,
+            value=current_page,
+            step=1,
+            key="page_input_num",
+        )
+        if int(selected_page) != current_page:
+            st.session_state.page_num = int(selected_page)
+            st.rerun()
+
+    with total_col:
+        st.markdown(
+            f"<div style='text-align:right;padding-top:28px;color:#8e8f99'>"
+            f"Total: {total_items} rules</div>",
+            unsafe_allow_html=True,
+        )
+
+    st.divider()
+    if not catalog_list:
+        st.info("Belum ada data katalog. Pastikan backend API aktif atau lakukan sinkronisasi.")
+        return
+
+    widths = [1, 1.2, 3, 1.2, 1.2, 2.5]
+    headers = ["ID", "Kode CIS", "Judul & Nama Rule", "Kategori", "Status Audit", "Aksi"]
+    for column, heading in zip(st.columns(widths), headers):
+        with column:
+            st.markdown(f"**{heading}**")
+
+    st.divider()
+    for index, item in enumerate(catalog_list):
+        rule_id = item.get("id", "-")
+        kode_cis = item.get("kode_cis", "-")
+        judul_cis = _catalog_value(item, "judul_cis", "cis_judul")
+        nama = item.get("nama", "-")
+        kategori = item.get("kategori", "-")
+        status = item.get("status_audit", "PENDING")
+
+        columns = st.columns(widths)
+        with columns[0]:
+            st.write(rule_id)
+        with columns[1]:
+            st.write(kode_cis)
+        with columns[2]:
+            st.markdown(f"**{_safe(judul_cis)}**")
+            st.caption(str(nama or "-"))
+        with columns[3]:
+            st.write(kategori)
+        with columns[4]:
+            _render_status_badge(status)
+        with columns[5]:
+            _render_catalog_actions(item, index)
+
+        st.markdown(
+            "<hr style='margin:4px 0;border-color:#2d2f3d'>",
+            unsafe_allow_html=True,
+        )
+
+    st.caption(f"Halaman {current_page} dari {total_pages}")

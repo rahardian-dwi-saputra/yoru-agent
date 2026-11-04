@@ -1,220 +1,312 @@
-import os
+from __future__ import annotations
+from contextlib import closing
+from pathlib import Path
+from typing import Any
 import sqlite3
 
-DB_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "web_cache.db"
+
+DB_PATH = Path(__file__).resolve().with_name("web_cache.db")
+
+CATALOG_FIELDS = (
+    "nama",
+    "kode_cis",
+    "judul_cis",
+    "versi_cis",
+    "regulasi",
+    "kepatuhan",
+    "framework",
+    "deskripsi",
+    "risiko",
+    "kategori",
+    "audit_only",
+    "pesan_hardening",
+    "pesan_rollback",
 )
 
+REQUIRED_CATALOG_FIELDS = ("id", "nama", "deskripsi", "risiko", "kategori")
 
-def init_db():
-  """Inisialisasi database SQLite """
-  conn = sqlite3.connect(DB_PATH)
-  cursor = conn.cursor()
+STATUS_COLUMNS = {
+    "audit": ("status_audit", "waktu_audit"),
+    "hardening": ("status_hardening", "waktu_hardening"),
+    "rollback": ("status_rollback", "waktu_rollback"),
+}
 
-  cursor.execute("""
-        CREATE TABLE IF NOT EXISTS catalogs (
-            id TEXT PRIMARY KEY,
-            nama TEXT NOT NULL,
-            kode_cis TEXT NOT NULL,
-            cis_judul TEXT NOT NULL,
-            deskripsi TEXT NOT NULL,
-            resiko TEXT NOT NULL,
-            kategori TEXT NOT NULL,
-            audit_only BOOLEAN NOT NULL,
-            status_audit TEXT DEFAULT 'Pending',
-            waktu_audit TEXT DEFAULT '-',
-            status_hardening TEXT DEFAULT 'Pending',
-            waktu_hardening TEXT DEFAULT '-',
-            status_rollback TEXT DEFAULT 'Pending',
-            waktu_rollback TEXT DEFAULT '-'
-        )
-    """)
-
-  conn.commit()
-  conn.close()
+def _connect() -> sqlite3.Connection:
+    """Membuat koneksi SQLite dengan row mapping dan foreign key aktif."""
+    conn = sqlite3.connect(DB_PATH, timeout=10)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
 
 
-def save_or_update_catalogs(catalogs_list):
-  """Melakukan sinkronisasi data katalog:
+def _to_bool(value: Any) -> int:
+    """Mengubah nilai boolean dari API menjadi 0 atau 1."""
+    if isinstance(value, str):
+        return int(value.strip().lower() in {"1", "true", "yes", "ya"})
+    return int(bool(value))
 
-  - UPDATE jika ID sudah ada (tanpa menimpa status eksekusi)
-  - INSERT jika ID belum ada
-  """
-  if not catalogs_list:
-    return
 
-  conn = sqlite3.connect(DB_PATH)
-  cursor = conn.cursor()
+def init_db() -> None:
+    """Membuat tabel database jika belum tersedia."""
+    with closing(_connect()) as conn:
+        with conn:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS servers (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    sistem_operasi TEXT NOT NULL,
+                    arsitektur TEXT NOT NULL
+                )
+                """
+            )
 
-  for item in catalogs_list:
-    rule_id = item.get("id")
-    nama = item.get("nama")
-    kode_cis = item.get("kode_cis")
-    cis_judul = item.get("cis_judul")
-    deskripsi = item.get("deskripsi")
-    resiko = item.get("resiko")
-    kategori = item.get("kategori")
-    audit_only = 1 if item.get("audit_only") else 0
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS catalogs (
+                    id TEXT PRIMARY KEY,
+                    server_id INTEGER NOT NULL,
+                    nama TEXT NOT NULL,
+                    kode_cis TEXT,
+                    judul_cis TEXT,
+                    versi_cis TEXT,
+                    regulasi TEXT,
+                    kepatuhan TEXT,
+                    framework TEXT,
+                    deskripsi TEXT NOT NULL,
+                    risiko TEXT NOT NULL,
+                    kategori TEXT NOT NULL,
+                    audit_only BOOLEAN NOT NULL DEFAULT 0,
+                    pesan_hardening TEXT,
+                    pesan_rollback TEXT,
+                    status_audit TEXT DEFAULT 'Pending',
+                    waktu_audit TIMESTAMP,
+                    log_audit_terakhir TEXT,
+                    status_hardening TEXT DEFAULT 'Pending',
+                    waktu_hardening TIMESTAMP,
+                    log_hardening_terakhir TEXT,
+                    status_rollback TEXT DEFAULT 'Pending',
+                    waktu_rollback TIMESTAMP,
+                    log_rollback_terakhir TEXT,
+                    FOREIGN KEY (server_id) REFERENCES servers (id)
+                        ON DELETE CASCADE
+                )
+                """
+            )
 
-    cursor.execute("SELECT id FROM catalogs WHERE id = ?", (rule_id,))
-    exists = cursor.fetchone()
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_catalogs_nama ON catalogs(nama)"
+            )
 
-    if exists:
-      cursor.execute(
-          """
-                UPDATE catalogs 
-                SET nama = ?, kode_cis = ?, cis_judul = ?, deskripsi = ?, resiko = ?, kategori = ?, audit_only = ?
+
+def _get_or_create_server(
+    conn: sqlite3.Connection,
+    server_info: dict[str, Any] | None = None,
+) -> int:
+    """Mengambil server pertama atau membuat record server awal."""
+    info = server_info or {}
+    sistem_operasi = info.get("os_platform") or info.get("sistem_operasi")
+    arsitektur = info.get("architecture") or info.get("arsitektur")
+
+    row = conn.execute(
+        "SELECT id FROM servers ORDER BY id LIMIT 1"
+    ).fetchone()
+
+    if row:
+        server_id = row["id"]
+        if sistem_operasi or arsitektur:
+            conn.execute(
+                """
+                UPDATE servers
+                SET sistem_operasi = ?, arsitektur = ?
                 WHERE id = ?
+                """,
+                (
+                    sistem_operasi or "Tidak diketahui",
+                    arsitektur or "Tidak diketahui",
+                    server_id,
+                ),
+            )
+        return server_id
+
+    cursor = conn.execute(
+        """
+        INSERT INTO servers (sistem_operasi, arsitektur)
+        VALUES (?, ?)
+        """,
+        (
+            sistem_operasi or "Tidak diketahui",
+            arsitektur or "Tidak diketahui",
+        ),
+    )
+    return int(cursor.lastrowid)
+
+
+def save_server_info(server_info: dict[str, Any]) -> int:
+    """Menyimpan atau memperbarui informasi server."""
+
+    with closing(_connect()) as conn:
+        with conn:
+            return _get_or_create_server(conn, server_info)
+
+        
+def save_or_update_catalogs(
+    catalogs_list: list[dict[str, Any]],
+    server_info: dict[str, Any] | None = None,
+) -> None:
+    """
+    Menyinkronkan katalog dari API ke database lokal.
+
+    Data katalog diperbarui jika ID sudah ada. Status, waktu, dan log
+    audit/hardening/rollback yang sudah tersimpan tidak ditimpa.
+    """
+    if not catalogs_list:
+        return
+
+    columns = ", ".join(CATALOG_FIELDS)
+    placeholders = ", ".join("?" for _ in CATALOG_FIELDS)
+    update_clause = ", ".join(
+        f"{field} = excluded.{field}" for field in CATALOG_FIELDS
+    )
+
+    query = f"""
+        INSERT INTO catalogs (id, server_id, {columns})
+        VALUES (?, ?, {placeholders})
+        ON CONFLICT(id) DO UPDATE SET
+            server_id = excluded.server_id,
+            {update_clause}
+    """
+
+    with closing(_connect()) as conn:
+        with conn:
+            server_id = _get_or_create_server(conn, server_info)
+
+            for index, item in enumerate(catalogs_list, start=1):
+                missing = [
+                    field
+                    for field in REQUIRED_CATALOG_FIELDS
+                    if item.get(field) in (None, "")
+                ]
+                if missing:
+                    raise ValueError(
+                        f"Data katalog ke-{index} tidak lengkap. "
+                        f"Field wajib: {', '.join(missing)}."
+                    )
+
+                values = []
+                for field in CATALOG_FIELDS:
+                    value = item.get(field)
+                    if field == "audit_only":
+                        value = _to_bool(value)
+                    values.append(value)
+
+                conn.execute(query, (str(item["id"]), server_id, *values))
+
+
+def get_paginated_catalogs(
+    page: int = 1,
+    per_page: int = 10,
+) -> tuple[list[dict[str, Any]], int]:
+    """Mengambil katalog berdasarkan halaman dan jumlah data per halaman."""
+    page = max(1, int(page))
+    per_page = max(1, int(per_page))
+    offset = (page - 1) * per_page
+
+    with closing(_connect()) as conn:
+        total_items = conn.execute(
+            "SELECT COUNT(*) FROM catalogs"
+        ).fetchone()[0]
+
+        rows = conn.execute(
+            """
+            SELECT *
+            FROM catalogs
+            ORDER BY id
+            LIMIT ? OFFSET ?
             """,
-          (
-              nama,
-              kode_cis,
-              cis_judul,
-              deskripsi,
-              resiko,
-              kategori,
-              audit_only,
-              rule_id,
-          ),
-      )
-    else:
-      cursor.execute(
-          """
-                INSERT INTO catalogs (
-                    id, nama, kode_cis, cis_judul, deskripsi, resiko, kategori, audit_only,
-                    status_audit, waktu_audit, status_hardening, waktu_hardening, status_rollback, waktu_rollback
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'Pending', '-', 'Pending', '-', 'Pending', '-')
-            """,
-          (
-              rule_id,
-              nama,
-              kode_cis,
-              cis_judul,
-              deskripsi,
-              resiko,
-              kategori,
-              audit_only,
-          ),
-      )
+            (per_page, offset),
+        ).fetchall()
 
-  conn.commit()
-  conn.close()
-
-
-def get_paginated_catalogs(page: int = 1, per_page: int = 10):
-  """Mengambil data katalog dengan pagination SQL."""
-  conn = sqlite3.connect(DB_PATH)
-  conn.row_factory = sqlite3.Row
-  cursor = conn.cursor()
-
-  offset = (page - 1) * per_page
-
-  cursor.execute("SELECT COUNT(*) FROM catalogs")
-  total_items = cursor.fetchone()[0]
-
-  cursor.execute("SELECT * FROM catalogs LIMIT ? OFFSET ?", (per_page, offset))
-  rows = cursor.fetchall()
-
-  conn.close()
-
-  return [dict(row) for row in rows], total_items
+    return [dict(row) for row in rows], total_items
 
 
 def update_execution_status(
-    rule_id: str, action_type: str, status: str, timestamp: str
-):
-  """Memperbarui status dan waktu eksekusi (audit, hardening, atau rollback)."""
-  conn = sqlite3.connect(DB_PATH)
-  cursor = conn.cursor()
+    rule_id: str,
+    action_type: str,
+    status: str,
+    timestamp: str,
+) -> bool:
+    """
+    Memperbarui status dan waktu eksekusi katalog.
 
-  if action_type == "audit":
-    cursor.execute(
-        "UPDATE catalogs SET status_audit = ?, waktu_audit = ? WHERE id = ?",
-        (status, timestamp, rule_id),
-    )
-  elif action_type == "hardening":
-    cursor.execute(
-        "UPDATE catalogs SET status_hardening = ?, waktu_hardening = ? WHERE"
-        " id = ?",
-        (status, timestamp, rule_id),
-    )
-  elif action_type == "rollback":
-    cursor.execute(
-        "UPDATE catalogs SET status_rollback = ?, waktu_rollback = ? WHERE id = ?",
-        (status, timestamp, rule_id),
-    )
+    Mengembalikan True jika katalog ditemukan dan berhasil diperbarui.
+    """
+    action = action_type.strip().lower()
+    if action not in STATUS_COLUMNS:
+        raise ValueError(
+            "action_type harus berupa 'audit', 'hardening', atau 'rollback'."
+        )
 
-  conn.commit()
-  conn.close()
+    status_column, timestamp_column = STATUS_COLUMNS[action]
 
+    with closing(_connect()) as conn:
+        with conn:
+            cursor = conn.execute(
+                f"""
+                UPDATE catalogs
+                SET {status_column} = ?, {timestamp_column} = ?
+                WHERE id = ?
+                """,
+                (status, timestamp, rule_id),
+            )
 
-def get_dashboard_metrics():
-  """Menghitung metrik statistik untuk dashboard sesuai kriteria:
-
-  - Total role audit = total katalog
-  - Total audit berhasil = katalog dengan status_audit = 'COMPLIANT'
-  - Total role hardening = total katalog - katalog dengan audit_only = true
-  - Total hardening berhasil = katalog dengan status_hardening IN ('SKIPPED', 'SUCCESS')
-  - Total role rollback = total katalog - katalog dengan audit_only = true
-  - Total rollback berhasil = katalog dengan status_rollback IN ('SKIPPED', 'SUCCESS')
-  """
-  conn = sqlite3.connect(DB_PATH)
-  cursor = conn.cursor()
-
-  # 1. Total katalog keseluruhan
-  cursor.execute("SELECT COUNT(*) FROM catalogs")
-  total_katalog = cursor.fetchone()[0]
-
-  # 2. Total audit berhasil (status_audit = 'COMPLIANT')
-  cursor.execute(
-      "SELECT COUNT(*) FROM catalogs WHERE status_audit = 'COMPLIANT'"
-  )
-  total_audit_berhasil = cursor.fetchone()[0]
-
-  # 3. Total role hardening (total katalog - audit_only = true)
-  cursor.execute("SELECT COUNT(*) FROM catalogs WHERE audit_only = 0")
-  total_role_hardening = cursor.fetchone()[0]
-
-  # 4. Total hardening berhasil (status_hardening 'SKIPPED' atau 'SUCCESS' dan bukan audit_only)
-  cursor.execute(
-      "SELECT COUNT(*) FROM catalogs WHERE audit_only = 0 AND status_hardening"
-      " IN ('SKIPPED', 'SUCCESS')"
-  )
-  total_hardening_berhasil = cursor.fetchone()[0]
-
-  # 5. Total role rollback (sama seperti hardening, yaitu total katalog - audit_only = true)
-  total_role_rollback = total_role_hardening
-
-  # 6. Total rollback berhasil (status_rollback 'SKIPPED' atau 'SUCCESS' dan bukan audit_only)
-  cursor.execute(
-      "SELECT COUNT(*) FROM catalogs WHERE audit_only = 0 AND status_rollback IN"
-      " ('SKIPPED', 'SUCCESS')"
-  )
-  total_rollback_berhasil = cursor.fetchone()[0]
-
-  conn.close()
-
-  return {
-      "total_audit_roles": total_katalog,
-      "total_audit_berhasil": total_audit_berhasil,
-      "total_hardening_roles": total_role_hardening,
-      "total_hardening_berhasil": total_hardening_berhasil,
-      "total_rollback_roles": total_role_rollback,
-      "total_rollback_berhasil": total_rollback_berhasil,
-  }
+    return cursor.rowcount > 0
 
 
-def get_catalog_detail(rule_id: str):
-    """Mengambil detail lengkap satu katalog berdasarkan ID rule."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT * FROM catalogs WHERE id = ?", (rule_id,))
-    row = cursor.fetchone()
-    
-    conn.close()
-    
-    if row:
-        return dict(row)
-    return None
+def get_dashboard_metrics() -> dict[str, int]:
+    """Menghitung total dan keberhasilan audit, hardening, serta rollback."""
+    with closing(_connect()) as conn:
+        row = conn.execute(
+            """
+            SELECT
+                COUNT(*) AS total_audit_roles,
+                SUM(CASE
+                    WHEN status_audit = 'COMPLIANT' THEN 1 ELSE 0
+                END) AS total_audit_berhasil,
+                SUM(CASE
+                    WHEN audit_only = 0 THEN 1 ELSE 0
+                END) AS total_hardening_roles,
+                SUM(CASE
+                    WHEN audit_only = 0
+                     AND status_hardening IN ('SKIPPED', 'SUCCESS')
+                    THEN 1 ELSE 0
+                END) AS total_hardening_berhasil,
+                SUM(CASE
+                    WHEN audit_only = 0
+                     AND status_rollback IN ('SKIPPED', 'SUCCESS')
+                    THEN 1 ELSE 0
+                END) AS total_rollback_berhasil
+            FROM catalogs
+            """
+        ).fetchone()
+
+    total_hardening_roles = row["total_hardening_roles"] or 0
+
+    return {
+        "total_audit_roles": row["total_audit_roles"] or 0,
+        "total_audit_berhasil": row["total_audit_berhasil"] or 0,
+        "total_hardening_roles": total_hardening_roles,
+        "total_hardening_berhasil": row["total_hardening_berhasil"] or 0,
+        "total_rollback_roles": total_hardening_roles,
+        "total_rollback_berhasil": row["total_rollback_berhasil"] or 0,
+    }
+
+
+def get_catalog_detail(rule_id: str) -> dict[str, Any] | None:
+    """Mengambil detail satu katalog berdasarkan ID."""
+    with closing(_connect()) as conn:
+        row = conn.execute(
+            "SELECT * FROM catalogs WHERE id = ?",
+            (rule_id,),
+        ).fetchone()
+
+    return dict(row) if row else None
