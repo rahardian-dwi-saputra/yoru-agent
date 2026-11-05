@@ -19,12 +19,13 @@ from services import (
     refresh_catalog_data,
     trigger_audit_all,
     trigger_single_audit,
+    fetch_system_info
 )
 from utils_pdf import generate_pentest_pdf
 
 
 ITEMS_PER_PAGE = 10
-PDF_FILENAME = "Yoru_Agent_Pentest_Report.pdf"
+PDF_FILENAME = "Yoru_Agent_Server_Security_Assessment_Report.pdf"
 
 
 def _safe(value: Any, default: str = "-") -> str:
@@ -399,7 +400,9 @@ def _render_pdf_export() -> None:
         try:
             with st.spinner("Menyiapkan laporan PDF..."):
                 catalogs, _ = get_paginated_catalogs(page=1, per_page=10000)
-                pdf_path = Path(generate_pentest_pdf(catalogs))
+                server_info = fetch_system_info()
+
+                pdf_path = Path(generate_pentest_pdf(catalogs, PDF_FILENAME, server_info))
                 if not pdf_path.is_file():
                     raise FileNotFoundError("File PDF tidak ditemukan.")
 

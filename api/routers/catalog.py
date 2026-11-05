@@ -1,4 +1,5 @@
 import platform
+import socket
 
 from typing import Dict, List
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -49,15 +50,19 @@ async def get_system_info(request: Request):
     try:
         os_name = get_linux_distro_pretty_name()
         arch = platform.machine()
+        hostname = socket.gethostname()
 
         # Fallback jika fungsi pembaca sistem mengembalikan nilai kosong
         if not os_name:
-            os_name = "Unknown Linux Distribution"
+            os_name = "Tidak diketahui"
 
         if not arch:
-            arch = "x86_64"
+            arch = "Tidak diketahui"
 
-        return SystemInfoResponse(os_platform=os_name, architecture=arch)
+        if not hostname:
+            hostname = "Tidak diketahui"
+
+        return SystemInfoResponse(os_platform=os_name, architecture=arch, hostname=hostname)
 
     except Exception as e:
         # Mengembalikan HTTP Exception yang rapi alih-alih Internal Server Error mentah

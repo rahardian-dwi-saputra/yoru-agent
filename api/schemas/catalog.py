@@ -5,6 +5,7 @@ from pydantic import BaseModel, Field
 class SystemInfoResponse(BaseModel):
     os_platform: str = Field(..., description="Detail platform lengkap OS / Distribusi Linux")
     architecture: str = Field(..., description="Arsitektur CPU (misal: x86_64, aarch64)")
+    hostname: str = Field(..., description="Nama perangkat")
 
 
 class CatalogMetadata(BaseModel):

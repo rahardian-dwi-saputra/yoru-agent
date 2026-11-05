@@ -24,7 +24,7 @@ def create_action_plan(
     """Membuat file JSON action plan (hardening/rollback) dan menyimpannya ke storage/plans/"""
     prefix = "rp" if action.lower() == "rollback" else "hp"
     plan_id = generate_plan_id(prefix=prefix)
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=5)
+    expires_at = datetime.now(timezone.utc) + timedelta(minutes=8)
 
     plan_data = {
         "plan_id": plan_id,

@@ -6,10 +6,12 @@ from pathlib import Path
 from typing import Any
 
 from reportlab.lib import colors
-from reportlab.lib.enums import TA_LEFT
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_JUSTIFY
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import mm
+from reportlab.graphics.shapes import Drawing, String, Rect, Circle
+from reportlab.graphics.charts.piecharts import Pie
 from reportlab.platypus import (
     HRFlowable,
     KeepTogether,
@@ -45,7 +47,13 @@ def _text(value: Any, default: str = "-") -> str:
 
 
 def _status(value: Any) -> str:
-    return str(value or "PENDING").strip().upper()
+    status = str(value or "PENDING").strip().upper()
+
+    status_mapping = {
+        "PENDING": "BELUM DITINJAU",
+    }
+
+    return status_mapping.get(status, status)
 
 
 def _count_status(
@@ -54,6 +62,77 @@ def _count_status(
     accepted: set[str],
 ) -> int:
     return sum(1 for item in catalogs if _status(item.get(field)) in accepted)
+
+
+
+def _audit_percentage_chart(catalogs: list[dict[str, Any]]) -> Drawing:
+    """Membuat grafik pie persentase status audit."""
+    statuses = [
+        ("Compliant", _count_status(catalogs, "status_audit", {"COMPLIANT"}), GREEN),
+        ("Non-compliant", _count_status(catalogs, "status_audit", {"NON_COMPLIANT"}), RED),
+        (
+            "Pending / Lainnya",
+            max(
+                0,
+                len(catalogs)
+                - _count_status(catalogs, "status_audit", {"COMPLIANT"})
+                - _count_status(catalogs, "status_audit", {"NON_COMPLIANT"}),
+            ),
+            AMBER,
+        ),
+    ]
+    total = len(catalogs)
+    drawing = Drawing(179 * mm, 51 * mm)
+
+    if total == 0:
+        drawing.add(
+            Circle(
+                27 * mm, 25.5 * mm, 17 * mm,
+                fillColor=LIGHT_GREY, strokeColor=BORDER, strokeWidth=1,
+            )
+        )
+        drawing.add(
+            String(
+                27 * mm, 24 * mm, "Tidak ada data",
+                textAnchor="middle", fontName="Helvetica", fontSize=7,
+                fillColor=MID_GREY,
+            )
+        )
+        return drawing
+
+    pie = Pie()
+    pie.x = 7 * mm
+    pie.y = 4 * mm
+    pie.width = 43 * mm
+    pie.height = 43 * mm
+    pie.data = [count for _, count, _ in statuses]
+    pie.labels = ["", "", ""]
+    pie.simpleLabels = 0
+    pie.sideLabels = 0
+    pie.slices.strokeColor = colors.white
+    pie.slices.strokeWidth = 1
+    for index, (_, _, fill) in enumerate(statuses):
+        pie.slices[index].fillColor = fill
+    drawing.add(pie)
+
+    # Legenda menampilkan jumlah dan persentase secara eksplisit.
+    legend_y = [37 * mm, 23 * mm, 9 * mm]
+    for (label, count, fill), y in zip(statuses, legend_y):
+        percentage = (count / total) * 100
+        drawing.add(
+            Rect(
+                65 * mm, y - 1.5 * mm, 4 * mm, 4 * mm,
+                fillColor=fill, strokeColor=fill,
+            )
+        )
+        drawing.add(
+            String(
+                73 * mm, y, f"{label}: {percentage:.1f}% ({count}/{total})",
+                fontName="Helvetica", fontSize=8, fillColor=DARK,
+            )
+        )
+
+    return drawing
 
 
 def _page_footer(canvas, doc) -> None:
@@ -159,6 +238,7 @@ def generate_pentest_pdf(
             fontSize=8,
             leading=11,
             textColor=DARK,
+            alignment=TA_JUSTIFY,
             spaceAfter=3,
         ),
         "small": ParagraphStyle(
@@ -312,6 +392,10 @@ def generate_pentest_pdf(
         , styles["body"])
     )
     story.append(summary_table)
+    story.append(Spacer(1, 7))
+    story.append(Paragraph("Persentase Status Audit", styles["finding"]))
+    story.append(_audit_percentage_chart(catalogs))
+    story.append(Spacer(1, 5))
 
     hardening_success = _count_status(catalogs, "status_hardening", {"SUCCESS"})
     hardening_skipped = _count_status(catalogs, "status_hardening", {"SKIPPED"})
@@ -358,7 +442,7 @@ def generate_pentest_pdf(
     story.append(
         p(
             "Laporan ini menyajikan hasil audit kontrol keamanan server serta "
-            "riwayat tindakan hardening dan rollback yang tercatat pada database "
+            "riwayat tindakan hardening dan rollback yang tercatat pada basis data "
             "lokal. Acuan CIS Benchmarks dan UU PDP digunakan sebagai referensi "
             "pemetaan kontrol teknis. Laporan ini bukan pengganti penetration test "
             "menyeluruh, audit kepatuhan hukum, atau verifikasi independen atas "
@@ -386,6 +470,7 @@ def generate_pentest_pdf(
         category = catalog.get("kategori", "-")
         cis_code = catalog.get("kode_cis")
         cis_title = catalog.get("judul_cis")
+        cis_version = catalog.get("versi_cis")
         framework = catalog.get("framework")
         regulasi = catalog.get("regulasi")
         kepatuhan = catalog.get("kepatuhan")
@@ -433,7 +518,8 @@ def generate_pentest_pdf(
             detail_parts.extend(
                 [
                     Spacer(1, 4),
-                    p(f"Referensi CIS: {cis_title}", styles["body"]),
+                    p(f"<b>Referensi CIS:</b> {cis_title}", styles["body"]),
+                    p(f"<b>Versi CIS:</b> {cis_version or '-'}", styles["body"]),
                 ]
             )
 
@@ -448,7 +534,7 @@ def generate_pentest_pdf(
                 p(framework or ("CIS Benchmark" if has_cis else "Tidak ditentukan")),
                 p(
                     "Regulasi: " + str(regulasi or "-")
-                    + "\\nKepatuhan: " + str(kepatuhan or "-")
+                    + "\nKepatuhan: " + str(kepatuhan or "-")
                 ),
             ],
         ]
@@ -476,7 +562,7 @@ def generate_pentest_pdf(
                 Spacer(1, 5),
                 regulatory_table,
                 Spacer(1, 4),
-                p(f"Deskripsi kontrol: {description}", styles["body"]),
+                p(f"<b>Deskripsi kontrol:</b> {description}", styles["body"]),
                 Spacer(1, 4),
             ]
         )

@@ -55,7 +55,8 @@ def init_db() -> None:
                 CREATE TABLE IF NOT EXISTS servers (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     sistem_operasi TEXT NOT NULL,
-                    arsitektur TEXT NOT NULL
+                    arsitektur TEXT NOT NULL,
+                    hostname TEXT
                 )
                 """
             )
@@ -106,6 +107,7 @@ def _get_or_create_server(
     info = server_info or {}
     sistem_operasi = info.get("os_platform") or info.get("sistem_operasi")
     arsitektur = info.get("architecture") or info.get("arsitektur")
+    hostname = info.get("hostname")
 
     row = conn.execute(
         "SELECT id FROM servers ORDER BY id LIMIT 1"
@@ -117,12 +119,13 @@ def _get_or_create_server(
             conn.execute(
                 """
                 UPDATE servers
-                SET sistem_operasi = ?, arsitektur = ?
+                SET sistem_operasi = ?, arsitektur = ?, hostname = ?
                 WHERE id = ?
                 """,
                 (
                     sistem_operasi or "Tidak diketahui",
                     arsitektur or "Tidak diketahui",
+                    hostname or "Tidak diketahui",
                     server_id,
                 ),
             )
@@ -130,12 +133,13 @@ def _get_or_create_server(
 
     cursor = conn.execute(
         """
-        INSERT INTO servers (sistem_operasi, arsitektur)
-        VALUES (?, ?)
+        INSERT INTO servers (sistem_operasi, arsitektur, hostname)
+        VALUES (?, ?, ?)
         """,
         (
             sistem_operasi or "Tidak diketahui",
             arsitektur or "Tidak diketahui",
+            hostname or "Tidak diketahui",
         ),
     )
     return int(cursor.lastrowid)

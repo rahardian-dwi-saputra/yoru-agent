@@ -29,7 +29,7 @@ def parse_taskfile_metadata(taskfile_path: Path) -> Optional[CatalogMetadata]:
         
         # Penanganan multiline string deskripsi yang aman dari None
         deskripsi_raw = vars_data.get("DESKRIPSI") or ""
-        deskripsi = str(deskripsi_raw).strip()
+        deskripsi = str(deskripsi_raw).strip().replace("\n", " ")
         
         risiko = str(vars_data.get("RISIKO") or "")
         kategori = str(vars_data.get("KATEGORI") or "")
@@ -43,10 +43,23 @@ def parse_taskfile_metadata(taskfile_path: Path) -> Optional[CatalogMetadata]:
 
         # Penanganan multiline string deskripsi yang aman dari None
         pesan_hardening_raw = vars_data.get("PESAN_HARDENING") or ""
-        pesan_hardening = str(pesan_hardening_raw).strip()
+        pesan_hardening = str(pesan_hardening_raw).strip().replace("\n", " ")
+
+        if "⚠️ PERINGATAN:" in pesan_hardening:
+            pesan_hardening = pesan_hardening.replace(" ⚠️ PERINGATAN: ", "\n⚠️ PERINGATAN:\n")
+
+        if "⚠️ DAMPAK OPERASIONAL:" in pesan_hardening:
+            pesan_hardening = pesan_hardening.replace(" ⚠️ DAMPAK OPERASIONAL: ", "\n⚠️ DAMPAK OPERASIONAL:\n")
 
         pesan_rollback_raw = vars_data.get("PESAN_ROLLBACK") or ""
-        pesan_rollback = str(pesan_rollback_raw).strip()
+        pesan_rollback = str(pesan_rollback_raw).strip().replace("\n", " ")
+
+        if "⚠️ RISIKO KEAMANAN:" in pesan_rollback:
+            pesan_rollback = pesan_hardening.replace(" ⚠️ RISIKO KEAMANAN: ", "\n⚠️ RISIKO KEAMANAN:\n")
+
+        if "⚠️ RISIKO:" in pesan_rollback:
+            pesan_rollback = pesan_hardening.replace(" ⚠️ RISIKO: ", "\n⚠️ RISIKO:\n")
+
 
         return CatalogMetadata(
             id=catalog_id,

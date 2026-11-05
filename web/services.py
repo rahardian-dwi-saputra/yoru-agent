@@ -24,10 +24,13 @@ from database import (
 )
 
 API_BASE_URL = f"http://{API_HOST}:{API_PORT}/api/v1"
+
 REQUEST_TIMEOUT = 10
 ACTION_TIMEOUT = 30
 CONFIRM_TIMEOUT = 60
 
+ALL_ACTION_TIMEOUT = 600       
+ALL_CONFIRM_TIMEOUT = 180 
 
 
 def get_api_key() -> str:
@@ -137,11 +140,18 @@ def _update_result_status(results: list[dict[str, Any]], action_type: str) -> No
 
 def _trigger_audit(catalogs: list[str]) -> tuple[bool, str]:
     """Menjalankan audit untuk satu atau beberapa katalog."""
+
+    timeout = (
+        ALL_ACTION_TIMEOUT
+        if catalogs == ["ALL"]
+        else ACTION_TIMEOUT
+    )
+
     success, data, error = _request(
         "POST",
         "/agent/audit",
         payload={"catalogs": catalogs},
-        timeout=ACTION_TIMEOUT,
+        timeout=timeout,
     )
     if not success:
         return False, error
@@ -159,11 +169,18 @@ def _init_plan(
 ) -> tuple[bool, dict[str, Any]]:
     """Meminta plan hardening atau rollback ke API."""
     endpoint = f"/agent/{action}/init"
+
+    timeout = (
+        ALL_ACTION_TIMEOUT
+        if catalogs == ["ALL"]
+        else ACTION_TIMEOUT
+    )
+
     success, data, error = _request(
         "POST",
         endpoint,
         payload={"catalogs": catalogs},
-        timeout=ACTION_TIMEOUT,
+        timeout=timeout,
     )
 
     if not success:
@@ -187,11 +204,18 @@ def _confirm_plan(
         payload["catalog"] = catalog
 
     endpoint = f"/agent/{action}/confirm"
+
+    timeout = (
+        ALL_CONFIRM_TIMEOUT
+        if catalog is None
+        else CONFIRM_TIMEOUT
+    )
+
     success, data, error = _request(
         "POST",
         endpoint,
         payload=payload,
-        timeout=CONFIRM_TIMEOUT,
+        timeout=timeout,
     )
 
     if not success:
@@ -214,11 +238,13 @@ def fetch_system_info() -> dict[str, Any]:
         return {
             "os_platform": "",
             "architecture": "",
+            "hostname": "",
         }
 
     system_info = {
         "os_platform": data.get("os_platform", ""),
         "architecture": data.get("architecture", ""),
+        "hostname": data.get("hostname", ""),
     }
 
     save_server_info(system_info)
