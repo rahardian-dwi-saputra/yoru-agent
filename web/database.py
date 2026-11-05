@@ -305,6 +305,36 @@ def get_dashboard_metrics() -> dict[str, int]:
     }
 
 
+def get_server_info() -> dict[str, Any] | None:
+    """Mengambil detail server yang tersimpan di database."""
+    conn = _connect()
+
+    try:
+        cursor = conn.execute(
+            """
+            SELECT
+                id,
+                sistem_operasi,
+                arsitektur,
+                hostname
+            FROM servers
+            ORDER BY id DESC
+            LIMIT 1
+            """
+        )
+
+        row = cursor.fetchone()
+
+        if row is None:
+            return None
+
+        columns = [column[0] for column in cursor.description]
+        return dict(zip(columns, row))
+
+    finally:
+        conn.close()
+
+
 def get_catalog_detail(rule_id: str) -> dict[str, Any] | None:
     """Mengambil detail satu katalog berdasarkan ID."""
     with closing(_connect()) as conn:

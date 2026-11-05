@@ -21,6 +21,10 @@ from reportlab.platypus import (
     Table,
     TableStyle,
 )
+from xml.sax.saxutils import escape
+from database import get_server_info
+
+server_info = get_server_info()
 
 
 # Palet warna laporan
@@ -158,7 +162,7 @@ def _page_footer(canvas, doc) -> None:
 def generate_pentest_pdf(
     catalogs_data: list[dict[str, Any]],
     output_filename: str | Path = "Yoru_Agent_Report.pdf",
-    server_info: dict[str, Any] | None = None,
+    server_info=server_info,
 ) -> str:
     """
     Membuat laporan evaluasi keamanan server bergaya penetration testing.
@@ -518,8 +522,14 @@ def generate_pentest_pdf(
             detail_parts.extend(
                 [
                     Spacer(1, 4),
-                    p(f"<b>Referensi CIS:</b> {cis_title}", styles["body"]),
-                    p(f"<b>Versi CIS:</b> {cis_version or '-'}", styles["body"]),
+                    Paragraph(
+                        f"<b>Referensi CIS:</b> {escape(str(cis_title))}",
+                        styles["body"],
+                    ),
+                    Paragraph(
+                        f"<b>Versi CIS:</b> {escape(str(cis_version or '-'))}",
+                        styles["body"],
+                    ),
                 ]
             )
 
@@ -562,7 +572,10 @@ def generate_pentest_pdf(
                 Spacer(1, 5),
                 regulatory_table,
                 Spacer(1, 4),
-                p(f"<b>Deskripsi kontrol:</b> {description}", styles["body"]),
+                Paragraph(
+                    f"<b>Deskripsi kontrol:</b> {escape(str(description or '-'))}",
+                    styles["body"],
+                ),
                 Spacer(1, 4),
             ]
         )

@@ -3,7 +3,11 @@ import json
 import random
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
-from config.settings import PLANS_DIR
+from config.settings import (
+    APP_TIMEZONE, 
+    PLAN_EXPIRE_MINUTES, 
+    PLANS_DIR
+)
 
 
 PLANS_DIR.mkdir(parents=True, exist_ok=True)
@@ -24,13 +28,15 @@ def create_action_plan(
     """Membuat file JSON action plan (hardening/rollback) dan menyimpannya ke storage/plans/"""
     prefix = "rp" if action.lower() == "rollback" else "hp"
     plan_id = generate_plan_id(prefix=prefix)
-    expires_at = datetime.now(timezone.utc) + timedelta(minutes=8)
+
+    now = datetime.now(APP_TIMEZONE)
+    expires_at = now + timedelta(minutes=PLAN_EXPIRE_MINUTES)
 
     plan_data = {
         "plan_id": plan_id,
         "action": action.lower(),
         "status": "pending_approval",
-        "created_at": datetime.now(timezone.utc).isoformat(),
+        "created_at": now.isoformat(),
         "expires_at": expires_at.isoformat(),
         "catalogs": catalogs,
     }
@@ -65,7 +71,7 @@ def update_and_expire_plan(plan_id: str, status: str) -> None:
 
     plan_data["status"] = status
     plan_data["expires_at"] = (
-        datetime.now(timezone.utc) - timedelta(seconds=1)
+        datetime.now(APP_TIMEZONE) - timedelta(seconds=1)
     ).isoformat()
 
     file_path = PLANS_DIR / f"{plan_id}.json"
@@ -83,7 +89,7 @@ def is_plan_valid(plan_data: Dict[str, Any]) -> bool:
         return False
 
     expires_at = datetime.fromisoformat(expires_at_str)
-    return datetime.now(timezone.utc) < expires_at
+    return datetime.now(APP_TIMEZONE) < expires_at
 
 
 def has_active_plan(action: str) -> Optional[Dict[str, Any]]:
@@ -95,7 +101,7 @@ def has_active_plan(action: str) -> Optional[Dict[str, Any]]:
     if not PLANS_DIR.exists():
         return None
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(APP_TIMEZONE)
 
     for file_path in PLANS_DIR.glob("*.json"):
         try:

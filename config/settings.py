@@ -15,6 +15,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # Plan Direktori untuk Hardening dan dan rollback
 PLANS_DIR = PROJECT_ROOT / "storage" / "plans"
 
+# Batas waktu plan hardening dan rollback kadaluarsa
+PLAN_EXPIRE_MINUTES = 8
+
 # Path konfigurasi layanan utama
 SSHD_CONFIG = Path("/etc/ssh/sshd_config")
 JOURNALD_CONFIG = Path("/etc/systemd/journald.conf.d/journald-yoru-agent.conf")

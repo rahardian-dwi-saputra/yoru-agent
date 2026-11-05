@@ -14,15 +14,32 @@ from services import (
     fetch_dashboard_metrics
 )
 
+from database import save_server_info
+
 
 PAGE_TITLE = "Yoru-Agent Security Dashboard"
 PAGE_ICON = "🛡️"
 PAGE_SIZE = 10
 
 
+def initialize_server_info():
+    """Mengambil informasi server sekali setiap sesi Streamlit."""
+
+    if "server_info" not in st.session_state:
+        server_info = fetch_system_info()
+
+        st.session_state.server_info = server_info
+
+        if server_info:
+            save_server_info(server_info)
+
+    return st.session_state.server_info
+
+
 def _load_dashboard_data(page: int) -> tuple[dict, list[dict], int, dict]:
     """Mengambil seluruh data yang dibutuhkan dashboard."""
-    system_info = fetch_system_info() or {}
+    system_info = st.session_state.get("server_info") or {}
+    
     catalog_list, total_items = fetch_catalog_data(
         page=page,
         per_page=PAGE_SIZE,
@@ -52,10 +69,12 @@ def main() -> None:
     st.caption("Infrastructure Hardening Control Plane")
     st.divider()
 
-    # Menjaga nomor halaman tetap valid ketika jumlah katalog berubah.
-    page = max(1, int(st.session_state.get("page_num", 1)))
-
     try:
+        initialize_server_info()
+
+        # Menjaga nomor halaman tetap valid ketika jumlah katalog berubah.
+        page = max(1, int(st.session_state.get("page_num", 1)))
+
         system_info, catalog_list, total_items, dashboard_metrics = (
             _load_dashboard_data(page)
         )

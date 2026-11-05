@@ -113,7 +113,10 @@ def render_metrics_row(sys_info: dict, metrics_data: dict) -> None:
         (
             "Informasi Sistem Operasi",
             _catalog_value(sys_info, "os_platform", default="Tidak diketahui"),
-            f"Arch: {_safe(sys_info.get('architecture'), 'Tidak diketahui')}",
+            (
+                f"Hostname: {_safe(sys_info.get('hostname'), 'Tidak diketahui')} "
+                f"| Arch: {_safe(sys_info.get('architecture'), 'Tidak diketahui')}"
+            ),
             "#f7f8f9",
         ),
         (
@@ -160,7 +163,7 @@ def _get_plan_details(plan_data: dict) -> tuple[str | None, str, list]:
     plan = plans[0] if plans and isinstance(plans[0], dict) else {}
     return (
         plan.get("plan_id"),
-        plan.get("expires_at", "-"),
+        _format_timestamp(plan.get("expires_at")),
         plan.get("catalogs") or [],
     )
 

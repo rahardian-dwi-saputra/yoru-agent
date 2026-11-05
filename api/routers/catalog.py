@@ -42,7 +42,7 @@ router = APIRouter(
     response_model=SystemInfoResponse,
     summary="Mendapatkan OS Platform dan Arsitektur Server",
 )
-@limiter.limit("10/minute")
+@limiter.limit("30/minute")
 async def get_system_info(request: Request):
     """
     Mengembalikan nama OS/Distribusi (contoh: Ubuntu 22.04.4 LTS) dan Arsitektur CPU.

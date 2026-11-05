@@ -195,21 +195,17 @@ def _confirm_plan(
     approved: bool,
     catalog: str | None = None,
 ) -> tuple[bool, dict[str, Any]]:
-    """Mengirim keputusan persetujuan plan hardening atau rollback."""
+    """Mengirim keputusan plan dan menyinkronkan status melalui audit."""
     payload: dict[str, Any] = {
         "plan_id": plan_id,
         "approved": approved,
     }
+
     if catalog:
         payload["catalog"] = catalog
 
     endpoint = f"/agent/{action}/confirm"
-
-    timeout = (
-        ALL_CONFIRM_TIMEOUT
-        if catalog is None
-        else CONFIRM_TIMEOUT
-    )
+    timeout = ALL_CONFIRM_TIMEOUT if catalog is None else CONFIRM_TIMEOUT
 
     success, data, error = _request(
         "POST",
@@ -221,10 +217,33 @@ def _confirm_plan(
     if not success:
         return False, {"message": error}
 
-    if approved:
-        results = data.get("results", [])
-        if isinstance(results, list):
-            _update_result_status(results, action)
+    if not approved:
+        return True, data
+
+    results = data.get("results", [])
+    if isinstance(results, list):
+        _update_result_status(results, action)
+
+    # Sinkronisasi status setelah hardening atau rollback.
+    if action in {"hardening", "rollback"}:
+        audit_catalogs = ["ALL"] if catalog is None else [catalog]
+        audit_success, audit_message = _trigger_audit(audit_catalogs)
+
+        data["audit_sync"] = {
+            "success": audit_success,
+            "message": audit_message,
+        }
+
+        if audit_success:
+            data["message"] = (
+                f"{data.get('message', 'Proses selesai.')}"
+                " Sinkronisasi status melalui audit berhasil."
+            )
+        else:
+            data["message"] = (
+                f"{data.get('message', 'Proses selesai.')}"
+                f" Namun, sinkronisasi audit gagal: {audit_message}"
+            )
 
     return True, data
 
