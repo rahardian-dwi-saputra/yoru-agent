@@ -208,7 +208,9 @@ def _show_action_confirmation(
     if rule_id:
         st.markdown(f"**Rule ID:** `{_safe(rule_id)}`")
 
-    st.markdown(f"**Pesan sistem:**\n\n> {message}")
+    formatted_message = message.replace("\n", "  \n")
+
+    st.markdown(f"**Pesan sistem:**\n\n{formatted_message}")
     st.markdown(f"- **Plan ID:** `{_safe(plan_id)}`")
     if is_all:
         st.markdown(f"- **Total katalog terdampak:** {len(affected_catalogs)} rules")
