@@ -330,6 +330,12 @@ def show_catalog_detail_modal(rule_id: str) -> None:
         st.rerun()
 
 
+def _open_catalog_detail(rule_id: str) -> None:
+    """Membuka halaman detail katalog yang dipilih."""
+    st.session_state["selected_catalog_id"] = rule_id
+    st.switch_page("pages/detail_katalog.py")
+
+
 def _run_audit(rule_id: str | None = None) -> None:
     label = f"Audit {rule_id}" if rule_id else "Audit All"
     with st.spinner(f"Menjalankan {label}..."):
@@ -403,9 +409,9 @@ def _render_pdf_export() -> None:
         try:
             with st.spinner("Menyiapkan laporan PDF..."):
                 catalogs, _ = get_paginated_catalogs(page=1, per_page=10000)
-                server_info = fetch_system_info()
+                
 
-                pdf_path = Path(generate_pentest_pdf(catalogs, PDF_FILENAME, server_info))
+                pdf_path = Path(generate_pentest_pdf(catalogs_data=catalogs, output_filename=PDF_FILENAME))
                 if not pdf_path.is_file():
                     raise FileNotFoundError("File PDF tidak ditemukan.")
 
@@ -469,7 +475,7 @@ def _render_catalog_actions(item: dict, index: int) -> None:
                 key=f"detail_{rule_id}_{index}",
                 use_container_width=True,
             ):
-                show_catalog_detail_modal(rule_id)
+                _open_catalog_detail(rule_id)
         return
 
     audit_col, hard_col, rollback_col, detail_col = st.columns(4)

@@ -2,6 +2,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 import sys
 import requests
 
@@ -373,6 +374,45 @@ def confirm_rollback_plan(
 ) -> tuple[bool, dict[str, Any]]:
     """Menyetujui atau membatalkan plan rollback."""
     return _confirm_plan("rollback", plan_id, approved, catalog)
+
+
+def fetch_catalog_logs(
+    catalog_id: str,
+    log_type: str,
+) -> tuple[bool, list[dict[str, Any]], str]:
+    """Mengambil riwayat log audit, hardening, atau rollback suatu katalog."""
+
+    allowed_types = {"audit", "hardening", "rollback"}
+
+    if log_type not in allowed_types:
+        return False, [], f"Jenis log tidak valid: {log_type}"
+
+    if not catalog_id or not catalog_id.strip():
+        return False, [], "ID katalog tidak boleh kosong."
+
+    endpoint = (
+        f"/logs/{quote(catalog_id.strip(), safe='')}"
+        f"/{log_type}"
+    )
+
+    success, response, error = _request(
+        "GET",
+        endpoint,
+        timeout=REQUEST_TIMEOUT,
+    )
+
+    if not success:
+        return False, [], error
+
+    logs = response.get("data", [])
+
+    if not isinstance(logs, list):
+        return False, [], "Format data log dari API tidak sesuai."
+
+    logs = [log for log in logs if isinstance(log, dict)]
+
+    return True, logs, ""
+
 
 # Inisialisasi database ketika modul service pertama kali dimuat.
 init_db()

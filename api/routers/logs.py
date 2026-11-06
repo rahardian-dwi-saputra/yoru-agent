@@ -1,6 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Path as FastPath, status
+from __future__ import annotations
+
 import json
-from typing import Dict, Any
+from typing import Any, Dict
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Path as FastPath, status
+
 from api.config import limiter
 from api.dependencies import verify_api_key
 from config.api import CATALOGS_DIR
@@ -8,7 +12,7 @@ from config.api import CATALOGS_DIR
 ALLOWED_LOG_TYPES = {"audit", "hardening", "rollback"}
 
 router = APIRouter(
-    prefix="/api/logs", 
+    prefix="/api/v1/logs", 
     tags=["Logs Manager"],
     dependencies=[Depends(verify_api_key)]
 )
@@ -21,6 +25,7 @@ router = APIRouter(
 )
 @limiter.limit("10/minute")
 def get_catalog_log(
+    request: Request,
     catalog_id: str = FastPath(..., description="ID Katalog, contoh: K01, K10"),
     log_type: str = FastPath(..., description="Jenis log: audit, hardening, atau rollback"),
 ) -> Dict[str, Any]:
@@ -28,7 +33,6 @@ def get_catalog_log(
     Membaca file log tertentu (audit.json, hardening.json, atau rollback.json) 
     berdasarkan ID katalog.
     """
-    # Validasi jenis log yang diizinkan untuk keamanan
     normalized_log_type = log_type.lower()
     if normalized_log_type not in ALLOWED_LOG_TYPES:
         raise HTTPException(
@@ -36,10 +40,8 @@ def get_catalog_log(
             detail=f"Jenis log tidak valid. Pilih dari: {', '.join(ALLOWED_LOG_TYPES)}",
         )
 
-    # Konstruksi path file log secara dinamis
     log_file_path = CATALOGS_DIR / catalog_id.upper() / "logs" / f"{normalized_log_type}.json"
 
-    # Periksa apakah file log tersebut ada di disk
     if not log_file_path.is_file():
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -47,13 +49,18 @@ def get_catalog_log(
         )
 
     try:
+        log_data = []
         with open(log_file_path, "r", encoding="utf-8") as f:
-            log_data = json.load(f)
-            return {
-                "catalog": catalog_id.upper(),
-                "log_type": normalized_log_type,
-                "data": log_data,
-            }
+            for line in f:
+                stripped_line = line.strip()
+                if stripped_line:
+                    log_data.append(json.loads(stripped_line))
+
+        return {
+            "catalog": catalog_id.upper(),
+            "log_type": normalized_log_type,
+            "data": log_data,
+        }
     except json.JSONDecodeError as exc:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
@@ -73,6 +80,7 @@ def get_catalog_log(
 )
 @limiter.limit("10/minute")
 def get_all_catalog_logs(
+    request: Request,
     catalog_id: str = FastPath(..., description="ID Katalog, contoh: K01"),
 ) -> Dict[str, Any]:
     """
@@ -92,13 +100,18 @@ def get_all_catalog_logs(
         file_path = catalog_dir / f"{l_type}.json"
         if file_path.is_file():
             try:
+                lines_data = []
                 with open(file_path, "r", encoding="utf-8") as f:
-                    result[l_type] = json.load(f)
+                    for line in f:
+                        stripped_line = line.strip()
+                        if stripped_line:
+                            lines_data.append(json.loads(stripped_line))
+                result[l_type] = lines_data
             except Exception:
                 result[l_type] = {"error": "Gagal mem-parsing file log."}
         else:
             result[l_type] = None
-
+            
     return {
         "catalog": catalog_id.upper(),
         "logs": result,
