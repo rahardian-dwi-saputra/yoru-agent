@@ -1,7 +1,7 @@
 import uvicorn
 from fastapi import FastAPI
 
-from api.routers import catalog
+from api.routers import catalog, logs
 from config.api import API_HOST, API_PORT, ALLOWED_ORIGINS, DEBUG_MODE
 
 app = FastAPI(
@@ -12,6 +12,7 @@ app = FastAPI(
 
 # Register Router
 app.include_router(catalog.router)
+app.include_router(logs.router)
 
 if __name__ == "__main__":
     uvicorn.run("api.main:app", host=API_HOST, port=API_PORT, reload=DEBUG_MODE)
