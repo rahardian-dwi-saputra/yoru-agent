@@ -249,7 +249,7 @@ def main():
             logger.log(
                 LogStatus.SKIPPED,
                 "Result",
-                f"Hasil Hardening: FAILED - {detail}",
+                f"Hasil Hardening: SKIPPED - {detail}",
                 duration_ms=(perf_counter() - start) * 1000,
             )
 

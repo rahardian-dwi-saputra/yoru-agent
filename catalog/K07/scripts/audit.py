@@ -76,9 +76,12 @@ def main():
                 if algorithm.strip()
             ]
 
-            weak_kex = [x for x in kex_algorithm_list if x not in APPROVED_KEX_LIST]
+            weak_kex = [
+                x for x in kex_algorithm_list 
+                if x not in APPROVED_KEX_LIST
+            ]
 
-            if not weak_kex:
+            if weak_kex:
                 logger.log(
                     LogStatus.NON_COMPLIANT,
                     "Result",

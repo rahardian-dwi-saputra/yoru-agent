@@ -53,17 +53,14 @@ def backup_configuration() -> bool:
     return False
 
 def apply_configuration() -> None:
-    """Menerapkan konfigurasi Storage=persistent."""
+    """Menerapkan Storage=persistent pada konfigurasi journald."""
 
     JOURNALD_CONFIG.parent.mkdir(
         parents=True,
         exist_ok=True,
     )
 
-    content = (
-        "[Journal]\n"
-        "Storage=persistent\n"
-    )
+    content = "[Journal]\nStorage=persistent\n"
 
     temp_config = JOURNALD_CONFIG.with_name(
         f".{JOURNALD_CONFIG.name}.tmp"
@@ -78,9 +75,25 @@ def apply_configuration() -> None:
         os.chmod(temp_config, 0o644)
         os.replace(temp_config, JOURNALD_CONFIG)
 
+        # Pastikan file benar-benar tersimpan.
+        if not JOURNALD_CONFIG.is_file():
+            raise RuntimeError(
+                f"File konfigurasi tidak ditemukan: {JOURNALD_CONFIG}"
+            )
+
+        # Pastikan isi file sesuai.
+        saved_content = JOURNALD_CONFIG.read_text(
+            encoding="utf-8"
+        )
+
+        if saved_content.strip() != content.strip():
+            raise RuntimeError(
+                "Validasi isi file konfigurasi gagal."
+            )
+
     finally:
         temp_config.unlink(missing_ok=True)
-
+        
 def run_command(command: list[str]) -> None:
     """Menjalankan command sistem dan menangani kegagalan."""
 
@@ -223,7 +236,7 @@ def main():
         logger.log(
             LogStatus.SUCCESS,
             "Result",
-            f"Hasil Hardening: SUCCEED - Storage=persistent berhasil diterapkan. dan service SSH berhasil direstart.",
+            f"Hasil Hardening: SUCCEED - Parameter 'Storage=persistent' berhasil diterapkan dan service {JOURNALD_SERVICE_NAME} berhasil direstart.",
             duration_ms=(perf_counter() - start) * 1000,
         )
         sys.exit(0)

@@ -123,11 +123,8 @@ def _update_result_status(results: list[dict[str, Any]], action_type: str) -> No
         if not catalog_id or not isinstance(log_data, dict):
             continue
 
-        status = (
-            log_data.get("level")
-            or result.get("level")
-            or result.get("status")
-        )
+        status = log_data.get("status")
+
         if not status:
             continue
 

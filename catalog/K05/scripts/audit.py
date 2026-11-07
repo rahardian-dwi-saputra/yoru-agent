@@ -76,9 +76,12 @@ def main():
                 if cipher.strip()
             ]
 
-            weak_ciphers = [x for x in cipher_list if x not in APPROVED_CIPHERS_LIST]
+            weak_ciphers = [
+                cipher for cipher in cipher_list
+                if cipher not in APPROVED_CIPHERS_LIST
+            ]
 
-            if not weak_ciphers:
+            if weak_ciphers:
                 logger.log(
                     LogStatus.NON_COMPLIANT,
                     "Result",

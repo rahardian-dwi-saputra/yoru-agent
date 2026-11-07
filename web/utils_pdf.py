@@ -593,8 +593,8 @@ def generate_pentest_pdf(
         if audit_only:
             detail_parts.extend([
                 Spacer(1, 8),
-                p(
-                    "<b>Keterangan:</b> Katalog ini hanya mendukung operasi audit. "
+                Paragraph(
+                    f"<b>Keterangan:</b> Katalog ini hanya mendukung operasi audit. "
                     "Operasi hardening dan rollback tidak tersedia karena "
                     "penerapannya berpotensi mengganggu layanan server "
                     "yang sedang berjalan.",

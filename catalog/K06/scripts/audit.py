@@ -76,9 +76,12 @@ def main():
                 if mac.strip()
             ]
 
-            weak_macs = [x for x in mac_list if x not in APPROVED_MACS_LIST]
+            weak_macs = [
+                x for x in mac_list 
+                if x not in APPROVED_MACS_LIST
+            ]
 
-            if not weak_macs:
+            if weak_macs:
                 logger.log(
                     LogStatus.NON_COMPLIANT,
                     "Result",

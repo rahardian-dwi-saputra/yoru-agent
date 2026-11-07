@@ -339,14 +339,8 @@ class BaseLogger:
 
         self.log(
             LogStatus.ERROR,
-            "Note",
-            f"Terjadi error saat {proses} {catalog}: {type(exception).__name__} : {exception}",
-            duration_ms=duration_ms,
-        )
-        self.log(
-            LogStatus.FAILED,
             "Result",
-            f"Hasil {proses.capitalize()}: FAILED - Terjadi kesalahan pada proses {proses}.",
+            f"Hasil {proses.capitalize()}: ERROR - Terjadi error saat {proses} {catalog} ( {type(exception).__name__} : {exception} )",
             duration_ms=duration_ms,
         )
 
