@@ -131,11 +131,14 @@ def _update_result_status(results: list[dict[str, Any]], action_type: str) -> No
         if not status:
             continue
 
+        message = log_data.get("message") or "-"
+
         update_execution_status(
             rule_id=str(catalog_id),
             action_type=action_type,
             status=str(status).upper(),
             timestamp=timestamp,
+            message=message,
         )
 
 

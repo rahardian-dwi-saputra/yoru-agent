@@ -8,7 +8,7 @@ from typing import Any
 
 import streamlit as st
 
-from database import get_catalog_detail, get_paginated_catalogs
+from database import get_catalog_detail
 from services import (
     confirm_hardening_plan,
     confirm_rollback_plan,
@@ -18,8 +18,7 @@ from services import (
     init_single_rollback,
     refresh_catalog_data,
     trigger_audit_all,
-    trigger_single_audit,
-    fetch_system_info
+    trigger_single_audit
 )
 from utils_pdf import generate_pentest_pdf
 
@@ -65,6 +64,21 @@ def _format_timestamp(value: Any) -> str:
         except ValueError:
             continue
     return text
+
+def _render_flash_message() -> None:
+    """Menampilkan flash message dari session state jika ada."""
+    flash = st.session_state.pop("flash_message", None)
+    if flash:
+        msg_type = flash.get("type")
+        text = flash.get("text")
+        if msg_type == "success":
+            st.success(text)
+        elif msg_type == "warning":
+            st.warning(text)
+        elif msg_type == "error":
+            st.error(text)
+        else:
+            st.info(text)
 
 
 def render_styles() -> None:
@@ -234,18 +248,31 @@ def _show_action_confirmation(
             use_container_width=True,
         ):
             if not plan_id:
-                st.error("Plan ID tidak ditemukan.")
-                return
-
-            success, response = confirm_fn(
-                plan_id=plan_id,
-                approved=True,
-                **({"catalog": rule_id} if rule_id else {}),
-            )
-            if success:
-                st.success(response.get("message", f"{action_label} berhasil diproses."))
+                st.session_state["flash_message"] = {
+                    "type": "error",
+                    "text": "Plan ID tidak ditemukan."
+                }
                 st.rerun()
-            st.error(response.get("message", f"Gagal menjalankan {action_label.lower()}."))
+
+            with st.spinner(f"Menjalankan {action_label.lower()}..."):
+                success, response = confirm_fn(
+                    plan_id=plan_id,
+                    approved=True,
+                    **({"catalog": rule_id} if rule_id else {}),
+                )
+            
+            msg = response.get("message") if isinstance(response, dict) else str(response)
+            if success:
+                st.session_state["flash_message"] = {
+                    "type": "success",
+                    "text": msg or f"{action_label} berhasil diproses."
+                }
+            else:
+                st.session_state["flash_message"] = {
+                    "type": "error",
+                    "text": msg or f"Gagal menjalankan {action_label.lower()}."
+                }
+            st.rerun()
 
     with no_col:
         if st.button(
@@ -254,17 +281,28 @@ def _show_action_confirmation(
             use_container_width=True,
         ):
             if plan_id:
-                success, response = confirm_fn(
-                    plan_id=plan_id,
-                    approved=False,
-                    **({"catalog": rule_id} if rule_id else {}),
-                )
-                if success and response.get("message"):
-                    st.warning(response["message"])
+                with st.spinner("Membatalkan plan..."):
+                    success, response = confirm_fn(
+                        plan_id=plan_id,
+                        approved=False,
+                        **({"catalog": rule_id} if rule_id else {}),
+                    )
+                msg = response.get("message") if isinstance(response, dict) else str(response)
+                if success and msg:
+                    st.session_state["flash_message"] = {
+                        "type": "warning",
+                        "text": msg
+                    }
                 else:
-                    st.warning(f"{action_label} dibatalkan.")
+                    st.session_state["flash_message"] = {
+                        "type": "warning",
+                        "text": f"{action_label} dibatalkan."
+                    }
             else:
-                st.warning(f"{action_label} dibatalkan.")
+                st.session_state["flash_message"] = {
+                    "type": "warning",
+                    "text": f"{action_label} dibatalkan."
+                }
             st.rerun()
 
 
@@ -410,10 +448,7 @@ def _render_pdf_export() -> None:
     if st.button("📥 Export PDF Report", use_container_width=True):
         try:
             with st.spinner("Menyiapkan laporan PDF..."):
-                catalogs, _ = get_paginated_catalogs(page=1, per_page=10000)
-                
-
-                pdf_path = Path(generate_pentest_pdf(catalogs_data=catalogs, output_filename=PDF_FILENAME))
+                pdf_path = Path(generate_pentest_pdf(output_filename=PDF_FILENAME))
                 if not pdf_path.is_file():
                     raise FileNotFoundError("File PDF tidak ditemukan.")
 
@@ -492,7 +527,7 @@ def _render_catalog_actions(item: dict, index: int) -> None:
             _start_plan("rollback", rule_id)
     with detail_col:
         if st.button("📄", key=f"detail_{rule_id}_{index}", help="Detail", use_container_width=True):
-            show_catalog_detail_modal(rule_id)
+            _open_catalog_detail(rule_id)
 
 
 def render_catalog_table(catalog_list: list[dict], total_items: int) -> None:
@@ -534,8 +569,8 @@ def render_catalog_table(catalog_list: list[dict], total_items: int) -> None:
         st.info("Belum ada data katalog. Pastikan backend API aktif atau lakukan sinkronisasi.")
         return
 
-    widths = [1, 1.2, 3, 1.2, 1.2, 2.5]
-    headers = ["ID", "Kode CIS", "Judul & Nama Rule", "Kategori", "Status Audit", "Aksi"]
+    widths = [1, 1.8, 2.8, 2.5, 1.4, 1.4, 2.5]
+    headers = ["ID", "Nama Kontrol", "Kode CIS & Judul CIS", "Regulasi & Kepatuhan", "Kategori", "Status Audit", "Aksi"]
     for column, heading in zip(st.columns(widths), headers):
         with column:
             st.markdown(f"**{heading}**")
@@ -543,9 +578,12 @@ def render_catalog_table(catalog_list: list[dict], total_items: int) -> None:
     st.divider()
     for index, item in enumerate(catalog_list):
         rule_id = item.get("id", "-")
-        kode_cis = item.get("kode_cis", "-")
-        judul_cis = _catalog_value(item, "judul_cis", "cis_judul")
         nama = item.get("nama", "-")
+        kode_cis = item.get("kode_cis", "-")
+        #judul_cis = _catalog_value(item, "judul_cis", "cis_judul")
+        judul_cis = item.get("judul_cis", "-")
+        regulasi = item.get("regulasi", "-")
+        kepatuhan = item.get("kepatuhan", "-")
         kategori = item.get("kategori", "-")
         status = item.get("status_audit", "PENDING")
 
@@ -553,15 +591,22 @@ def render_catalog_table(catalog_list: list[dict], total_items: int) -> None:
         with columns[0]:
             st.write(rule_id)
         with columns[1]:
-            st.write(kode_cis)
+            st.write(nama)
         with columns[2]:
-            st.markdown(f"**{_safe(judul_cis)}**")
-            st.caption(str(nama or "-"))
+            if (not kode_cis or kode_cis == "-") and (not judul_cis or judul_cis == "-"):
+                st.markdown("**`Non-CIS`** — Aturan Kustom")
+            else:
+                st.markdown(f"**`{kode_cis}`** — {judul_cis}")
         with columns[3]:
-            st.write(kategori)
+            st.markdown(
+                f"**{regulasi}**<br><small style='color: gray;'>({kepatuhan})</small>", 
+                unsafe_allow_html=True
+            )
         with columns[4]:
-            _render_status_badge(status)
+            st.write(kategori)
         with columns[5]:
+            _render_status_badge(status)
+        with columns[6]:
             _render_catalog_actions(item, index)
 
         st.markdown(

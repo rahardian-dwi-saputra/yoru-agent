@@ -26,9 +26,9 @@ CATALOG_FIELDS = (
 REQUIRED_CATALOG_FIELDS = ("id", "nama", "deskripsi", "risiko", "kategori")
 
 STATUS_COLUMNS = {
-    "audit": ("status_audit", "waktu_audit"),
-    "hardening": ("status_hardening", "waktu_hardening"),
-    "rollback": ("status_rollback", "waktu_rollback"),
+    "audit": ("status_audit", "waktu_audit", "log_audit_terakhir"),
+    "hardening": ("status_hardening", "waktu_hardening", "log_hardening_terakhir"),
+    "rollback": ("status_rollback", "waktu_rollback", "log_rollback_terakhir"),
 }
 
 def _connect() -> sqlite3.Connection:
@@ -238,6 +238,7 @@ def update_execution_status(
     action_type: str,
     status: str,
     timestamp: str,
+    message:str,
 ) -> bool:
     """
     Memperbarui status dan waktu eksekusi katalog.
@@ -250,17 +251,17 @@ def update_execution_status(
             "action_type harus berupa 'audit', 'hardening', atau 'rollback'."
         )
 
-    status_column, timestamp_column = STATUS_COLUMNS[action]
+    status_column, timestamp_column, message_column = STATUS_COLUMNS[action]
 
     with closing(_connect()) as conn:
         with conn:
             cursor = conn.execute(
                 f"""
                 UPDATE catalogs
-                SET {status_column} = ?, {timestamp_column} = ?
+                SET {status_column} = ?, {timestamp_column} = ?, {message_column} = ?
                 WHERE id = ?
                 """,
-                (status, timestamp, rule_id),
+                (status, timestamp, message, rule_id),
             )
 
     return cursor.rowcount > 0
@@ -344,3 +345,13 @@ def get_catalog_detail(rule_id: str) -> dict[str, Any] | None:
         ).fetchone()
 
     return dict(row) if row else None
+
+
+def get_all_catalog_data() -> list[dict[str, Any]]:
+    """Mengambil seluruh data katalog."""
+    with closing(_connect()) as conn:
+        rows = conn.execute(
+            "SELECT * FROM catalogs"
+        ).fetchall()
+
+    return [dict(row) for row in rows]

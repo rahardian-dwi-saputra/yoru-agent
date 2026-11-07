@@ -49,12 +49,15 @@ def format_timestamp(value: Any) -> str:
 
 def load_catalog_logs(
     catalog_id: str,
+    audit_only: bool = False,
 ) -> tuple[dict[str, list[dict]], dict[str, str]]:
-    """Mengambil seluruh jenis log katalog dari API."""
+    """Mengambil log katalog; katalog audit-only hanya mengambil log audit."""
     logs_by_type: dict[str, list[dict]] = {}
     errors: dict[str, str] = {}
 
-    for log_type in LOG_TYPES.values():
+    allowed_types = {"Audit": "audit"} if audit_only else LOG_TYPES
+
+    for log_type in allowed_types.values():
         success, logs, error = fetch_catalog_logs(catalog_id, log_type)
 
         logs_by_type[log_type] = logs if success else []
@@ -343,10 +346,22 @@ def main() -> None:
 
     render_catalog_information(detail)
 
+    audit_only = _as_bool(detail.get("audit_only"))
+    if audit_only:
+        st.info(
+            "Katalog ini hanya mendukung operasi audit. "
+            "Log hardening dan rollback tidak ditampilkan karena "
+            "operasi tersebut berpotensi mengganggu layanan server "
+            "yang sedang berjalan."
+        )
+
     # Ambil log satu kali, lalu gunakan data yang sama untuk grafik
     # dan riwayat log agar tidak melakukan request API berulang.
     with st.spinner("Mengambil riwayat aktivitas katalog..."):
-        logs_by_type, errors = load_catalog_logs(catalog_id)
+        logs_by_type, errors = load_catalog_logs(
+            catalog_id,
+            audit_only=audit_only,
+        )
 
     st.divider()
     render_duration_chart(logs_by_type)

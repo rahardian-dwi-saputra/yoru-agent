@@ -22,10 +22,10 @@ from reportlab.platypus import (
     TableStyle,
 )
 from xml.sax.saxutils import escape
-from database import get_server_info
+from database import get_server_info, get_all_catalog_data
 
 server_info = get_server_info()
-
+catalogs = get_all_catalog_data()
 
 # Palet warna laporan
 NAVY = colors.HexColor("#172B4D")
@@ -68,6 +68,17 @@ def _count_status(
     return sum(1 for item in catalogs if _status(item.get(field)) in accepted)
 
 
+def format_timestamp(value: Any) -> str:
+    """Memformat timestamp log."""
+    if not value:
+        return "-"
+
+    try:
+        timestamp = datetime.fromisoformat(str(value))
+        return timestamp.strftime("%d-%m-%Y %H:%M:%S")
+    except (ValueError, TypeError):
+        return str(value)
+    
 
 def _audit_percentage_chart(catalogs: list[dict[str, Any]]) -> Drawing:
     """Membuat grafik pie persentase status audit."""
@@ -160,24 +171,22 @@ def _page_footer(canvas, doc) -> None:
 
 
 def generate_pentest_pdf(
-    catalogs_data: list[dict[str, Any]],
     output_filename: str | Path = "Yoru_Agent_Report.pdf",
-    server_info=server_info,
 ) -> str:
     """
     Membuat laporan evaluasi keamanan server bergaya penetration testing.
 
-    Data aktivitas hardening dan rollback dibaca dari:
-    - log_hardening_terakhir
-    - log_rollback_terakhir
-
-    Kedua field tersebut harus sudah tersedia pada setiap record katalog
-    yang dikirimkan ke fungsi ini.
+    Seluruh data server dan katalog diambil langsung dari database.
     """
+
+    server_info = get_server_info() or {}
+    catalogs_data = get_all_catalog_data() or []
+
     catalogs = [
-        item for item in (catalogs_data or [])
+        item for item in catalogs_data
         if isinstance(item, dict)
     ]
+
     output_path = str(output_filename)
 
     doc = SimpleDocTemplate(
@@ -479,6 +488,7 @@ def generate_pentest_pdf(
         regulasi = catalog.get("regulasi")
         kepatuhan = catalog.get("kepatuhan")
         audit_status = _status(catalog.get("status_audit"))
+        audit_only = catalog.get("audit_only", False)
 
         # Katalog non-CIS tetap menampilkan framework dan dasar regulasinya.
         has_cis = bool(cis_code and str(cis_code).strip() not in {"-", "N/A", "None"})
@@ -579,7 +589,22 @@ def generate_pentest_pdf(
                 Spacer(1, 4),
             ]
         )
+
+        if audit_only:
+            detail_parts.extend([
+                Spacer(1, 8),
+                p(
+                    "<b>Keterangan:</b> Katalog ini hanya mendukung operasi audit. "
+                    "Operasi hardening dan rollback tidak tersedia karena "
+                    "penerapannya berpotensi mengganggu layanan server "
+                    "yang sedang berjalan.",
+                    styles["body"],
+                ),
+            ])
+
+        
         story.append(KeepTogether(detail_parts))
+
 
         activity_rows = [
             [
@@ -587,25 +612,32 @@ def generate_pentest_pdf(
                 p("STATUS", styles["table_header"]),
                 p("WAKTU", styles["table_header"]),
                 p("AKTIVITAS TERAKHIR / LOG", styles["table_header"]),
-            ]
+            ],
+            [
+                p("Audit"),
+                p(audit_status),
+                p(format_timestamp(catalog.get("waktu_audit"))),
+                p(catalog.get("log_audit_terakhir") or "Belum ada catatan hasil audit tersimpan."),
+            ],
         ]
 
-        activity_rows.append(
-            [
-                p("Hardening"),
-                p(_status(catalog.get("status_hardening"))),
-                p(catalog.get("waktu_hardening")),
-                p(catalog.get("log_hardening_terakhir") or "Belum ada log hardening tersimpan."),
-            ]
-        )
-        activity_rows.append(
-            [
-                p("Rollback"),
-                p(_status(catalog.get("status_rollback"))),
-                p(catalog.get("waktu_rollback")),
-                p(catalog.get("log_rollback_terakhir") or "Belum ada log rollback tersimpan."),
-            ]
-        )
+        if not audit_only:
+            activity_rows.append(
+                [
+                    p("Hardening"),
+                    p(_status(catalog.get("status_hardening"))),
+                    p(format_timestamp(catalog.get("waktu_hardening"))),
+                    p(catalog.get("log_hardening_terakhir") or "Belum ada log hardening tersimpan."),
+                ]
+            )
+            activity_rows.append(
+                [
+                    p("Rollback"),
+                    p(_status(catalog.get("status_rollback"))),
+                    p(format_timestamp(catalog.get("waktu_rollback"))),
+                    p(catalog.get("log_rollback_terakhir") or "Belum ada log rollback tersimpan."),
+                ]
+            )
 
         activity_table = Table(
             activity_rows,
