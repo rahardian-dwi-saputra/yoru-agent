@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -Eeuo pipefail
 
@@ -14,7 +14,7 @@ fi
 
 # 2. Konfigurasi direktori
 TARGET_USER="yoru-agent"
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 VENV_DIR="$PROJECT_DIR/venv"
 
 GREEN='\033[0;32m'
@@ -24,7 +24,7 @@ NC='\033[0m'
 
 echo -e "${GREEN}[+] Memulai instalasi dependencies Yoru-Agent...${NC}"
 
-# 3. Validasi user
+# 3. Validasi user aplikasi
 if ! id "$TARGET_USER" &>/dev/null; then
     echo -e "${RED}[-] User '$TARGET_USER' belum tersedia.${NC}"
     echo "    Jalankan setup-environment.sh terlebih dahulu."
@@ -33,34 +33,7 @@ fi
 
 TARGET_GROUP="$(id -gn "$TARGET_USER")"
 
-
-# 4. Konfigurasi API Key
-echo -e "${GREEN}[+] Membaca konfigurasi API Key...${NC}"
-
-API_KEY_PATH="$(
-    PROJECT_DIR="$PROJECT_DIR" python3 -c '
-import os
-import sys
-
-sys.path.insert(0, os.environ["PROJECT_DIR"])
-
-from config.api import API_KEY_PATH
-
-print(API_KEY_PATH)
-'
-)"
-
-if [[ -z "$API_KEY_PATH" || "$API_KEY_PATH" != /* ]]; then
-    echo -e "${RED}[-] API_KEY_PATH tidak valid.${NC}"
-    exit 1
-fi
-
-API_DIR="$(dirname "$API_KEY_PATH")"
-
-mkdir -p "$API_DIR"
-
-
-# 5. Membuat Virtual Environment
+# 4. Membuat virtual environment
 echo -e "${GREEN}[+] Memeriksa virtual environment...${NC}"
 
 if [[ ! -x "$VENV_DIR/bin/python" ]]; then
@@ -82,8 +55,7 @@ fi
 
 PYTHON="$VENV_DIR/bin/python"
 
-
-# 6. Instalasi Library Python
+# 5. Instalasi library Python
 echo -e "${GREEN}[+] Menginstall library Python...${NC}"
 
 "$PYTHON" -m pip install --upgrade pip
@@ -105,9 +77,32 @@ echo -e "${GREEN}[+] Menginstall library Python...${NC}"
 
 echo -e "${GREEN}[OK] Library Python berhasil diinstall.${NC}"
 
+# 6. Membaca konfigurasi API Key
+echo -e "${GREEN}[+] Membaca konfigurasi API Key...${NC}"
 
-# 7. Generate API KEY
-echo
+API_KEY_PATH="$(
+    PROJECT_DIR="$PROJECT_DIR" "$PYTHON" -c '
+import os
+import sys
+
+sys.path.insert(0, os.environ["PROJECT_DIR"])
+
+from config.api import API_KEY_PATH
+
+print(API_KEY_PATH)
+'
+)"
+
+if [[ -z "$API_KEY_PATH" || "$API_KEY_PATH" != /* ]]; then
+    echo -e "${RED}[-] API_KEY_PATH tidak valid atau bukan absolute path.${NC}"
+    exit 1
+fi
+
+API_DIR="$(dirname "$API_KEY_PATH")"
+
+mkdir -p "$API_DIR"
+
+# 7. Generate API Key
 echo -e "${GREEN}[+] Memeriksa API Key...${NC}"
 
 if [[ -f "$API_KEY_PATH" ]]; then
@@ -131,6 +126,8 @@ else
 
     TEMP_KEY="$(mktemp "$API_DIR/.api-key.XXXXXX")"
 
+    trap 'rm -f "${TEMP_KEY:-}"' EXIT
+
     printf '%s\n' "$GENERATED_KEY" > "$TEMP_KEY"
 
     chown root:"$TARGET_GROUP" "$TEMP_KEY"
@@ -138,21 +135,21 @@ else
 
     mv -f "$TEMP_KEY" "$API_KEY_PATH"
 
-    echo -e "${GREEN}[OK] API Key berhasil dibuat.${NC}"
+    trap - EXIT
 
+    echo -e "${GREEN}[OK] API Key berhasil dibuat.${NC}"
 fi
 
-# Pastikan user aplikasi dapat membaca API Key.
+# Pastikan user aplikasi dapat membaca API Key
 chown root:"$TARGET_GROUP" "$API_KEY_PATH"
 chmod 0640 "$API_KEY_PATH"
 
-
 # 8. Validasi akhir
-echo
 echo -e "${GREEN}[+] Memvalidasi instalasi...${NC}"
 
 if ! runuser -u "$TARGET_USER" -- test -r "$API_KEY_PATH"; then
     echo -e "${RED}[-] User '$TARGET_USER' tidak dapat membaca API Key.${NC}"
+    echo "    Periksa izin direktori: $API_DIR"
     exit 1
 fi
 
@@ -161,7 +158,12 @@ if [[ ! -x "$PYTHON" ]]; then
     exit 1
 fi
 
-echo
+if ! "$PYTHON" -c "import dotenv, fastapi, uvicorn, streamlit"; then
+    echo -e "${RED}[-] Validasi library Python gagal.${NC}"
+    exit 1
+fi
+
+echo ""
 echo -e "${GREEN}==========================================================${NC}"
 echo -e "${GREEN}[OK] INSTALASI DEPENDENCIES YORU-AGENT SELESAI${NC}"
 echo -e "${GREEN}==========================================================${NC}"
@@ -172,10 +174,10 @@ echo "[i] Python            : $PYTHON"
 echo "[i] API Key           : $API_KEY_PATH"
 echo "[i] Application User  : $TARGET_USER"
 
-echo
+echo ""
 echo "Untuk mengaktifkan virtual environment:"
 echo "source \"$VENV_DIR/bin/activate\""
 
-echo
+echo ""
 echo "Untuk melihat API Key:"
 echo "sudo cat \"$API_KEY_PATH\""
