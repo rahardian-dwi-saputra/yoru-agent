@@ -1,23 +1,68 @@
-# Konfigurasi Sudoers untuk Yoru-Agent
-# Membatasi user yoru-agent hanya pada utilitas sistem keamanan yang diizinkan
+# ==========================================================
+# YORU-AGENT SUDOERS CONFIGURATION
+# ==========================================================
 
-# 1. Izinkan menjalankan skrip Python proyek
+# ==========================================================
+# 1. PYTHON PROJECT EXECUTION
+# ==========================================================
+
+# Mengizinkan user yoru-agent menjalankan skrip Python
+# proyek Yoru-Agent sebagai root.
+
 yoru-agent ALL=(root) NOPASSWD: /usr/bin/python3 /opt/yoru-agent/*.py
-yoru-agent ALL=(root) NOPASSWD: /usr/bin/python3 -m *
 
-# 2. Izinkan utilitas kernel sysctl (untuk K16 - K19)
+
+# ==========================================================
+# 2. KERNEL MANAGEMENT (K16 - K19)
+# ==========================================================
+
+# Digunakan untuk membaca dan mengubah parameter kernel
+# melalui sysctl, termasuk proses rollback.
+
 yoru-agent ALL=(root) NOPASSWD: /usr/sbin/sysctl
 
-# 3. Izinkan manajemen service systemd
-yoru-agent ALL=(root) NOPASSWD: /usr/bin/systemctl restart sshd
-yoru-agent ALL=(root) NOPASSWD: /usr/bin/systemctl reload sshd
-yoru-agent ALL=(root) NOPASSWD: /usr/bin/systemctl enable *
-yoru-agent ALL=(root) NOPASSWD: /usr/bin/systemctl start *
-yoru-agent ALL=(root) NOPASSWD: /usr/bin/systemctl stop *
-yoru-agent ALL=(root) NOPASSWD: /usr/bin/systemctl status *
 
-# 4. Izinkan manajemen firewall UFW (untuk K09, K10)
-yoru-agent ALL=(root) NOPASSWD: /usr/sbin/ufw
+# ==========================================================
+# 3. SYSTEMD SERVICE MANAGEMENT
+# ==========================================================
 
-# 5. Izinkan pencatatan audit ke Linux Journal / Syslog
-yoru-agent ALL=(root) NOPASSWD: /usr/bin/logger
+# Membaca status service untuk kebutuhan audit.
+
+Cmnd_Alias YORU_SERVICE_READ = \
+    /usr/bin/systemctl status ssh.service, \
+    /usr/bin/systemctl status auditd.service, \
+    /usr/bin/systemctl status systemd-journald.service, \
+    /usr/bin/systemctl is-active ssh.service, \
+    /usr/bin/systemctl is-active auditd.service, \
+    /usr/bin/systemctl is-active systemd-journald.service
+
+# Mengelola service yang diperlukan untuk hardening
+# dan rollback katalog.
+
+Cmnd_Alias YORU_SERVICE_MANAGE = \
+    /usr/bin/systemctl restart ssh.service, \
+    /usr/bin/systemctl reload ssh.service, \
+    /usr/bin/systemctl restart systemd-journald.service
+
+yoru-agent ALL=(root) NOPASSWD: YORU_SERVICE_READ
+yoru-agent ALL=(root) NOPASSWD: YORU_SERVICE_MANAGE
+
+
+# ==========================================================
+# 4. FIREWALL MANAGEMENT (K13 - K14)
+# ==========================================================
+
+# K13 dan K14 merupakan katalog Audit Only.
+# Hanya mengizinkan pemeriksaan status UFW.
+
+yoru-agent ALL=(root) NOPASSWD: /usr/sbin/ufw status
+yoru-agent ALL=(root) NOPASSWD: /usr/sbin/ufw status verbose
+
+
+# ==========================================================
+# 5. NETWORK INFORMATION (K15)
+# ==========================================================
+
+# Membaca informasi port dan service yang listening.
+
+yoru-agent ALL=(root) NOPASSWD: /usr/bin/ss -lntup

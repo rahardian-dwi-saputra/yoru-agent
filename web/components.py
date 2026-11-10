@@ -18,7 +18,9 @@ from services import (
     init_single_rollback,
     refresh_catalog_data,
     trigger_audit_all,
-    trigger_single_audit
+    trigger_single_audit,
+    fetch_catalog_ai_advice,
+    fetch_global_log_summary
 )
 from utils_pdf import generate_pentest_pdf
 
@@ -206,11 +208,40 @@ def _show_action_confirmation(
         else "pesan_rollback"
       )
 
+      message = detail.get(message_key) if detail else None
+
+    elif is_all:
       message = (
-        detail.get(message_key)
-        if detail
-        else None
+        "Anda akan menjalankan proses Hardening All terhadap seluruh "
+        "katalog yang mendukung mekanisme hardening.\n\n"
+        "Sistem akan menerapkan konfigurasi keamanan pada server "
+        "berdasarkan rekomendasi CIS Ubuntu Linux 24.04 LTS Benchmark "
+        "v2.0.0 dan pemetaan kontrol terhadap Undang-Undang Nomor "
+        "27 Tahun 2022 tentang Pelindungan Data Pribadi (UU PDP).\n\n"
+        "Proses ini mencakup penguatan keamanan akses SSH, pengaturan "
+        "hak akses dan penyimpanan log sistem, serta pengamanan "
+        "konfigurasi jaringan dan kernel.\n\n"
+        "Katalog yang hanya memiliki mode Audit Only tidak akan "
+        "mengalami perubahan konfigurasi.\n\n"
+        "Pastikan Anda telah memahami dampak perubahan konfigurasi "
+        "sebelum melanjutkan."
+        if action == "hardening"
+        else
+        "Anda akan menjalankan proses Rollback All terhadap seluruh "
+        "katalog yang mendukung mekanisme rollback.\n\n"
+        "Sistem akan mengembalikan konfigurasi keamanan server ke "
+        "kondisi sebelumnya berdasarkan data backup yang tersimpan "
+        "ketika proses hardening dilakukan.\n\n"
+        "Proses ini dapat mencakup pemulihan konfigurasi SSH, "
+        "pengaturan hak akses dan penyimpanan log Journald, serta "
+        "konfigurasi keamanan jaringan dan kernel.\n\n"
+        "Katalog yang hanya memiliki mode Audit Only tidak akan "
+        "mengalami perubahan konfigurasi.\n\n"
+        "Perhatian: Rollback dapat mengembalikan konfigurasi ke "
+        "kondisi yang memiliki tingkat keamanan lebih rendah. "
+        "Pastikan tindakan ini memang diperlukan sebelum melanjutkan."
       )
+
     else:
       message = None
 
@@ -321,6 +352,70 @@ def show_rollback_all_confirmation_modal(plan_data: dict) -> None:
 
 def show_single_rollback_modal(rule_id: str, plan_data: dict) -> None:
     _show_action_confirmation("rollback", "single", plan_data, rule_id)
+
+
+@st.dialog("✨ AI Global Executive Summary")
+def show_ai_summary_modal() -> None:
+    """Dialog untuk menampilkan ringkasan eksekutif global dari AI."""
+    with st.spinner("Menganalisis seluruh log server dengan AI..."):
+        success, response, error = fetch_global_log_summary()
+
+    if not success:
+        st.session_state["flash_message"] = {
+            "type": "error",
+            "text": error or "Gagal memuat AI Summary."
+        }
+        st.rerun()
+
+    summary_text = response.get("executive_summary", "Tidak ada ringkasan yang dihasilkan.")
+    total_analyzed = response.get("total_catalogs_analyzed", 0)
+
+    st.markdown(f"**Total Katalog Dianalisis:** `{total_analyzed}` rules")
+    st.divider()
+    st.markdown(summary_text)
+    st.divider()
+
+    if st.button("Tutup", use_container_width=True):
+        st.rerun()
+
+
+@st.dialog("🤖 AI Security Advisor")
+def show_ai_advisor_modal(rule_id: str) -> None:
+    """Dialog untuk menampilkan saran keamanan AI pada katalog spesifik."""
+    detail = get_catalog_detail(rule_id)
+    rule_name = detail.get("nama") if detail else rule_id
+
+    with st.spinner(f"Meminta analisis AI untuk rule {rule_id}..."):
+        success, response, error = fetch_catalog_ai_advice(rule_id)
+
+    if not success:
+        st.session_state["flash_message"] = {
+            "type": "error",
+            "text": error or f"Gagal mendapatkan AI advice untuk katalog {rule_id}."
+        }
+        st.rerun()
+
+    ai_advice = response.get("ai_advice", {})
+    summary = ai_advice.get("summary", "-")
+    root_cause = ai_advice.get("root_cause", "-")
+    recommendation = ai_advice.get("recommendation", "-")
+
+    st.markdown(f"### Rule: `{_safe(rule_id)}`")
+    st.markdown(f"**Nama Kontrol:** {_safe(rule_name)}")
+    st.divider()
+
+    st.markdown("**📝 Ringkasan Analisis:**")
+    st.info(summary)
+
+    st.markdown("**🔍 Akar Masalah (Root Cause):**")
+    st.warning(root_cause)
+
+    st.markdown("**💡 Rekomendasi Mitigasi:**")
+    st.success(recommendation)
+
+    st.divider()
+    if st.button("Tutup", use_container_width=True):
+        st.rerun()
 
 
 @st.dialog("📄 Detail Katalog Rule")
@@ -498,7 +593,7 @@ def _render_catalog_actions(item: dict, index: int) -> None:
     audit_only = _as_bool(item.get("audit_only"))
 
     if audit_only:
-        audit_col, detail_col = st.columns(2)
+        audit_col, detail_col, ai_col = st.columns(3)
         with audit_col:
             if st.button(
                 "🔍 Audit",
@@ -513,9 +608,17 @@ def _render_catalog_actions(item: dict, index: int) -> None:
                 use_container_width=True,
             ):
                 _open_catalog_detail(rule_id)
+        with ai_col:
+            if st.button(
+                "🤖 AI",
+                key=f"ai_{rule_id}_{index}",
+                help="AI Advisor",
+                use_container_width=True,
+            ):
+                show_ai_advisor_modal(rule_id)
         return
 
-    audit_col, hard_col, rollback_col, detail_col = st.columns(4)
+    audit_col, hard_col, rollback_col, detail_col, ai_col = st.columns(5)
     with audit_col:
         if st.button("🔍", key=f"audit_{rule_id}_{index}", help="Audit", use_container_width=True):
             _run_audit(rule_id)
@@ -528,10 +631,21 @@ def _render_catalog_actions(item: dict, index: int) -> None:
     with detail_col:
         if st.button("📄", key=f"detail_{rule_id}_{index}", help="Detail", use_container_width=True):
             _open_catalog_detail(rule_id)
+    with ai_col:
+        if st.button("🤖", key=f"ai_{rule_id}_{index}", help="AI Advisor", use_container_width=True):
+            show_ai_advisor_modal(rule_id)
 
 
 def render_catalog_table(catalog_list: list[dict], total_items: int) -> None:
     """Merender tabel katalog, pagination, tombol aksi, dan ekspor PDF."""
+    
+    summary_col, _ = st.columns([1, 3])
+    with summary_col:
+        if st.button("✨ Ringkasan AI Global (Summary)", use_container_width=True, type="secondary"):
+            show_ai_summary_modal()
+
+    st.divider()
+    
     title_col, export_col = st.columns([3, 1])
     with title_col:
         st.markdown("### 📋 Katalog Rules Keamanan & Aksi Eksekusi")

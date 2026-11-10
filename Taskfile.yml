@@ -2,21 +2,51 @@ version: '3'
 
 tasks:
   install:
-    desc: "Instalasi penuh Yoru-Agent (User, Sudoers, Venv, & API Key)"
+    desc: "Instalasi lengkap Yoru-Agent (Environment, Dependencies, dan API Key)"
     cmds:
       - sudo bash ./install.sh
 
   setup-env:
-    desc: "Hanya setup user sistem dan sudoers"
+    desc: "Setup user sistem dan konfigurasi Sudoers"
     cmds:
       - sudo bash ./setup/setup-environment.sh
 
   setup-dependency:
-    desc: "Hanya setup Virtual Environment dan API Key"
+    desc: "Setup Python Virtual Environment dan API Key"
     cmds:
-      - bash ./setup/setup-dependencies.sh
+      - sudo bash ./setup/setup-dependencies.sh
 
   uninstall:
-    desc: "Pencopotan Yoru-Agent (Hapus Sudoers, Venv, & System User)"
+    desc: "Uninstall Yoru-Agent (Stop Aplikasi, Hapus Sudoers, Venv, dan System User)"
     cmds:
       - sudo bash ./setup/uninstall.sh
+
+  start:
+    desc: "Menjalankan FastAPI dan Web Dashboard"
+    cmds:
+      - sudo -u yoru-agent bash ./start-yoru-agent.sh start
+
+  stop:
+    desc: "Menghentikan FastAPI dan Web Dashboard"
+    cmds:
+      - sudo -u yoru-agent bash ./start-yoru-agent.sh stop
+
+  restart:
+    desc: "Memulai ulang FastAPI dan Web Dashboard"
+    cmds:
+      - sudo -u yoru-agent bash ./start-yoru-agent.sh restart
+
+  status:
+    desc: "Memeriksa status FastAPI dan Web Dashboard"
+    cmds:
+      - sudo -u yoru-agent bash ./start-yoru-agent.sh status
+
+  logs-api:
+    desc: "Melihat log FastAPI secara langsung"
+    cmds:
+      - tail -f /tmp/yoru-agent-api.log
+
+  logs-web:
+    desc: "Melihat log Web Dashboard secara langsung"
+    cmds:
+      - tail -f /tmp/yoru-agent-web.log

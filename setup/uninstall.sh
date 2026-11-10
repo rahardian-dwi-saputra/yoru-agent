@@ -1,51 +1,99 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
+set -Eeuo pipefail
 
 # Pastikan script dijalankan sebagai root
-if [ "$EUID" -ne 0 ]; then
-  echo "[-] Jalankan skrip ini menggunakan sudo atau sebagai root!"
-  exit 1
+if [[ "$EUID" -ne 0 ]]; then
+    echo "[-] Jalankan skrip ini menggunakan sudo atau sebagai root!"
+    exit 1
 fi
 
 TARGET_USER="yoru-agent"
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
+
 SUDOERS_FILE="/etc/sudoers.d/yoru-agent"
-
-echo "[+] Memulai proses pencopotan (uninstall) Yoru-Agent..."
-
-# 1. Hapus file konfigurasi sudoers
-if [ -f "$SUDOERS_FILE" ]; then
-  echo "[+] Menghapus konfigurasi sudoers: $SUDOERS_FILE..."
-  rm -f "$SUDOERS_FILE"
-  echo "[+] File sudoers berhasil dihapus."
-else
-  echo "[i] File sudoers untuk $TARGET_USER tidak ditemukan. Melewati."
-fi
-
-# 2. Hapus virtual environment jika ada di dalam direktori proyek
+START_SCRIPT="$PROJECT_DIR/start-yoru-agent.sh"
 VENV_DIR="$PROJECT_DIR/venv"
-if [ -d "$VENV_DIR" ]; then
-  echo "[+] Menghapus virtual environment di: $VENV_DIR..."
-  rm -rf "$VENV_DIR"
-  echo "[+] Virtual environment berhasil dihapus."
-fi
 
-# 3. Hapus system user 'yoru-agent' beserta home directory-nya (opsional)
-if id "$TARGET_USER" &>/dev/null; then
-  echo "[+] Menghapus system user '$TARGET_USER'..."
-  # Menggunakan userdel dengan opsi -r untuk menghapus home directory (/home/yoru-agent)
-  userdel -r "$TARGET_USER" 2>/dev/null || userdel "$TARGET_USER"
-  echo "[+] User '$TARGET_USER' berhasil dihapus."
+# Runtime files
+PID_FILES=(
+    "/tmp/yoru-agent-api.pid"
+    "/tmp/yoru-agent-web.pid"
+)
+
+LOG_FILES=(
+    "/tmp/yoru-agent-api.log"
+    "/tmp/yoru-agent-web.log"
+)
+
+echo "=========================================================="
+echo "              UNINSTALL YORU-AGENT                        "
+echo "=========================================================="
+
+# 1. Hentikan API dan Dashboard
+if [[ -f "$START_SCRIPT" ]]; then
+    echo ""
+    echo "[1/5] Menghentikan API dan Dashboard..."
+
+    bash "$START_SCRIPT" stop
+
+    echo "[OK] Proses aplikasi telah dihentikan."
 else
-  echo "[i] User sistem '$TARGET_USER' tidak ditemukan. Melewati."
+    echo "[INFO] start-yoru-agent.sh tidak ditemukan. Melewati."
 fi
 
-# 4. Kembalikan kepemilikan folder proyek ke user utama/normal (opsional, agar bisa diakses kembali secara penuh)
-# Mendapatkan user non-root terakhir yang memanggil sudo jika tersedia, atau membiarkannya
-if [ -n "$SUDO_USER" ]; then
-  echo "[+] Mengembalikan kepemilikan folder proyek ke user asli ($SUDO_USER)..."
-  chown -R "$SUDO_USER:$SUDO_USER" "$PROJECT_DIR"
+# 2. Hapus file sudoers
+echo ""
+echo "[2/5] Menghapus konfigurasi sudoers..."
+
+if [[ -f "$SUDOERS_FILE" ]]; then
+    rm -f "$SUDOERS_FILE"
+    echo "[OK] Konfigurasi sudoers berhasil dihapus."
+else
+    echo "[INFO] Konfigurasi sudoers tidak ditemukan."
 fi
+
+# 3. Hapus virtual environment
+echo ""
+echo "[3/5] Menghapus virtual environment..."
+
+if [[ -d "$VENV_DIR" ]]; then
+    rm -rf -- "$VENV_DIR"
+    echo "[OK] Virtual environment berhasil dihapus."
+else
+    echo "[INFO] Virtual environment tidak ditemukan."
+fi
+
+# 4. Hapus akun sistem
+echo ""
+echo "[4/5] Menghapus akun sistem..."
+
+if id "$TARGET_USER" &>/dev/null; then
+    userdel -r "$TARGET_USER"
+    echo "[OK] Akun sistem $TARGET_USER berhasil dihapus."
+else
+    echo "[INFO] Akun sistem $TARGET_USER tidak ditemukan."
+fi
+
+# 5. Bersihkan file runtime
+echo ""
+echo "[5/5] Membersihkan file runtime..."
+
+for file in "${PID_FILES[@]}" "${LOG_FILES[@]}"; do
+    if [[ -f "$file" ]]; then
+        rm -f -- "$file"
+    fi
+done
+
+echo "[OK] File runtime berhasil dibersihkan."
 
 echo ""
-echo "[+] Selesai! Yoru-Agent berhasil dicopot dari sistem."
-echo "[+] Direktori proyek tetap berada di: $PROJECT_DIR"
+echo "=========================================================="
+echo "          UNINSTALL YORU-AGENT SELESAI                    "
+echo "=========================================================="
+echo ""
+echo "Direktori proyek masih tersedia:"
+echo "$PROJECT_DIR"
+echo ""
+echo "Anda sekarang dapat menghapus direktori proyek jika sudah tidak diperlukan."
+echo ""

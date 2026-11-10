@@ -414,5 +414,48 @@ def fetch_catalog_logs(
     return True, logs, ""
 
 
+def fetch_catalog_ai_advice(
+    catalog_id: str
+) -> tuple[bool, dict[str, Any], str]:
+    """
+    Meminta nasehat/analisis AI untuk katalog tertentu (K01/K02/dst)
+    berdasarkan file log audit, hardening, dan rollback yang tersedia.
+    """
+    if not catalog_id or not catalog_id.strip():
+        return False, {}, "ID katalog tidak boleh kosong."
+
+    endpoint = f"/ai-advisor/advice/{quote(catalog_id.strip(), safe='')}"
+
+    success, response, error = _request(
+        "GET",
+        endpoint,
+        timeout=60,
+    )
+
+    if not success:
+        return False, {}, error
+
+    return True, response, ""
+
+
+def fetch_global_log_summary() -> tuple[bool, dict[str, Any], str]:
+    """
+    Meminta ringkasan eksekutif (executive summary) global 
+    dari seluruh log katalog yang ada di server.
+    """
+    endpoint = "/ai-advisor/summary/all"
+
+    success, response, error = _request(
+        "GET",
+        endpoint,
+        timeout=180,
+    )
+
+    if not success:
+        return False, {}, error
+
+    return True, response, ""
+
+
 # Inisialisasi database ketika modul service pertama kali dimuat.
 init_db()
