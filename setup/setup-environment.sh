@@ -6,7 +6,6 @@ set -Eeuo pipefail
 # YORU-AGENT ENVIRONMENT INSTALLATION
 # ==========================================================
 
-
 # 1. Pastikan script dijalankan sebagai root
 if [[ "$EUID" -ne 0 ]]; then
     echo "[-] Jalankan skrip menggunakan sudo atau sebagai root!"
@@ -58,6 +57,7 @@ else
     echo -e "${GREEN}[OK] Taskfile CLI sudah terinstall.${NC}"
 fi
 
+
 # 5. Pembuatan System User
 if id "$TARGET_USER" &>/dev/null; then
     echo -e "${YELLOW}[i] User '$TARGET_USER' sudah tersedia.${NC}"
@@ -75,19 +75,46 @@ else
 fi
 
 
-# 6. PENGATURAN OWNERSHIP DAN PERMISSION
-
+# 6. Pengaturan Ownership dan Permission
 echo -e "${GREEN}[+] Mengatur permission direktori proyek...${NC}"
 
 # Source code tetap dimiliki root agar tidak dapat dimodifikasi
 # oleh user aplikasi yang memiliki akses sudo.
-
 chown root:root "$PROJECT_DIR"
 chmod 755 "$PROJECT_DIR"
 
+# Memastikan ACL tersedia.
+if ! command -v setfacl &>/dev/null; then
+    echo -e "${YELLOW}[*] Menginstall paket ACL...${NC}"
+    apt-get update
+    apt-get install -y acl
+fi
+
+# Memberikan izin traversal pada direktori induk proyek.
+# Hanya memberikan izin execute (--x), bukan izin membaca
+# daftar isi direktori home pengguna.
+CURRENT_DIR="$(dirname "$PROJECT_DIR")"
+
+while [[ "$CURRENT_DIR" != "/" ]]; do
+    if ! runuser -u "$TARGET_USER" -- test -x "$CURRENT_DIR"; then
+        echo -e "${YELLOW}[*] Mengatur akses traversal: $CURRENT_DIR${NC}"
+
+        setfacl -m "u:${TARGET_USER}:--x" "$CURRENT_DIR"
+    fi
+
+    CURRENT_DIR="$(dirname "$CURRENT_DIR")"
+done
+
+# Validasi akses direktori proyek.
+if ! runuser -u "$TARGET_USER" -- test -x "$PROJECT_DIR"; then
+    echo -e "${RED}[-] User '$TARGET_USER' tidak dapat mengakses direktori proyek.${NC}"
+    exit 1
+fi
+
 echo -e "${GREEN}[OK] Permission direktori berhasil dikonfigurasi.${NC}"
 
-# 7. SSH Privilege Separtion Directory
+
+# 7. SSH Privilege Separation Directory
 echo -e "${GREEN}[+] Menyiapkan direktori privilege separation SSH...${NC}"
 
 install -d -o root -g root -m 0755 /run/sshd
@@ -104,17 +131,14 @@ if [[ ! -f "$TEMPLATE_FILE" ]]; then
 fi
 
 # Mengganti placeholder path proyek dan membersihkan CRLF.
-
 sed "s|/opt/yoru-agent|$PROJECT_DIR|g" "$TEMPLATE_FILE" \
     | tr -d '\r' > "$TEMP_FILE"
 
 # Mengatur ownership dan permission.
-
 chown root:root "$TEMP_FILE"
 chmod 0440 "$TEMP_FILE"
 
 # Validasi sebelum memasang konfigurasi.
-
 if visudo -cf "$TEMP_FILE"; then
     mv -f "$TEMP_FILE" "$TARGET_FILE"
     chown root:root "$TARGET_FILE"
@@ -126,11 +150,17 @@ else
     exit 1
 fi
 
+
 # 9. Validasi akhir
 echo -e "${GREEN}[+] Memvalidasi instalasi...${NC}"
 
 if ! visudo -c; then
     echo -e "${RED}[-] Validasi konfigurasi sudoers sistem gagal.${NC}"
+    exit 1
+fi
+
+if ! runuser -u "$TARGET_USER" -- test -x "$PROJECT_DIR"; then
+    echo -e "${RED}[-] Akses direktori proyek untuk '$TARGET_USER' gagal.${NC}"
     exit 1
 fi
 
@@ -144,3 +174,4 @@ echo "[i] Application User  : $TARGET_USER"
 echo "[i] Taskfile CLI      : $(command -v task)"
 echo "[i] SSH Directory     : /run/sshd"
 echo "[i] Sudoers           : $TARGET_FILE"
+echo "[i] ACL               : $(command -v setfacl)"
