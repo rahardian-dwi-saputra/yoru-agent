@@ -23,6 +23,7 @@ from reportlab.platypus import (
 )
 from xml.sax.saxutils import escape
 from database import get_server_info, get_all_catalog_data
+from config.web import WEB_STORAGE_DIR
 
 server_info = get_server_info()
 catalogs = get_all_catalog_data()
@@ -171,7 +172,7 @@ def _page_footer(canvas, doc) -> None:
 
 
 def generate_pentest_pdf(
-    output_filename: str | Path = "Yoru_Agent_Report.pdf",
+    output_filename: str | Path | None = None,
 ) -> str:
     """
     Membuat laporan evaluasi keamanan server bergaya penetration testing.
@@ -187,7 +188,15 @@ def generate_pentest_pdf(
         if isinstance(item, dict)
     ]
 
-    output_path = str(output_filename)
+    # Siapkan direktori laporan.
+    report_dir = WEB_STORAGE_DIR / "reports"
+    report_dir.mkdir(parents=True, exist_ok=True)
+
+    output_path = Path(
+        output_filename or report_dir / "Yoru_Agent_Report.pdf"
+    )
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     doc = SimpleDocTemplate(
         output_path,
@@ -703,4 +712,4 @@ def generate_pentest_pdf(
         onLaterPages=_page_footer,
     )
 
-    return output_path
+    return str(output_path)

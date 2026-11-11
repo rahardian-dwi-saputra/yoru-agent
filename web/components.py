@@ -23,10 +23,14 @@ from services import (
     fetch_global_log_summary
 )
 from utils_pdf import generate_pentest_pdf
+from config.web import WEB_STORAGE_DIR
 
 
 ITEMS_PER_PAGE = 10
-PDF_FILENAME = "Yoru_Agent_Server_Security_Assessment_Report.pdf"
+
+PDF_FILENAME = (
+    WEB_STORAGE_DIR / "reports" / "Yoru_Agent_Server_Security_Assessment_Report.pdf"
+)
 
 
 def _safe(value: Any, default: str = "-") -> str:
@@ -683,7 +687,7 @@ def render_catalog_table(catalog_list: list[dict], total_items: int) -> None:
         st.info("Belum ada data katalog. Pastikan backend API aktif atau lakukan sinkronisasi.")
         return
 
-    widths = [1, 1.8, 2.8, 2.5, 1.4, 1.4, 2.5]
+    widths = [0.8, 1.6, 2.6, 2.2, 1.2, 1.2, 3.6]
     headers = ["ID", "Nama Kontrol", "Kode CIS & Judul CIS", "Regulasi & Kepatuhan", "Kategori", "Status Audit", "Aksi"]
     for column, heading in zip(st.columns(widths), headers):
         with column:

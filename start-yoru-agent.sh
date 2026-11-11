@@ -270,6 +270,7 @@ case "${1:-start}" in
             "$PYTHON" -m streamlit run "$PROJECT_DIR/web/app.py" \
             --server.address "$WEB_HOST" \
             --server.port "$WEB_PORT" \
+            --server.headless true \
             --browser.gatherUsageStats false
 
         show_access_info

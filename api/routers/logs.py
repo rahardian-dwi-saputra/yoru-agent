@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Path as FastPath, status
@@ -34,13 +35,22 @@ def get_catalog_log(
     berdasarkan ID katalog.
     """
     normalized_log_type = log_type.lower()
+
     if normalized_log_type not in ALLOWED_LOG_TYPES:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Jenis log tidak valid. Pilih dari: {', '.join(ALLOWED_LOG_TYPES)}",
         )
 
-    log_file_path = CATALOGS_DIR / catalog_id.upper() / "logs" / f"{normalized_log_type}.json"
+    normalized_catalog_id = catalog_id.upper()
+
+    if not re.fullmatch(r"K\d{2}", normalized_catalog_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ID katalog tidak valid.",
+        )
+
+    log_file_path = CATALOGS_DIR / normalized_catalog_id / "logs" / f"{normalized_log_type}.json"
 
     if not log_file_path.is_file():
         raise HTTPException(
@@ -87,7 +97,16 @@ def get_all_catalog_logs(
     Membaca seluruh file log (audit, hardening, rollback) 
     yang tersedia untuk katalog tertentu sekaligus.
     """
-    catalog_dir = CATALOGS_DIR / catalog_id.upper() / "logs"
+
+    normalized_catalog_id = catalog_id.upper()
+
+    if not re.fullmatch(r"K\d{2}", normalized_catalog_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ID katalog tidak valid.",
+        )
+    
+    catalog_dir = CATALOGS_DIR / normalized_catalog_id / "logs"
 
     if not catalog_dir.exists() or not catalog_dir.is_dir():
         raise HTTPException(
