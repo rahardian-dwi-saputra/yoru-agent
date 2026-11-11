@@ -138,7 +138,27 @@ git clone https://github.com/rahardian-dwi-saputra/yoru-agent.git
 cd yoru-agent
 ```
 
-### 2. Jalankan Instalasi Otomatis
+### 2. Atur kredential
+Buat file `.env` baru berdasarkan file contoh:
+```bash
+cp .env.example .env
+```
+Buka dan edit file `.env` menggunakan teks editor (misalnya `nano`):
+```bash
+nano .env
+```
+Masukkan kunci API Anda pada baris `GEMINI_API_KEY`:
+```plaintext
+GEMINI_API_KEY=kunci_api_anda_disini
+```
+> 💡 Tips: Jika Anda belum memilikinya, Anda dapat membuat kunci API secara gratis melalui [Google AI Studio](https://aistudio.google.com/welcome).
+Masukkan password untuk mengakses web dashboard
+```plaintext
+DASHBOARD_PASSWORD=password_dashboard_anda
+```
+Simpan dan keluar dari editor (`Ctrl + O`, lalu `Enter`, kemudian `Ctrl + X` jika menggunakan `nano`).
+
+### 3. Jalankan Instalasi Otomatis
 Jalankan perintah berikut untuk memulai instalasi otomatis:
 ```bash
 sudo bash install.sh
@@ -147,7 +167,7 @@ Skrip ini akan secara otomatis:
 1. Membuat dan mengkonfigurasi system user `yoru-agent`.
 2. Mendaftarkan hak akses sudoers terbatas untuk utilitas kernel, firewall, dan system service.
 3. Membuat Python virtual environment di dalam folder `venv/`.
-4. Men-generate dan mengamankan API Key rahasia (`api/key.txt`) dengan izin akses ketat (`chmod 600`).
+4. Men-generate API Key rahasia (`api/key.txt`).
 
 ### 3. Masuk sebagai User `yoru-agent`
 Skrip setup otomatis membuat pengguna sistem baru bernama `yoru-agent`. Beralihlah ke pengguna tersebut untuk menjalankan aplikasi:

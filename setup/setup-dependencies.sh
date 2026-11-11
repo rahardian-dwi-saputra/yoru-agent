@@ -77,7 +77,50 @@ echo -e "${GREEN}[+] Menginstall library Python...${NC}"
 
 echo -e "${GREEN}[OK] Library Python berhasil diinstall.${NC}"
 
-# 6. Membaca konfigurasi API Key
+# 6. Pengaturan akses plan direktori
+echo -e "${GREEN}[+] Menyiapkan direktori penyimpanan...${NC}"
+
+PLANS_DIR="$(
+    "$PYTHON" -c '
+import sys
+sys.path.insert(0, sys.argv[1])
+
+from config.settings import PLANS_DIR
+
+print(PLANS_DIR)
+' "$PROJECT_DIR"
+)"
+
+# Validasi lokasi PLANS_DIR
+if [[ -z "$PLANS_DIR" || "$PLANS_DIR" != /* ]]; then
+    echo -e "${RED}[-] PLANS_DIR tidak valid: $PLANS_DIR${NC}"
+    exit 1
+fi
+
+# Pastikan direktori berada di dalam project
+case "$PLANS_DIR" in
+    "$PROJECT_DIR"/*) ;;
+    *)
+        echo -e "${RED}[-] PLANS_DIR berada di luar project directory.${NC}"
+        exit 1
+        ;;
+esac
+
+# Siapkan direktori penyimpanan
+mkdir -p "$PLANS_DIR"
+
+# Atur permission direktori storage dan plans
+STORAGE_DIR="$(dirname "$PLANS_DIR")"
+
+chown "$TARGET_USER:$TARGET_GROUP" "$STORAGE_DIR" "$PLANS_DIR"
+chmod 750 "$STORAGE_DIR" "$PLANS_DIR"
+
+# Pastikan isi plans yang sudah ada juga dapat dikelola aplikasi
+chown -R "$TARGET_USER:$TARGET_GROUP" "$PLANS_DIR"
+
+echo -e "${GREEN}[OK] Direktori plans berhasil disiapkan: $PLANS_DIR${NC}"
+
+# 7. Membaca konfigurasi API Key
 echo -e "${GREEN}[+] Membaca konfigurasi API Key...${NC}"
 
 API_KEY_PATH="$(
@@ -102,7 +145,7 @@ API_DIR="$(dirname "$API_KEY_PATH")"
 
 mkdir -p "$API_DIR"
 
-# 7. Generate API Key
+# 8. Generate API Key
 echo -e "${GREEN}[+] Memeriksa API Key...${NC}"
 
 if [[ -f "$API_KEY_PATH" ]]; then
@@ -144,7 +187,7 @@ fi
 chown root:"$TARGET_GROUP" "$API_KEY_PATH"
 chmod 0640 "$API_KEY_PATH"
 
-# 8. Validasi akhir
+# 9. Validasi akhir
 echo -e "${GREEN}[+] Memvalidasi instalasi...${NC}"
 
 if ! runuser -u "$TARGET_USER" -- test -r "$API_KEY_PATH"; then
