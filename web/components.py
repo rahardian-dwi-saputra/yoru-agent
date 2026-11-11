@@ -547,7 +547,8 @@ def _render_pdf_export() -> None:
     if st.button("📥 Export PDF Report", use_container_width=True):
         try:
             with st.spinner("Menyiapkan laporan PDF..."):
-                pdf_path = Path(generate_pentest_pdf(output_filename=PDF_FILENAME))
+                pdf_path = Path(
+                    generate_pentest_pdf(output_filename=PDF_FILENAME))
                 if not pdf_path.is_file():
                     raise FileNotFoundError("File PDF tidak ditemukan.")
 
@@ -559,11 +560,10 @@ def _render_pdf_export() -> None:
     pdf_data = st.session_state.get("yoru_pdf_data")
     if pdf_data:
         st.download_button(
-            "💾 Unduh File PDF",
-            data=pdf_data,
-            file_name=PDF_FILENAME,
+           label="⬇️ Download PDF",
+            data=st.session_state["yoru_pdf_data"],
+            file_name=Path(PDF_FILENAME).name,
             mime="application/pdf",
-            key="download_pdf_report",
             use_container_width=True,
         )
 

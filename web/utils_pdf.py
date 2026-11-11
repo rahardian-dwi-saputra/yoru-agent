@@ -199,7 +199,7 @@ def generate_pentest_pdf(
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     doc = SimpleDocTemplate(
-        output_path,
+        str(output_path),
         pagesize=A4,
         rightMargin=18 * mm,
         leftMargin=18 * mm,

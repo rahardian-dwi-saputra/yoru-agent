@@ -114,7 +114,28 @@ fi
 echo -e "${GREEN}[OK] Permission direktori berhasil dikonfigurasi.${NC}"
 
 
-# 7. SSH Privilege Separation Directory
+# 7. Konfigurasi Yoru-Agent catalog permissions
+echo "[INFO] Configuring catalog directory permissions..."
+
+CATALOG_DIR="${PROJECT_DIR}/catalog"
+
+if [[ ! -d "$CATALOG_DIR" ]]; then
+    echo "[ERROR] Catalog directory not found: $CATALOG_DIR"
+    exit 1
+fi
+
+# Berikan kepemilikan direktori katalog kepada user aplikasi.
+chown yoru-agent:yoru-agent "$CATALOG_DIR"
+chmod 750 "$CATALOG_DIR"
+
+# Atur seluruh direktori katalog (K01, K02, dan seterusnya).
+find "$CATALOG_DIR" -mindepth 1 -maxdepth 1 -type d \
+    -exec chown yoru-agent:yoru-agent {} \; \
+    -exec chmod 750 {} \;
+
+echo "[SUCCESS] Catalog directory permissions configured."
+
+# 8. SSH Privilege Separation Directory
 echo -e "${GREEN}[+] Menyiapkan direktori privilege separation SSH...${NC}"
 
 install -d -o root -g root -m 0755 /run/sshd
@@ -122,7 +143,7 @@ install -d -o root -g root -m 0755 /run/sshd
 echo -e "${GREEN}[OK] Direktori /run/sshd berhasil disiapkan.${NC}"
 
 
-# 8. Konfigurasi Sudoers
+# 9. Konfigurasi Sudoers
 echo -e "${GREEN}[+] Menyiapkan konfigurasi sudoers...${NC}"
 
 if [[ ! -f "$TEMPLATE_FILE" ]]; then
@@ -151,7 +172,7 @@ else
 fi
 
 
-# 9. Validasi akhir
+# 10. Validasi akhir
 echo -e "${GREEN}[+] Memvalidasi instalasi...${NC}"
 
 if ! visudo -c; then
