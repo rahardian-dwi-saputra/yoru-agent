@@ -77,48 +77,91 @@ echo -e "${GREEN}[+] Menginstall library Python...${NC}"
 
 echo -e "${GREEN}[OK] Library Python berhasil diinstall.${NC}"
 
-# 6. Pengaturan akses plan direktori
+
+# 6. Pengaturan akses direktori penyimpanan
 echo -e "${GREEN}[+] Menyiapkan direktori penyimpanan...${NC}"
 
-PLANS_DIR="$(
-    "$PYTHON" -c '
+STORAGE_PATHS="$(
+    PROJECT_DIR="$PROJECT_DIR" "$PYTHON" -c '
+import os
 import sys
-sys.path.insert(0, sys.argv[1])
+
+sys.path.insert(0, os.environ["PROJECT_DIR"])
 
 from config.settings import PLANS_DIR
+from config.web import WEB_STORAGE_DIR, DATABASE_PATH
 
 print(PLANS_DIR)
-' "$PROJECT_DIR"
+print(WEB_STORAGE_DIR)
+print(DATABASE_PATH)
+'
 )"
 
-# Validasi lokasi PLANS_DIR
-if [[ -z "$PLANS_DIR" || "$PLANS_DIR" != /* ]]; then
-    echo -e "${RED}[-] PLANS_DIR tidak valid: $PLANS_DIR${NC}"
+mapfile -t STORAGE_PATHS_ARRAY <<< "$STORAGE_PATHS"
+
+if [[ "${#STORAGE_PATHS_ARRAY[@]}" -ne 3 ]]; then
+    echo -e "${RED}[-] Gagal membaca konfigurasi direktori penyimpanan.${NC}"
     exit 1
 fi
 
-# Pastikan direktori berada di dalam project
-case "$PLANS_DIR" in
-    "$PROJECT_DIR"/*) ;;
-    *)
-        echo -e "${RED}[-] PLANS_DIR berada di luar project directory.${NC}"
+PLANS_DIR="${STORAGE_PATHS_ARRAY[0]}"
+WEB_STORAGE_DIR="${STORAGE_PATHS_ARRAY[1]}"
+DATABASE_PATH="${STORAGE_PATHS_ARRAY[2]}"
+
+# Validasi seluruh lokasi penyimpanan
+for path in "$PLANS_DIR" "$WEB_STORAGE_DIR" "$DATABASE_PATH"; do
+    if [[ -z "$path" || "$path" != /* ]]; then
+        echo -e "${RED}[-] Lokasi penyimpanan tidak valid: $path${NC}"
         exit 1
-        ;;
-esac
+    fi
+
+    case "$path" in
+        "$PROJECT_DIR"/*) ;;
+        *)
+            echo -e "${RED}[-] Lokasi penyimpanan berada di luar project: $path${NC}"
+            exit 1
+            ;;
+    esac
+done
 
 # Siapkan direktori penyimpanan
-mkdir -p "$PLANS_DIR"
+STORAGE_DIR="$PROJECT_DIR/storage"
 
-# Atur permission direktori storage dan plans
-STORAGE_DIR="$(dirname "$PLANS_DIR")"
+mkdir -p "$PLANS_DIR" "$WEB_STORAGE_DIR"
 
-chown "$TARGET_USER:$TARGET_GROUP" "$STORAGE_DIR" "$PLANS_DIR"
-chmod 750 "$STORAGE_DIR" "$PLANS_DIR"
+# Atur kepemilikan dan permission direktori
+chown "$TARGET_USER:$TARGET_GROUP" \
+    "$STORAGE_DIR" \
+    "$PLANS_DIR" \
+    "$WEB_STORAGE_DIR"
 
-# Pastikan isi plans yang sudah ada juga dapat dikelola aplikasi
+chmod 750 \
+    "$STORAGE_DIR" \
+    "$PLANS_DIR" \
+    "$WEB_STORAGE_DIR"
+
+# Pastikan seluruh file plan dapat dikelola aplikasi
 chown -R "$TARGET_USER:$TARGET_GROUP" "$PLANS_DIR"
 
-echo -e "${GREEN}[OK] Direktori plans berhasil disiapkan: $PLANS_DIR${NC}"
+# Buat database jika belum tersedia
+if [[ ! -e "$DATABASE_PATH" ]]; then
+    install -o "$TARGET_USER" -g "$TARGET_GROUP" -m 640 \
+        /dev/null "$DATABASE_PATH"
+else
+    if [[ ! -f "$DATABASE_PATH" ]]; then
+        echo -e "${RED}[-] Lokasi database bukan file reguler: $DATABASE_PATH${NC}"
+        exit 1
+    fi
+
+    chown "$TARGET_USER:$TARGET_GROUP" "$DATABASE_PATH"
+    chmod 640 "$DATABASE_PATH"
+fi
+
+echo -e "${GREEN}[OK] Direktori penyimpanan berhasil disiapkan.${NC}"
+echo "[i] Plans Directory    : $PLANS_DIR"
+echo "[i] Web Storage        : $WEB_STORAGE_DIR"
+echo "[i] Database           : $DATABASE_PATH"
+
 
 # 7. Membaca konfigurasi API Key
 echo -e "${GREEN}[+] Membaca konfigurasi API Key...${NC}"

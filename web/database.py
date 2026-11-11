@@ -3,9 +3,10 @@ from contextlib import closing
 from pathlib import Path
 from typing import Any
 import sqlite3
+from config.web import DATABASE_PATH
 
-
-DB_PATH = Path(__file__).resolve().with_name("web_cache.db")
+DB_PATH = DATABASE_PATH
+DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 CATALOG_FIELDS = (
     "nama",

@@ -152,6 +152,7 @@ Masukkan kunci API Anda pada baris `GEMINI_API_KEY`:
 GEMINI_API_KEY=kunci_api_anda_disini
 ```
 > 💡 Tips: Jika Anda belum memilikinya, Anda dapat membuat kunci API secara gratis melalui [Google AI Studio](https://aistudio.google.com/welcome).
+
 Masukkan password untuk mengakses web dashboard
 ```plaintext
 DASHBOARD_PASSWORD=password_dashboard_anda
