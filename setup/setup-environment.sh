@@ -115,25 +115,21 @@ echo -e "${GREEN}[OK] Permission direktori berhasil dikonfigurasi.${NC}"
 
 
 # 7. Konfigurasi Yoru-Agent catalog permissions
-echo "[INFO] Configuring catalog directory permissions..."
+echo "[INFO] Configuring catalog log permissions..."
 
 CATALOG_DIR="${PROJECT_DIR}/catalog"
 
-if [[ ! -d "$CATALOG_DIR" ]]; then
-    echo "[ERROR] Catalog directory not found: $CATALOG_DIR"
-    exit 1
+if [[ -d "$CATALOG_DIR" ]]; then
+    find "$CATALOG_DIR" -type d -name logs \
+        -exec chown -R yoru-agent:yoru-agent {} + \
+        -exec chmod 700 {} +
+
+    find "$CATALOG_DIR" -path "*/logs/*" -type f \
+        -exec chmod 600 {} +
 fi
 
-# Berikan kepemilikan direktori katalog kepada user aplikasi.
-chown yoru-agent:yoru-agent "$CATALOG_DIR"
-chmod 750 "$CATALOG_DIR"
+echo "[SUCCESS] Catalog log permissions configured."
 
-# Atur seluruh direktori katalog (K01, K02, dan seterusnya).
-find "$CATALOG_DIR" -mindepth 1 -maxdepth 1 -type d \
-    -exec chown yoru-agent:yoru-agent {} \; \
-    -exec chmod 750 {} \;
-
-echo "[SUCCESS] Catalog directory permissions configured."
 
 # 8. SSH Privilege Separation Directory
 echo -e "${GREEN}[+] Menyiapkan direktori privilege separation SSH...${NC}"
