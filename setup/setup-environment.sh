@@ -113,27 +113,26 @@ fi
 
 echo -e "${GREEN}[OK] Permission direktori berhasil dikonfigurasi.${NC}"
 
-
 # 7. Konfigurasi Yoru-Agent catalog permissions
-echo -e "${GREEN}[+] Menyiapkan izin akses penuh untuk folder catalog...${NC}"
+echo -e "${GREEN}[+] Menyiapkan izin akses penuh untuk folder catalog dan log...${NC}"
 
 CATALOG_DIR="${PROJECT_DIR}/catalog"
 
 # Buat direktori catalog terlebih dahulu jika belum ada
 mkdir -p "$CATALOG_DIR"
 
-# Berikan kepemilikan dasar kepada yoru-agent untuk folder catalog
+# Berikan kepemilikan dasar kepada root dan grup sistem
 chown -R root:"$(id -gn "$TARGET_USER")" "$CATALOG_DIR"
 chmod 755 "$CATALOG_DIR"
 
-# Terapkan ACL akses penuh (rwx) untuk user yoru-agent pada folder yang sudah ada
-setfacl -R -m "u:${TARGET_USER}:rwx" "$CATALOG_DIR"
+# Terapkan ACL akses penuh (rwx) untuk user yoru-agent secara rekursif pada semua file/folder yang sudah ada
+find "$CATALOG_DIR" -type d -exec setfacl -m "u:${TARGET_USER}:rwx" {} +
+find "$CATALOG_DIR" -type f -exec setfacl -m "u:${TARGET_USER}:rw-" {} +
 
-# Terapkan Default ACL agar folder/file yang BARU DIBUAT otomatis mewarisi izin yoru-agent
-setfacl -d -m "u:${TARGET_USER}:rwx" "$CATALOG_DIR"
+# Terapkan Default ACL agar folder dan file BARU otomatis mewarisi izin penuh untuk yoru-agent
+setfacl -R -d -m "u:${TARGET_USER}:rwx" "$CATALOG_DIR"
 
-echo -e "${GREEN}[OK] Hak akses folder catalog berhasil dikonfigurasi.${NC}"
-
+echo -e "${GREEN}[OK] Hak akses folder catalog dan log berhasil dikonfigurasi.${NC}"
 
 # 8. SSH Privilege Separation Directory
 echo -e "${GREEN}[+] Menyiapkan direktori privilege separation SSH...${NC}"

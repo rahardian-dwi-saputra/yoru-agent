@@ -125,7 +125,13 @@ class BaseLogger:
         flags = os.O_CREAT | os.O_RDWR
         flags |= getattr(os, "O_NOFOLLOW", 0)
 
-        fd = os.open(path, flags, 0o600)
+        try:
+            fd = os.open(path, flags, 0o600)
+        except PermissionError as e:
+            raise PermissionError(
+                f"Gagal membuka/membuat file lock/log '{path}' karena kendala izin akses (Permission Denied). "
+                f"Pastikan folder logs memiliki kepemilikan (chown) user yang benar."
+            ) from e
 
         try:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
