@@ -125,12 +125,8 @@ mkdir -p "$CATALOG_DIR"
 chown -R root:"$(id -gn "$TARGET_USER")" "$CATALOG_DIR"
 chmod 755 "$CATALOG_DIR"
 
-# Terapkan ACL akses penuh (rwx) untuk user yoru-agent secara rekursif pada semua file/folder yang sudah ada
-find "$CATALOG_DIR" -type d -exec setfacl -m "u:${TARGET_USER}:rwx" {} +
-find "$CATALOG_DIR" -type f -exec setfacl -m "u:${TARGET_USER}:rw-" {} +
-
-# Terapkan Default ACL agar folder dan file BARU otomatis mewarisi izin penuh untuk yoru-agent
-setfacl -R -d -m "u:${TARGET_USER}:rwx" "$CATALOG_DIR"
+setfacl -R -d -m "u:${TARGET_USER}:rwx,mask::rwx" "$CATALOG_DIR"
+setfacl -R -m "u:${TARGET_USER}:rwx,mask::rwx" "$CATALOG_DIR"
 
 echo -e "${GREEN}[OK] Hak akses folder catalog dan log berhasil dikonfigurasi.${NC}"
 
