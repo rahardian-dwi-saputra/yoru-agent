@@ -43,6 +43,7 @@ tasks:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
+      - chmod 700 {{.LOG_DIR}}
 
   audit:
     desc: "Menjalankan audit pengaturan penyimpanan permanen log systemd-journald"

@@ -44,6 +44,7 @@ tasks:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
+      - chmod 700 {{.LOG_DIR}}
 
   audit:
     desc: "Menjalankan audit parameter kernel untuk penolakan ICMP redirect"

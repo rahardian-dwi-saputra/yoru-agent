@@ -118,13 +118,16 @@ echo -e "${GREEN}[+] Menyiapkan izin akses penuh untuk folder catalog dan log...
 
 CATALOG_DIR="${PROJECT_DIR}/catalog"
 
-# Buat direktori catalog terlebih dahulu jika belum ada
-mkdir -p "$CATALOG_DIR"
+if [[ ! -d "$CATALOG_DIR" ]]; then
+    echo "[ERROR] Catalog directory not found: $CATALOG_DIR"
+    exit 1
+fi
 
-# Berikan kepemilikan dasar kepada root dan grup sistem
-chown -R root:"$(id -gn "$TARGET_USER")" "$CATALOG_DIR"
-chmod 755 "$CATALOG_DIR"
+# Berikan kepemilikan dasar kepada user dan grup sistem
+chown -R "$TARGET_USER:$TARGET_USER" "$CATALOG_DIR"
+chmod -R 750 "$CATALOG_DIR"
 
+# Terapkan Default ACL rekursif agar setiap folder/file log baru yang tercipta
 setfacl -R -d -m "u:${TARGET_USER}:rwx,mask::rwx" "$CATALOG_DIR"
 setfacl -R -m "u:${TARGET_USER}:rwx,mask::rwx" "$CATALOG_DIR"
 

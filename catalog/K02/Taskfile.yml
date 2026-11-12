@@ -42,6 +42,7 @@ tasks:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
+      - chmod 700 {{.LOG_DIR}}
 
   check-ssh-keys:
     desc: "Mengecek apakah user non-root sudah memiliki SSH public key di authorized_keys"

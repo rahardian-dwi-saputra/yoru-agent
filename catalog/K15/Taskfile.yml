@@ -31,6 +31,7 @@ tasks:
     desc: 'Membuat direktori log jika belum tersedia'
     cmds:
       - mkdir -p {{.LOG_DIR}}
+      - chmod 700 {{.LOG_DIR}}
 
   audit:
     desc: "Menjalankan audit layanan yang mendengarkan pada network interface"

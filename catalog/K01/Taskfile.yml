@@ -41,6 +41,7 @@ tasks:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
+      - chmod 700 {{.LOG_DIR}}
 
   check-users:
     desc: "Mengecek daftar user non-root yang memiliki akses SSH atau sudo"

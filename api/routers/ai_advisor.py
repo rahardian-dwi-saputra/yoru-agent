@@ -11,7 +11,7 @@ from config.api import CATALOGS_DIR
 
 
 router = APIRouter(
-    prefix="/ai-advisor", 
+    prefix="/api/v1/ai-advisor", 
     tags=["AI Advisor & Summarizer"],
     dependencies=[Depends(verify_api_key)]
 )
@@ -21,16 +21,37 @@ def read_log_file(filename: str, catalog_id: str) -> list[dict]:
     """
     Membaca file log berdasarkan katalog, mencari execution_id terbaru,
     dan mengembalikan seluruh catatan log yang memiliki execution_id yang sama.
+    Mendukung format JSON standar maupun JSON Lines (NDJSON).
     """
-
     log_file = CATALOGS_DIR / catalog_id.upper() / "logs" / filename
 
     if not os.path.exists(log_file):
         return []
 
+    logs = []
     try:
         with open(log_file, "r", encoding="utf-8") as f:
-            logs = json.load(f)
+            content = f.read().strip()
+            if not content:
+                return []
+            
+            # Coba parse sebagai JSON standar (List atau Object tunggal)
+            try:
+                data = json.loads(content)
+                if isinstance(data, list):
+                    logs = data
+                elif isinstance(data, dict):
+                    logs = [data]
+            except json.JSONDecodeError:
+                # Jika gagal, kemungkinan besar file berformat JSON Lines (NDJSON)
+                f.seek(0)
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        try:
+                            logs.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
 
         if not isinstance(logs, list) or not logs:
             return []
@@ -42,6 +63,9 @@ def read_log_file(filename: str, catalog_id: str) -> list[dict]:
             reverse=True
         )
         
+        if not sorted_logs:
+            return []
+            
         latest_execution_id = sorted_logs[0].get("execution_id")
 
         if not latest_execution_id:
@@ -58,7 +82,6 @@ def read_log_file(filename: str, catalog_id: str) -> list[dict]:
     except Exception as e:
         print(f"[ERROR] Gagal membaca file log {filename} untuk {catalog_id}: {e}")
         return []
-
 
 @router.get(
     "/advice/{catalog_id}",
@@ -94,19 +117,25 @@ def get_catalog_ai_advice(
    
     client = genai.Client(api_key=api_key)
     prompt = f"""
-    Anda adalah Senior Security Engineering Copilot untuk Yoru-Agent.
-    Analisis status kontrol keamanan untuk katalog {catalog_id} berdasarkan data berikut:
+    Peran: Senior Security Engineering Copilot untuk Yoru-Agent.
+    Tugas: Analisis log kontrol keamanan katalog {catalog_id} secara ringkas dan langsung berikan output JSON murni.
+    
+    Data:
     - Audit Log (Wajib): {json.dumps(audit_data, indent=2)}
     - Hardening Log (Opsional/Jika ada): {json.dumps(hardening_data, indent=2) if hardening_data else "Belum ada riwayat hardening"}
     - Rollback Log (Opsional/Jika ada): {json.dumps(rollback_data, indent=2) if rollback_data else "Belum ada riwayat rollback"}
 
-    Berikan saran keamanan, analisis akar masalah (jika ditemukan error pada audit/hardening), dan rekomendasi mitigasi dalam format JSON murni:
+    Aturan Output:
+    1. HANYA kembalikan objek JSON valid, tanpa teks pengantar, tanpa salam, dan tanpa blok markdown (```json ... ```).
+    2. Batasi setiap nilai string maksimal 1-2 kalimat yang padat dan teknis.
+
+    Format Wajib:
     {{"summary": "...", "root_cause": "...", "recommendation": "..."}}
     """
 
     try:
         response = client.models.generate_content(
-            model='gemini-3.8-flash',
+            model='gemini-3.6-flash',
             contents=prompt,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json", 
@@ -122,7 +151,7 @@ def get_catalog_ai_advice(
         }
         
     response = client.models.generate_content(
-        model='gemini-3.8-flash',
+        model='gemini-3.6-flash',
         contents=prompt,
         config=types.GenerateContentConfig(response_mime_type="application/json", temperature=0.2),
     )
@@ -201,20 +230,25 @@ def get_global_log_summary(
 
 
     client = genai.Client(api_key=api_key)
-    
+
     prompt = f"""
-    Anda adalah Senior Security Auditor. Buat ringkasan eksekutif (executive summary) yang komprehensif dari keseluruhan status server berdasarkan data log multi-katalog berikut:
+    Peran: Senior Security Auditor.
+    Tugas: Buat ringkasan eksekutif (executive summary) profesional dan padat mengenai status server berdasarkan data log multi-katalog berikut:
     {json.dumps(global_summary_data, indent=2)}
 
-    Berikan analisis profesional mengenai:
-    1. Tingkat kepatuhan server secara keseluruhan.
-    2. Area atau katalog kontrol keamanan yang masih berisiko tinggi (status FAILED/ERROR).
-    3. Langkah prioritas perbaikan selanjutnya bagi administrator.
-    """
+    Format dan Struktur Wajib:
+    1. **Tingkat Kepatuhan Keseluruhan**: Ringkasan status kepatuhan secara makro (maks. 2 kalimat).
+    2. **Area Berisiko Tinggi**: Poin-poin spesifik katalog yang berstatus FAILED/ERROR serta akar masalah utamanya.
+    3. **Prioritas Mitigasi**: 3 langkah perbaikan paling mendesak bagi administrator (gunakan kalimat perintah yang tegas).
 
+    Aturan:
+    - Gunakan bahasa profesional ala auditor keamanan senior.
+    - Hindari pengantar atau penutup yang tidak perlu; langsung masuk ke pokok bahasan.
+    """
+    
     try:
         response = client.models.generate_content(
-            model='gemini-3.8-flash',
+            model='gemini-3.6-flash',
             contents=prompt,
         )
         executive_summary_text = response.text

@@ -43,6 +43,7 @@ tasks:
     internal: true
     cmds:
       - mkdir -p {{.LOG_DIR}}
+      - chmod 700 {{.LOG_DIR}}
       
   info:
     desc: "Menampilkan perintah pengecekan MaxAuthTries sesuai standar CIS 5.1.16"
