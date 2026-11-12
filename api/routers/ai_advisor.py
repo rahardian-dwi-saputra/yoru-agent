@@ -8,6 +8,9 @@ from google.genai import types
 from api.config import limiter
 from api.dependencies import verify_api_key
 from config.api import CATALOGS_DIR
+from api.services.catalog_service import get_available_catalogs
+from api.schemas.catalog import CatalogMetadata
+import concurrent.futures
 
 
 router = APIRouter(
@@ -134,15 +137,27 @@ def get_catalog_ai_advice(
     """
 
     try:
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json", 
-                temperature=0.2
-            ),
-        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                client.models.generate_content,
+                model='gemini-3.6-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json", 
+                    temperature=0.2
+                )
+            )
+            response = future.result(timeout=40)
+    
         ai_result = json.loads(response.text)
+
+    except concurrent.futures.TimeoutError:
+        ai_result = {
+            "summary": "Proses analisis AI melebihi batas waktu.",
+            "root_cause": "Timeout: API Gemini tidak merespons dalam batas waktu yang ditentukan.",
+            "recommendation": "Coba ulangi beberapa saat lagi atau periksa koneksi jaringan."
+        }
+
     except Exception as e:
         ai_result = {
             "summary": "Gagal memproses analisis AI.",
@@ -203,6 +218,20 @@ def get_global_log_summary(
             detail="Belum ada direktori katalog yang tersedia."
         )
 
+    all_catalogs_list = get_available_catalogs()
+    available_catalogs_map: Dict[str, CatalogMetadata] = {
+        cat.id.upper(): cat for cat in all_catalogs_list
+    }
+    target_catalog_ids = list(available_catalogs_map.keys())
+
+    audit_only_catalogs = [
+        cat_id
+        for cat_id in target_catalog_ids
+        if available_catalogs_map[cat_id].audit_only
+    ]
+
+    hasil = ", ".join(audit_only_catalogs)
+
     global_summary_data = []
 
     for cat_id in sorted(catalog_dirs):
@@ -236,6 +265,10 @@ def get_global_log_summary(
     Tugas: Buat ringkasan eksekutif (executive summary) profesional dan padat mengenai status server berdasarkan data log multi-katalog berikut:
     {json.dumps(global_summary_data, indent=2)}
 
+    Informasi Tambahan (Katalog Audit-Only):
+    Daftar katalog berikut berstatus AUDIT-ONLY (berisiko tinggi jika diubah otomatis sehingga tidak memiliki fitur auto-hardening):
+    {hasil}
+
     Format dan Struktur Wajib:
     1. **Tingkat Kepatuhan Keseluruhan**: Ringkasan status kepatuhan secara makro (maks. 2 kalimat).
     2. **Area Berisiko Tinggi**: Poin-poin spesifik katalog yang berstatus FAILED/ERROR serta akar masalah utamanya.
@@ -247,14 +280,23 @@ def get_global_log_summary(
     """
     
     try:
-        response = client.models.generate_content(
-            model='gemini-3.6-flash',
-            contents=prompt,
-        )
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(
+                client.models.generate_content,
+                model='gemini-3.6-flash',
+                contents=prompt,
+            )
+            response = future.result(timeout=50)
+
         executive_summary_text = response.text
+    except concurrent.futures.TimeoutError:
+        raise HTTPException(
+            status_code=504, 
+            detail="Proses analisis AI melebihi batas waktu (timeout)."
+        )
     except Exception as e:
         raise HTTPException(
-            status_code=500, 
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, 
             detail=f"Gagal menghasilkan ringkasan AI: {str(e)}"
         )
 

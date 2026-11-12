@@ -429,7 +429,7 @@ def fetch_catalog_ai_advice(
     success, response, error = _request(
         "GET",
         endpoint,
-        timeout=60,
+        timeout=80,
     )
 
     if not success:
@@ -448,7 +448,7 @@ def fetch_global_log_summary() -> tuple[bool, dict[str, Any], str]:
     success, response, error = _request(
         "GET",
         endpoint,
-        timeout=180,
+        timeout=200,
     )
 
     if not success:

@@ -1,11 +1,42 @@
 # Yoru Agent
-Yoru-agent adalah agen otomatis untuk memeriksa dan meningkatkan keamanan server berdasarkan standar CIS. Dibangun menggunakan Hermes-agent dan FastAPI, sistem ini memudahkan pemeriksaan keamanan melalui API, serta mendukung proses audit, hardening, dan rollback. Setiap perubahan konfigurasi tetap berada di bawah kendali manusia agar keamanan server terjaga tanpa mengabaikan risiko operasional.
+Yoru-Agent adalah alat otomatis yang membantu memeriksa, memperbaiki dan meningkatkan keamanan server agar lebih terlindungi dari serangan peretas (hacker). 
+Yoru-Agent bekerja seperti satpam digital. Alat ini memeriksa apakah keamanan server apakah sudah cukup kuat, menemukan bagian yang masih lemah, dan membantu memperbaikinya agar lebih aman. 
+Yoru-Agent menggunakan standar keamanan internasional yang disebut CIS Benchmarks sebagai panduan untuk memeriksa keamanan server. Selain itu, Yoru-Agent juga menghubungkan hasil pemeriksaan tersebut dengan aturan perlindungan data pribadi di Indonesia, yaitu UU No. 27 Tahun 2022 tentang Pelindungan Data Pribadi (UU PDP).
 
 ---
 
 ## Dislaimer
 
-This project is an independent open-source automation tool designed for system hardening. It references industry security benchmarks (such as CIS Benchmarks) for compliance mapping purposes only and is not officially endorsed, sponsored, or affiliated with the Center for Internet Security (CIS).
+Proyek ini merujuk pada standar industri (CIS Benchmarks) dan UU PDP semata-mata untuk kebutuhan pemetaan kepatuhan teknis, serta tidak didukung secara resmi, disponsori, atau berafiliasi dengan Center for Internet Security (CIS) maupun lembaga penegak hukum terkait.
+
+---
+
+## 📂 Struktur Proyek
+```text
+yoru-agent/
+├── api/                       # Source code REST API berbasis FastAPI
+├── catalog/                   # Implementasi katalog audit, hardening, dan hardening
+│   └── ...                    # Script dan log aktivitas setiap katalog
+├── config/                    # Modul konfigurasi aplikasi
+│   ├── api.py                 # Konfigurasi REST API (FastAPI) 
+│   ├── settings.py            # Konfigurasi Sistem dan Catalog
+│   └── web.py                 # Konfigurasi Web Dashboard (Streamlit)
+├── pipeline                   # Modul pendukung dan utilitas aplikasi
+│   └── catalogutils.py        # Class dan helper untuk operasional katalog
+├── setup/                     # Skrip dan konfigurasi instalasi
+│   ├── setup-dependencies.sh  # Membuat virtual environment dan menginstal dependency
+│   ├── setup-environment.sh   # Membuat system user dan mengatur hak akses
+    ├── uninstall.sh           # Menghapus konfigurasi instalasi Yoru-Agent
+│   └── yoru-agent.sudoers     # Konfigurasi hak akses sudoers untuk system user
+├── web/                       # Source code Web Dashboard berbasis Streamlit
+├── .env                       # Konfigurasi environment aplikasi (tidak dilacak Git)
+├── .env.example               # Template konfigurasi environment
+├── .gitignore                 # Daftar file yang diabaikan Git
+├── install.sh                 # Skrip utama instalasi otomatis
+├── start-yoru-agent.sh        # Skrip untuk menjalankan layanan Yoru-Agent
+├── Taskfile.yml               # Definisi task untuk mengelola aplikasi
+└── README.md                  # Dokumentasi utama proyek
+```
 
 ---
 
@@ -36,14 +67,14 @@ Yoru-agent menggunakan katalog berikut untuk melakukan audit dan hardening keama
 
 **Keterangan Kategori**
 - SSH Security: Mengamankan akses jarak jauh melalui SSH.
-- Audit Logging: Memastikan layanan pencatatan aktivitas keamanan tersedia.
-- Firewall: Memeriksa status firewall dan kebijakan lalu lintas jaringan.
-- Network Security: Mengamankan layanan jaringan dan perilaku konfigurasi jaringan kernel.
-- System Logging: Mengatur penyimpanan, akses, dan pengelolaan log sistem.
+- Logging and Auditing: Memastikan mekanisme pencatatan aktivitas dan audit keamanan tersedia, berjalan, serta memiliki konfigurasi penyimpanan dan pengelolaan log yang sesuai.
+- System Security / Patch Management: Memeriksa pembaruan sistem operasi, patch keamanan, dan perangkat lunak untuk membantu menjaga sistem dari kerentanan yang telah diketahui.
+- Firewall: Memeriksa status layanan firewall dan kebijakan pengendalian lalu lintas jaringan untuk membatasi akses yang tidak diizinkan.
+- Network Security: Mengamankan layanan jaringan dan konfigurasi parameter jaringan pada kernel Linux untuk mengurangi potensi serangan berbasis jaringan.
 
 **Keterangan Mode**
-- Audit & Hardening: Sistem memeriksa konfigurasi dan dapat menerapkan perbaikan otomatis sesuai kebijakan.
-- Audit Only: Sistem hanya memeriksa dan melaporkan hasil tanpa mengubah konfigurasi server.
+- Audit & Hardening: Sistem melakukan pemeriksaan konfigurasi keamanan dan menyediakan mekanisme penerapan perbaikan konfigurasi secara otomatis sesuai kebijakan keamanan yang ditetapkan
+- Audit Only: Sistem hanya melakukan pemeriksaan dan pelaporan kondisi konfigurasi keamanan tanpa melakukan perubahan terhadap konfigurasi server.
 
 ## 📄 Product Requirement Document (PRD): Yoru-Agent
 > **Automated Ubuntu Server Hardening, Auditing & Rollback Platform with Human-in-the-Loop & Local Persistence**
@@ -51,13 +82,13 @@ Yoru-agent menggunakan katalog berikut untuk melakukan audit dan hardening keama
 ---
 
 ### 1. 🎯 Overview & Objectives
-**Yoru-Agent** adalah sistem otomatisasi keamanan berbasis *CIS Benchmarks* untuk sistem operasi Ubuntu Server. Sistem ini dirancang secara modular menggunakan arsitektur pemisahan layanan antara **FastAPI Backend**, **Streamlit Web Dashboard** (dengan *local SQLite caching*), dan **Hermes Agent** sebagai *executor* di level sistem.
+**Yoru-Agent** adalah platform otomatisasi keamanan dan kepatuhan sistem untuk Ubuntu Server yang memadukan CIS Benchmarks dengan Custom Rules berbasis UU PDP (Pelindungan Data Pribadi). Sistem ini dirancang secara modular dan efisien menggunakan arsitektur pemisahan layanan antara **FastAPI Backend**, **Streamlit Web Dashboard** (dengan local *SQLite caching*), serta sistem eksekusi berbasis skrip lokal untuk mengamankan infrastruktur sekaligus menjaga privasi data secara menyeluruh.
 
 ---
 
 ### 2. 🔄 System Architecture & Workflow Diagram
 
-Berikut adalah alur proses (*Workflow*) dari interaksi pengguna melalui web dashboard hingga eksekusi perintah oleh Hermes Agent di server:
+Berikut adalah alur proses (Workflow) dari interaksi pengguna melalui web dashboard hingga eksekusi perintah keamanan langsung di server:
 
 ```mermaid
 sequenceDiagram
@@ -65,7 +96,7 @@ sequenceDiagram
     actor Admin as Administrator (Web UI)
     participant Web as Streamlit Dashboard (web_cache.db)
     participant API as FastAPI Backend (/api/v1)
-    participant Hermes as Hermes Agent (Executor)
+    participant Engine as Local Execution Engine (Taskfile / Python Scripts)
     participant OS as Ubuntu Server (CIS Benchmarks)
 
     Note over Admin, OS: 1. Inisialisasi & Sinkronisasi Katalog
@@ -77,29 +108,33 @@ sequenceDiagram
     Note over Admin, OS: 2. Eksekusi Aksi (Audit / Hardening / Rollback)
     alt Aksi Audit (Direct Execution)
         Admin->>Web: Klik Tombol "Audit" (Per Rule / All)
-        Web->>API: POST /audit/rule_id (or /audit/all)
-        API->>Hermes: Trigger Script Audit yang Telah Didefinisikan
-        Hermes->>OS: Jalankan Pemeriksaan CIS Benchmark
-        OS-->>Hermes: Return Status (COMPLIANT / NON_COMPLIANT)
-        Hermes-->>API: Update Status & Timestamp
+        Web->>API: POST /agent/audit {catalogs: Per Rule/ALL}
+        API->>Engine: Jalankan Skrip Audit Lokal
+        Engine->>OS: Jalankan Pemeriksaan CIS Benchmark / Custom Rule
+        OS-->>Engine: Return Status (COMPLIANT / NON_COMPLIANT)
+        Engine-->>API: Update Status & Timestamp
         API-->>Web: Response Success
+        Web->>Web: Update Status ke SQLite Lokal (web_cache.db)
+        Web->>Admin: Tampilkan hasil
     else Aksi Hardening / Rollback (Human-in-the-Loop / Plan-Confirm)
         Admin->>Web: Klik Tombol "Hardening" / "Rollback"
-        Web->>API: POST /hardening/init-plan (Buat Rencana Eksekusi)
+        Web->>API: POST /agent/{hardening/rollback}/init (Buat Rencana Eksekusi)
         API-->>Web: Return Execution Plan Preview
         Admin->>Web: Review & Berikan Konfirmasi
-        Web->>API: POST /hardening/confirm (Eksekusi Nyata)
-        API->>Hermes: Eksekusi Source Code Hardening/Rollback
-        Hermes->>OS: Terapkan / Pulihkan Konfigurasi Sistem
-        OS-->>Hermes: Return Status (SUCCESS / SKIPPED / FAILED)
-        Hermes-->>API: Update Status & Timestamp
+        Web->>API: POST /agent/{hardening/rollback}/confirm (Eksekusi Nyata)
+        API->>Engine: Eksekusi Skrip Hardening / Rollback
+        Engine->>OS: Terapkan / Pulihkan Konfigurasi Sistem
+        OS-->>Engine: Return Status (SUCCESS / SKIPPED / FAILED)
+        Engine-->>API: Update Status & Timestamp
         API-->>Web: Response Success
+        Web->>Web: Update Status ke SQLite Lokal (web_cache.db)
+        Web->>Admin: Tampilkan hasil
     end
 
-    Note over Admin, OS: 3. Pelaporan Hasil Real-Time
-    Web->>API: Fetch Metrics & Status Terbaru
-    API-->>Web: Return Data Statistik (Rasio Audit, Hardening, Rollback)
-    Web->>Admin: Render Dashboard & Tabel dengan Badge Status Presisi
+    Note over Admin, OS: 3. Pelaporan Hasil
+    Admin->>Web: Klik Tombol "Export PDF Report"
+    Web->>Web: Ambil data di SQLite Lokal (web_cache.db) dan buat laporan dalam bentuk PDF
+    Web->>Admin: PDF siap diunduh
 ```
 
 ---
@@ -108,23 +143,28 @@ sequenceDiagram
 
 | Komponen | Teknologi | Tanggung Jawab Utama |
 | --- | --- | --- |
-| Frontend Dashboard | Streamlit, Python | Menampilkan metrik grafana-style (Rasio Audit, Hardening, Rollback), tabel data paginasi, tombol aksi bersyarat (`audit_only`), serta caching lokal via `sqlite3` (`web_cache.db`). |
-| Backend API | FastAPI, Python | Menyediakan RESTful API yang dilindungi otentikasi `X-API-Key`, mengelola endpoint katalog, manajemen plan, dan koordinasi eksekusi. |
-| Execution Engine | Hermes Agent, Taskfile, Python | Mengeksekusi source code modular yang telah didefinisikan sebelumnya untuk setiap rule CIS Benchmark secara langsung di Ubuntu Server. |
-| Security & Compliance | CIS Benchmarks, SQLite | Menjaga integritas sistem dengan mekanisme Two-Step Execution (Init Plan -> Konfirmasi) khusus untuk aksi perubahan sistem (Hardening dan Rollback). |
+| Frontend Dashboard | Streamlit, Python | Menampilkan Informasi Server (Sistem Operasi, hostname, dan arsitektur), metrik operasional (Rasio Audit, Hardening, Rollback), tabel daftar katalog interaktif, dan detail katalog |
+| Backend API | FastAPI, Python | Menyediakan RESTful API yang aman dengan otentikasi `X-API-Key`, mengelola endpoint katalog, manajemen plan, serta orkestrasi tugas. |
+| Execution Engine | Taskfile, Python Scripts | Mengeksekusi modul audit, hardening, dan rollback CIS Benchmark / Custom Rule secara langsung di lingkungan Ubuntu Server secara aman dan terstruktur. |
+| Security & Compliance | CIS Benchmarks, UU PDP | Menjaga integritas sistem dengan mekanisme Two-Step Execution (Init Plan -> Konfirmasi) khusus untuk aksi perubahan sistem (Hardening dan Rollback). |
 
 ---
 
 ## 📋 Persyaratan
 Sebelum memulai, pastikan komputer atau server Anda memenuhi persyaratan berikut:
-- **Sistem operasi:** Ubuntu atau Debian.
-- **Python:** Versi 3.10 atau lebih baru.
-- **Hermes Agent:** Sudah terpasang. Ikuti panduan di repositori [Hermes Agent](https://github.com/nousresearch/hermes-agent).
-- **Task CLI (Taskfile):** Sudah terpasang jika diperlukan oleh proyek.
-- **Dependensi Python:** `python3-venv`, untuk membuat lingkungan Python terpisah.
-- **Hak akses administrator:** Akun dengan akses sudo untuk memasang dan mengonfigurasi sistem.
+1. **Sistem Operasi**
+- **Ubuntu Server 24.04 LTS** sebagai sistem operasi yang digunakan untuk menjalankan Yoru-Agent.
+2. **Lingkungan Python**
+- **Python 3.10** atau lebih baru untuk menjalankan aplikasi dan seluruh modul pendukungnya.
+- **Python Virtual Environment (python3-venv)** untuk membuat lingkungan Python terisolasi dari instalasi Python sistem.
+3. **Utilitas Pendukung**
+- **Task CLI (Taskfile)** untuk menjalankan dan mengelola task aplikasi, seperti memulai, menghentikan, dan memulai ulang layanan Yoru-Agent. Untuk detailnya cek [disini](https://taskfile.dev/docs/installation)
+4. **Hak Akses Sistem**
+- **Hak akses administrator (sudo)** diperlukan untuk menjalankan proses instalasi, membuat system user, mengatur hak akses, serta menerapkan konfigurasi sistem yang dibutuhkan Yoru-Agent.
 
-**Catatan:** Pastikan Anda memahami perintah yang dijalankan dengan sudo, karena perintah tersebut dapat mengubah konfigurasi sistem.
+**Catatan:**
+- Pastikan koneksi internet tersedia selama proses instalasi untuk mengunduh dan memasang dependensi yang diperlukan.
+- Gunakan perintah dengan hak akses administrator secara hati-hati dan pastikan Anda memahami tindakan yang dijalankan oleh setiap skrip instalasi.
 
 ---
 
@@ -164,49 +204,41 @@ Jalankan perintah berikut untuk memulai instalasi otomatis:
 ```bash
 sudo bash install.sh
 ```
-Skrip ini akan secara otomatis:
-1. Membuat dan mengkonfigurasi system user `yoru-agent`.
-2. Mendaftarkan hak akses sudoers terbatas untuk utilitas kernel, firewall, dan system service.
-3. Membuat Python virtual environment di dalam folder `venv/`.
-4. Men-generate API Key rahasia (`api/key.txt`).
+Skrip `install.sh` akan menjalankan proses instalasi secara bertahap melalui dua skrip utama:
+1. **setup-environment.sh**: membuat system user khusus bernama `yoru-agent`, mengatur hak akses sudoers secara terbatas untuk kebutuhan operasional Yoru-Agent, dan mengatur kepemilikan dan hak akses direktori proyek agar dapat diakses oleh system user `yoru-agent`.
+2. **setup-dependencies.sh**: membuat Python virtual environment pada direktori `venv/`, menginstal seluruh dependency Python yang dibutuhkan Yoru-Agent, membuat dan mengatur akses API Key.
 
-### 3. Masuk sebagai User `yoru-agent`
-Skrip setup otomatis membuat pengguna sistem baru bernama `yoru-agent`. Beralihlah ke pengguna tersebut untuk menjalankan aplikasi:
+### 4. Menjalankan API dan web
+Pastikan Anda berada di direktori utama proyek `yoru-agent`, kemudian jalankan perintah berikut:
 ```bash
-sudo su - yoru-agent
+task start
 ```
-### 4. Masuk ke Folder API
-Pindah ke direktori api yang berada di dalam folder proyek Anda:
-> Catatan: Ganti (nama-user-lama) dengan nama username utama komputer Anda sebelumnya tempat folder proyek diunduh.
+Perintah tersebut akan menjalankan task start yang mengeksekusi skrip `start-yoru-agent.sh`.
+Skrip ini bertanggung jawab untuk memulai layanan API dan Web Dashboard Yoru-Agent sesuai konfigurasi yang telah ditentukan.
+
+### 5. Mengakses Aplikasi
+Setelah layanan API dan Web Dashboard berhasil dijalankan, buka browser dan akses alamat berikut:
+```text
+http://IP_Server:8501
+```
+- Ganti IP_Server dengan alamat IP server tempat Yoru-Agent diinstal.
+- Pastikan port 8501 dapat diakses melalui jaringan dan tidak diblokir oleh konfigurasi firewall.
+
+### 6. Mengelola Layanan Aplikasi
+Yoru-Agent menyediakan beberapa perintah untuk mengelola layanan API dan Web Dashboard melalui Taskfile.
+Untuk menghentikan layanan API dan Web Dashboard, jalankan:
 ```bash
-cd /home/(nama-user-lama)/yoru-agent
+task stop
 ```
-
-### 5. Aktifkan Virtual Environment & Jalankan Server API
-Aktifkan environment Python dan jalankan server FastAPI menggunakan `uvicorn`:
+Untuk memulai ulang layanan API dan Web Dashboard, jalankan:
 ```bash
-source venv/bin/activate
-uvicorn main:app --host 0.0.0.0 --port 8000
-python -m uvicorn api.main:app --host 0.0.0.0 --port 8000
+task restart
 ```
-
-## ⚙️ Menjalankan Yoru-Agent
-Yoru-Agent memiliki dua komponen yang perlu dibedakan: server API dan antarmuka aplikasi.
-
-### 1. Menjalankan Server API
-Server API menggunakan FastAPI untuk menangani permintaan dari aplikasi. Pastikan Anda berada di direktori proyek dan lingkungan Python sudah aktif. Jalankan server sesuai struktur aplikasi Anda.
-
+Untuk menjalankan layanan API dan Web Dashboard setelah sebelumnya dihentikan, jalankan:
 ```bash
-source api/venv/bin/activate
-python3 api/main.py
-streamlit run app.py
+task start
 ```
-
-### 2. Menjalankan Antarmuka Aplikasi
-Jika proyek menggunakan Streamlit sebagai antarmuka pengguna, buka terminal lain, masuk ke direktori proyek, lalu aktifkan virtual environment yang sama. Jalankan:
-```bash
-streamlit run app.py
-```
+Seluruh perintah tersebut harus dijalankan dari direktori utama proyek `yoru-agent`.
 
 ---
 
@@ -235,19 +267,28 @@ journalctl -t yoru-agent -p warning
 ---
 
 ## 🗑️ Menghapus Yoru-Agent
-Jika ingin menghapus Yoru-Agent, ikuti langkah berikut.
+Apabila Yoru-Agent tidak lagi digunakan, Anda dapat menghapus instalasi dan seluruh direktori proyek dengan mengikuti tahapan berikut.
 
 ### 1. Jalankan Skrip Uninstall
-Skrip uninstall berada di folder setup. Dari direktori utama proyek, jalankan:
+Skrip uninstall tersedia di dalam direktori setup/. Pastikan Anda berada di direktori utama proyek `yoru-agent`, kemudian jalankan salah satu perintah berikut.
 ```bash
 sudo bash setup/uninstall.sh
 ```
-Skrip ini digunakan untuk menghapus konfigurasi yang dikelola oleh proses instalasi.
+Atau menggunakan Taskfile:
+```bash
+task uninstall
+```
+Skrip uninstall akan menjalankan proses pembersihan konfigurasi sistem yang sebelumnya dikelola oleh proses instalasi Yoru-Agent. Proses ini meliputi:
+- Menghentikan layanan API dan Web Dashboard Yoru-Agent.
+- Menghapus konfigurasi system user dan hak akses sudoers yang dibuat khusus untuk Yoru-Agent.
+- Menghapus konfigurasi sistem dan file pendukung instalasi yang dikelola oleh skrip uninstall.
+Pastikan proses uninstall berhasil diselesaikan sebelum melanjutkan ke tahap berikutnya.
 
 ### 2. Hapus Folder Proyek
-Setelah proses uninstall selesai, Anda dapat menghapus folder proyek jika sudah tidak diperlukan. Kembali ke direktori induk proyek terlebih dahulu, kemudian jalankan perintah dengan lokasi folder yang benar. Contohnya:
+Setelah proses uninstall selesai, Anda dapat menghapus direktori proyek beserta seluruh file aplikasi apabila sudah tidak diperlukan. Kembali ke direktori induk tempat Yoru-Agent berada. Contohnya, jika proyek berada di `/home/NAMA_USER/yoru-agent`, jalankan:
 ```bash
 cd /home/NAMA_USER
 sudo rm -rf yoru-agent
 ```
-Ganti NAMA_USER dengan nama pengguna Linux yang sesuai.
+Ganti NAMA_USER dengan nama pengguna Linux yang sesuai dengan lokasi instalasi proyek.
+**Perhatian:** Perintah rm -rf akan menghapus direktori proyek beserta seluruh isinya secara permanen. Pastikan tidak ada file konfigurasi, database, log, backup, atau data penting yang masih diperlukan sebelum menjalankan perintah tersebut.
