@@ -5,7 +5,7 @@ Yoru-Agent menggunakan standar keamanan internasional yang disebut CIS Benchmark
 
 ---
 
-## Dislaimer
+## Disclaimer
 
 Proyek ini merujuk pada standar industri (CIS Benchmarks) dan UU PDP semata-mata untuk kebutuhan pemetaan kepatuhan teknis, serta tidak didukung secara resmi, disponsori, atau berafiliasi dengan Center for Internet Security (CIS) maupun lembaga penegak hukum terkait.
 
@@ -82,7 +82,7 @@ Yoru-agent menggunakan katalog berikut untuk melakukan audit dan hardening keama
 ---
 
 ### 1. 🎯 Overview & Objectives
-**Yoru-Agent** adalah platform otomatisasi keamanan dan kepatuhan sistem untuk Ubuntu Server yang memadukan CIS Benchmarks dengan Custom Rules berbasis UU PDP (Pelindungan Data Pribadi). Sistem ini dirancang secara modular dan efisien menggunakan arsitektur pemisahan layanan antara **FastAPI Backend**, **Streamlit Web Dashboard** (dengan local *SQLite caching*), serta sistem eksekusi berbasis skrip lokal untuk mengamankan infrastruktur sekaligus menjaga privasi data secara menyeluruh.
+**Yoru-Agent** adalah platform otomatisasi keamanan dan kepatuhan sistem untuk Ubuntu Server yang memadukan CIS Benchmarks dengan Custom Rules berbasis UU PDP (Pelindungan Data Pribadi). Didukung oleh **Gemini AI API**, sistem ini mampu membaca dan menganalisis log dari aktivitas audit, hardening, dan rollback, lalu menyajikan saran mitigasi serta analisis akar masalah. Sistem ini dirancang secara modular dan efisien menggunakan arsitektur pemisahan layanan antara **FastAPI Backend**, **Streamlit Web Dashboard** (dengan local *SQLite caching*), serta sistem eksekusi berbasis skrip lokal.
 
 ---
 
@@ -143,6 +143,7 @@ sequenceDiagram
 
 | Komponen | Teknologi | Tanggung Jawab Utama |
 | --- | --- | --- |
+| AI Security Analyzer | Gemini AI API | Membaca file log dari aktivitas audit, hardening, dan rollback, lalu memberikan analisis akar masalah (root cause) serta rekomendasi saran keamanan berdasarkan temuan log tersebut. |
 | Frontend Dashboard | Streamlit, Python | Menampilkan Informasi Server (Sistem Operasi, hostname, dan arsitektur), metrik operasional (Rasio Audit, Hardening, Rollback), tabel daftar katalog interaktif, dan detail katalog |
 | Backend API | FastAPI, Python | Menyediakan RESTful API yang aman dengan otentikasi `X-API-Key`, mengelola endpoint katalog, manajemen plan, serta orkestrasi tugas. |
 | Execution Engine | Taskfile, Python Scripts | Mengeksekusi modul audit, hardening, dan rollback CIS Benchmark / Custom Rule secara langsung di lingkungan Ubuntu Server secara aman dan terstruktur. |
