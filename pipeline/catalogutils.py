@@ -126,7 +126,7 @@ class BaseLogger:
         flags |= getattr(os, "O_NOFOLLOW", 0)
 
         try:
-            fd = os.open(path, flags, 0o600)
+            fd = os.open(path, flags, 0o644)
         except PermissionError as e:
             raise PermissionError(
                 f"Gagal membuka/membuat file lock/log '{path}' karena kendala izin akses (Permission Denied). "
@@ -137,7 +137,7 @@ class BaseLogger:
             if not stat.S_ISREG(os.fstat(fd).st_mode):
                 raise OSError(f"Bukan file reguler: {path}")
 
-            os.fchmod(fd, 0o600)
+            os.fchmod(fd, 0o644)
         finally:
             os.close(fd)
 
@@ -169,7 +169,7 @@ class BaseLogger:
         if self.backup_count == 0:
             with self.log_path.open("w", encoding="utf-8"):
                 pass
-            os.chmod(self.log_path, 0o600)
+            os.chmod(self.log_path, 0o644)
             return
 
         oldest = self.log_path.with_name(
@@ -215,7 +215,7 @@ class BaseLogger:
                 if not __import__("stat").S_ISREG(os.fstat(fd).st_mode):
                     raise OSError("Target log bukan file reguler.")
 
-                os.fchmod(fd, 0o600)
+                os.fchmod(fd, 0o644)
 
                 with os.fdopen(fd, "ab", closefd=False) as log_file:
                     log_file.write(data)
