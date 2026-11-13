@@ -121,7 +121,7 @@ def main():
 
     logger = BaseLogger(
         script_dir=SCRIPT_DIR,
-        log_file_name="hardening.json",
+        log_file_name="rollback.json",
         catalog=task_vars.get("ID", "K10"),
         nama=task_vars.get("NAMA", "Penyimpanan Log Journald Permanen"),
         kode_cis=task_vars.get("KODE_CIS", "6.1.2.4"),

@@ -100,11 +100,12 @@ def configure_file_access(
             f"File tidak ditemukan: {file_path}"
         )
 
+    # Memberikan ACL sekaligus memperbarui ACL mask.
     success, output = run_command(
         [
             "setfacl",
             "-m",
-            f"u:{username}:{permission}",
+            f"u:{username}:{permission},m::r--",
             str(file_path),
         ],
         timeout=5,
@@ -113,6 +114,27 @@ def configure_file_access(
     if not success:
         raise RuntimeError(
             f"Gagal mengatur ACL {file_path}: {output}"
+        )
+
+def configure_directory_traversal(
+    directory: Path,
+    username: str,
+) -> None:
+    """Memberikan hak traversal direktori kepada user aplikasi."""
+
+    success, output = run_command(
+        [
+            "setfacl",
+            "-m",
+            f"u:{username}:--x",
+            str(directory),
+        ],
+        timeout=5,
+    )
+
+    if not success:
+        raise RuntimeError(
+            f"Gagal mengatur akses direktori {directory}: {output}"
         )
 
 
@@ -164,6 +186,12 @@ def main() -> None:
             )
 
             print(f"OK: Direktori log dibuat: {JOURNAL_LOG_DIR}")
+
+        # Konfigurasi pada direktori induk
+        configure_directory_traversal(
+            SSHD_CONFIG.parent,
+            TARGET_USER,
+        )
 
         # Memberikan akses baca konfigurasi SSH.
         configure_file_access(
