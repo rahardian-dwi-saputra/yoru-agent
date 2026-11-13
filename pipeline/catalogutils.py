@@ -802,6 +802,19 @@ def create_ssh_backup(logger=None) -> tuple[bool, str]:
             return False, msg
 
         SSH_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+
+        # Ubah izin direktori agar dapat diakses penuh (rwx)
+        os.chmod(SSH_BACKUP_DIR, 0o775)
+
+        # Jika dijalankan sebagai root, ubah kepemilikannya ke user yoru-agent
+        if os.geteuid() == 0:
+            try:
+                user_info = pwd.getpwnam("yoru-agent")
+                os.chown(SSH_BACKUP_DIR, user_info.pw_uid, user_info.pw_gid)
+            except KeyError:
+                pass
+
+
         backup_file = SSH_BACKUP_DIR / "sshd_config.bak"
 
         # Jika backup utama belum ada sama sekali, buat baru

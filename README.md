@@ -225,7 +225,15 @@ http://IP_Server:8501
 - Ganti IP_Server dengan alamat IP server tempat Yoru-Agent diinstal.
 - Pastikan port 8501 dapat diakses melalui jaringan dan tidak diblokir oleh konfigurasi firewall.
 
-### 6. Mengelola Layanan Aplikasi
+### 6. Buka Akses
+Jika port yang digunakan oleh FAST API dan streamlit diblokir oleh firewall (ufw) jalankan perintah sebagai berikut:
+```bash
+sudo ufw allow 8000/tcp
+sudo ufw allow 8501/tcp
+sudo ufw reload
+```
+
+### 7. Mengelola Layanan Aplikasi
 Yoru-Agent menyediakan beberapa perintah untuk mengelola layanan API dan Web Dashboard melalui Taskfile.
 Untuk menghentikan layanan API dan Web Dashboard, jalankan:
 ```bash

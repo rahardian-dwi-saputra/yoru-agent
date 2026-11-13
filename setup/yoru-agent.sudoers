@@ -11,6 +11,8 @@
 
 yoru-agent ALL=(root) NOPASSWD: /usr/bin/python3 /opt/yoru-agent/*.py
 
+# Izinkan yoru-agent membaca, menyalin, dan memodifikasi sshd_config tanpa password root
+yoru-agent ALL=(root) NOPASSWD: /usr/bin/cp /etc/ssh/sshd_config *, /usr/bin/chown *, /usr/bin/chmod *
 
 # ==========================================================
 # 2. KERNEL MANAGEMENT (K16 - K19)

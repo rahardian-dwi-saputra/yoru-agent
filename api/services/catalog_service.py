@@ -55,10 +55,10 @@ def parse_taskfile_metadata(taskfile_path: Path) -> Optional[CatalogMetadata]:
         pesan_rollback = str(pesan_rollback_raw).strip().replace("\n", " ")
 
         if "⚠️ RISIKO KEAMANAN:" in pesan_rollback:
-            pesan_rollback = pesan_hardening.replace(" ⚠️ RISIKO KEAMANAN: ", "\n⚠️ RISIKO KEAMANAN:\n")
+            pesan_rollback = pesan_rollback.replace(" ⚠️ RISIKO KEAMANAN: ", "\n⚠️ RISIKO KEAMANAN:\n")
 
         if "⚠️ RISIKO:" in pesan_rollback:
-            pesan_rollback = pesan_hardening.replace(" ⚠️ RISIKO: ", "\n⚠️ RISIKO:\n")
+            pesan_rollback = pesan_rollback.replace(" ⚠️ RISIKO: ", "\n⚠️ RISIKO:\n")
 
 
         return CatalogMetadata(

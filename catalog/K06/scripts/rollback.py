@@ -144,7 +144,8 @@ def main():
             os.chmod(temp_config, 0o600)
 
             # Terapkan perubahan parameter pada file sementara
-            apply_rollback_macs(SSHD_CONFIG, temp_config)
+            with open(temp_config, "w", encoding="utf-8") as f_out:
+                apply_rollback_macs(SSHD_CONFIG, f_out)
 
             sshd = shutil.which("sshd")
             if sshd is None:
