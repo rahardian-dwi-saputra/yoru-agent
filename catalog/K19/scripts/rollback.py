@@ -231,10 +231,7 @@ def perform_sysctl_rollback(
         )
 
         # Validasi hasil rollback.
-        runtime_value = get_runtime_sysctl_value(
-            sysctl_path,
-            sysctl_key,
-        )
+        runtime_value = get_runtime_sysctl_value(sysctl_key)
 
         if runtime_value != target_value:
             raise RuntimeError(

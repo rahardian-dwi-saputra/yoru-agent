@@ -816,6 +816,7 @@ def create_ssh_backup(logger=None) -> tuple[bool, str]:
             try:
                 user_info = pwd.getpwnam("yoru-agent")
                 os.chown(SSH_BACKUP_DIR, user_info.pw_uid, user_info.pw_gid)
+                os.chmod(SSH_BACKUP_DIR, 0o750)
             except KeyError:
                 pass
             

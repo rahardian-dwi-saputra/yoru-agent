@@ -7,7 +7,7 @@ from google import genai
 from google.genai import types
 from api.config import limiter
 from api.dependencies import verify_api_key
-from config.api import CATALOGS_DIR
+from config.api import CATALOGS_DIR, MODEL_NAME
 from api.services.catalog_service import get_available_catalogs
 from api.schemas.catalog import CatalogMetadata
 import concurrent.futures
@@ -140,7 +140,7 @@ def get_catalog_ai_advice(
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(
                 client.models.generate_content,
-                model='gemini-3.6-flash',
+                model=MODEL_NAME,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json", 
@@ -283,7 +283,7 @@ def get_global_log_summary(
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(
                 client.models.generate_content,
-                model='gemini-3.6-flash',
+                model=MODEL_NAME,
                 contents=prompt,
             )
             response = future.result(timeout=50)

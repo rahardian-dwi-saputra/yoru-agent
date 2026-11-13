@@ -15,6 +15,9 @@ API_HOST = "0.0.0.0"
 API_PORT = 8000
 DEBUG_MODE = True
 
+# Konfigurasi Model AI Gemini
+MODEL_NAME = "gemini-3.5-flash"
+
 # CORS Origins yang diizinkan (untuk keamanan dashboard web)
 
 _env_origins = os.getenv("ALLOWED_ORIGINS")

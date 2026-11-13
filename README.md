@@ -26,7 +26,8 @@ yoru-agent/
 ├── setup/                     # Skrip dan konfigurasi instalasi
 │   ├── setup-dependencies.sh  # Membuat virtual environment dan menginstal dependency
 │   ├── setup-environment.sh   # Membuat system user dan mengatur hak akses
-    ├── uninstall.sh           # Menghapus konfigurasi instalasi Yoru-Agent
+│   ├── setup-permission.py    # Mengatur hak akses file dan direktori
+│   ├── uninstall.sh           # Menghapus konfigurasi instalasi Yoru-Agent
 │   └── yoru-agent.sudoers     # Konfigurasi hak akses sudoers untuk system user
 ├── web/                       # Source code Web Dashboard berbasis Streamlit
 ├── .env                       # Konfigurasi environment aplikasi (tidak dilacak Git)
