@@ -810,16 +810,8 @@ def create_ssh_backup(logger=None) -> tuple[bool, str]:
         if not os.access(SSHD_CONFIG, os.R_OK):
             return False, f"Tidak memiliki izin membaca konfigurasi SSH: {SSHD_CONFIG}"
 
-        SSH_BACKUP_DIR.mkdir(parents=True, exist_ok=True, mode=0o750)
+        SSH_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 
-        if os.geteuid() == 0:
-            try:
-                user_info = pwd.getpwnam("yoru-agent")
-                os.chown(SSH_BACKUP_DIR, user_info.pw_uid, user_info.pw_gid)
-                os.chmod(SSH_BACKUP_DIR, 0o750)
-            except KeyError:
-                pass
-            
         if not os.access(SSH_BACKUP_DIR, os.W_OK | os.X_OK):
             return False, f"Tidak memiliki izin menulis ke direktori backup: {SSH_BACKUP_DIR}"
 
