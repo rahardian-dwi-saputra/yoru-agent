@@ -148,13 +148,15 @@ def main() -> None:
             print(f"OK: Direktori aplikasi: {directory}")
 
         # Direktori konfigurasi sistem.
-        configure_system_directory(
+        system_directories = (
             JOURNALD_CONFIG.parent,
             SYSCTL_CONF.parent,
         )
 
-        print(f"OK: Direktori konfigurasi: {JOURNALD_CONFIG.parent}")
-
+        for directory in system_directories:
+            configure_system_directory(directory)
+            print(f"OK: Direktori konfigurasi: {directory}")
+        
         # Memastikan direktori log tersedia tanpa mengubah ownership.
         if not JOURNAL_LOG_DIR.exists():
             configure_system_directory(
