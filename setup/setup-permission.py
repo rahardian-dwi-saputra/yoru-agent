@@ -13,6 +13,7 @@ from config.settings import (
     JOURNALD_BACKUP_DIR,
     JOURNAL_LOG_DIR,
     JOURNAL_ACCESS_BACKUP,
+    SYSCTL_CONF,
 )
 
 
@@ -144,7 +145,8 @@ def main() -> None:
 
         # Direktori konfigurasi sistem.
         configure_system_directory(
-            JOURNALD_CONFIG.parent
+            JOURNALD_CONFIG.parent,
+            SYSCTL_CONF.parent,
         )
 
         print(f"OK: Direktori konfigurasi: {JOURNALD_CONFIG.parent}")
