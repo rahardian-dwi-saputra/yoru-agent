@@ -792,9 +792,7 @@ def check_systemd_service_status(service_name: str) -> Tuple[bool, ServiceState,
 
 def create_ssh_backup(logger=None) -> tuple[bool, str]:
     """
-    Membuat file backup untuk sshd_config di dalam SSH_BACKUP_DIR.
-    Hanya membuat backup baru (ber-timestamp) jika file asli mengalami perubahan 
-    dibandingkan backup terakhir.
+    Membuat file backup untuk sshd_config di dalam SSH_BACKUP_DIR menggunakan sudo cp.
     """
     try:
         if not check_config_exists(config_path=SSHD_CONFIG, config_name="sshd_config", logger=logger):
@@ -814,30 +812,48 @@ def create_ssh_backup(logger=None) -> tuple[bool, str]:
             except KeyError:
                 pass
 
-
         backup_file = SSH_BACKUP_DIR / "sshd_config.bak"
 
-        # Jika backup utama belum ada sama sekali, buat baru
+        # Gunakan path sementara untuk menyalin file asli menggunakan sudo cp
+        temp_original = SSH_BACKUP_DIR / "sshd_config_temp_current.bak"
+
+        # Eksekusi sudo cp untuk menyalin sshd_config ke temp_original
+        try:
+            subprocess.run(
+                ['sudo', '/usr/bin/cp', SSHD_CONFIG, str(temp_original)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+        except subprocess.CalledProcessError as e:
+            msg = f"File konfigurasi SSH utama tidak dapat diakses atau disalin dari {SSHD_CONFIG}"
+            if logger:
+                logger.log_error("SYSTEM", "backup", e)
+            return False, msg
+
+        # Setelah berhasil disalin ke temp oleh root/sudo, yoru-agent bisa membacanya dengan aman!
         if not backup_file.exists():
-            shutil.copy2(SSHD_CONFIG, backup_file)
+            shutil.move(str(temp_original), str(backup_file))
+            # Sesuaikan kepemilikan backup_file jika perlu
             msg = f"Backup awal sshd_config berhasil dibuat di {backup_file}."
             if logger:
                 logger.log("SUCCESS", "BackupCreated", msg)
             return True, msg
 
-        # Jika backup sudah ada, bandingkan apakah file asli sudah berubah (diff)
-        # filecmp.cmp mengembalikan True jika isi kedua file persis sama
-        if filecmp.cmp(SSHD_CONFIG, backup_file, shallow=False):
+        # Bandingkan file temp dengan backup utama menggunakan filecmp
+        if filecmp.cmp(str(temp_original), str(backup_file), shallow=False):
+            # Hapus file temp karena tidak ada perubahan
+            temp_original.unlink(missing_ok=True)
             msg = "Konfigurasi SSH tidak berubah. Menggunakan backup yang sudah ada."
             return True, msg
 
-        # Jika isi file BERUBAH, buat versioning timestamp baru sebagai arsip historis
+        # Jika isi file BERUBAH, buat versioning timestamp baru
         timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         versioned_backup = SSH_BACKUP_DIR / f"sshd_config_{timestamp_str}.bak"
-        shutil.copy2(SSHD_CONFIG, versioned_backup)
         
-        # Perbarui juga file backup utama
-        shutil.copy2(SSHD_CONFIG, backup_file)
+        # Pindahkan temp menjadi versioned backup dan copy ke backup utama
+        shutil.copy2(str(temp_original), str(versioned_backup))
+        shutil.move(str(temp_original), str(backup_file))
 
         msg = f"Perubahan terdeteksi pada sshd_config. Backup historis dibuat: {versioned_backup.name}"
         if logger:

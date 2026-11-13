@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import re
 
 
 # Import modul catalogutils via sys.path
@@ -37,18 +38,48 @@ from pipeline.catalogutils import (
 
 HARDENED_MACS_SET = set(APPROVED_MACS_LIST)
 
+def apply_rollback_macs(src_path: Path, dst_path: Path) -> int:
+    """
+    Mengomentari seluruh direktif MACs yang masih aktif.
 
-def apply_rollback_macs(src_path: Path, dst_file_obj) -> None:
-    """Mengomentari atau mengembalikan baris MACs ke kondisi default/terkomentar."""
-    with open(src_path, "r", encoding="utf-8", errors="ignore") as f:
-        for line in f:
-            line_stripped = line.strip()
+    Mengembalikan jumlah direktif yang berhasil dikomentari.
+    """
+    count = 0
 
-            # Jika baris merupakan direktif MACs aktif, ubah menjadi terkomentar
-            if not line_stripped.startswith("#") and line_stripped.lower().startswith("macs"):
-                dst_file_obj.write(f"# {line_stripped}\n")
-            else:
-                dst_file_obj.write(line)
+    with open(src_path, "r", encoding="utf-8", errors="ignore", newline="") as src:
+        with open(dst_path, "w", encoding="utf-8", newline="") as dst:
+            for line in src:
+                stripped = line.lstrip()
+
+                # Cocokkan nama direktif secara tepat.
+                if re.match(r"(?i)^MACs(?:\s|$)", stripped):
+                    indent = line[:len(line) - len(stripped)]
+                    dst.write(f"{indent}# {stripped}")
+                    count += 1
+                else:
+                    dst.write(line)
+
+    return count
+
+def validate_sshd_config(config_file: Path) -> None:
+    """Memvalidasi sintaks konfigurasi SSH menggunakan sshd -t."""
+    sshd = shutil.which("sshd")
+
+    if not sshd:
+        raise RuntimeError("Executable sshd tidak ditemukan.")
+
+    result = subprocess.run(
+        [sshd, "-t", "-f", str(config_file)],
+        capture_output=True,
+        text=True,
+        timeout=15,
+        check=False,
+    )
+
+    if result.returncode != 0:
+        detail = result.stderr.strip() or "Sintaks konfigurasi tidak valid."
+        raise RuntimeError(f"Validasi sshd gagal: {detail}")
+
 
 
 def main():
@@ -143,52 +174,35 @@ def main():
             shutil.copy2(SSHD_CONFIG, original_config)
             os.chmod(temp_config, 0o600)
 
-            # Terapkan perubahan parameter pada file sementara
-            with open(temp_config, "w", encoding="utf-8") as f_out:
-                apply_rollback_macs(SSHD_CONFIG, f_out)
-
-            sshd = shutil.which("sshd")
-            if sshd is None:
-                raise RuntimeError("Executable sshd tidak ditemukan.")
-                
-            # Validasi sintaks file konfigurasi sementara menggunakan perintah sshd -t
-            validation = subprocess.run(
-                [sshd, "-t", "-f", str(temp_config)],
-                capture_output=True,
-                text=True,
-                timeout=15,
-                check=False,
+            # Komentari direktif Ciphers pada kandidat.
+            commented_count = apply_rollback_macs(
+                SSHD_CONFIG,
+                temp_config,
             )
-            
-            if validation.returncode != 0:
-                detail = validation.stderr.strip() or "Sintaks konfigurasi tidak valid."
+
+            if commented_count == 0:
                 logger.log(
-                    LogStatus.FAILED,
+                    LogStatus.SKIPPED,
                     "Result",
-                    f"Hasil Rollback: FAILED - Validasi sshd gagal: {detail}",
+                    "Hasil Rollback: SKIPPED - Tidak ditemukan direktif MACs aktif untuk dikomentari.",
                     duration_ms=(perf_counter() - start) * 1000,
                 )
-                sys.exit(1)
+                sys.exit(0)
 
-            effective_value = get_effective_sshd_parameter(
+            # Validasi sintaks konfigurasi kandidat.
+            validate_sshd_config(temp_config)
+
+            # Pastikan direktif MACs pada file kandidat sudah dikomentari.
+            candidate_status, _ = check_config_parameter_value(
                 temp_config,
                 "MACs",
             )
 
-            mac_list = [
-                mac.strip()
-                for mac in effective_value.split(",")
-                if mac.strip()
-            ]
-            
-            if mac_list:
-                logger.log(
-                    LogStatus.FAILED,
-                    "Result",
-                    f"Hasil Rollback: FAILED - Nilai efektif kandidat adalah '{effective_value}'",
-                    duration_ms=(perf_counter() - start) * 1000,
+            if candidate_status != "commented":
+                raise RuntimeError(
+                    "Direktif MACs masih aktif setelah proses rollback."
                 )
-                sys.exit(1)            
+
 
             # Terapkan konfigurasi yang telah tervalidasi.
             os.replace(temp_config, SSHD_CONFIG)
@@ -219,7 +233,7 @@ def main():
             logger.log(
                 LogStatus.SUCCESS,
                 "Result",
-                f"Hasil Rollback: SUCCEED - Pengaturan parameter 'MACs' dinonaktifkan dan service SSH berhasil direstart.",
+                f"Hasil Rollback: SUCCEED - {commented_count} direktif MACs berhasil dikomentari, SSH kembali menggunakan konfigurasi macs bawaan dan service SSH berhasil direstart.",
                 duration_ms=(perf_counter() - start) * 1000,
             )
             sys.exit(0)
