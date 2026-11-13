@@ -63,16 +63,16 @@ tasks:
     desc: "Menjalankan audit untuk MaxAuthTries"
     deps: [init-log-dir]
     cmds:
-      - python3 {{.SCRIPT_DIR}}/audit.py
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
   hardening:
     desc: "Menjalankan hardening untuk MaxAuthTries"
     deps: [init-log-dir]
     cmds:
-      - python3 {{.SCRIPT_DIR}}/hardening.py
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
   rollback:
     desc: "Menjalankan rollback untuk MaxAuthTries"
     deps: [init-log-dir]
     cmds:
-      - python3 {{.SCRIPT_DIR}}/rollback.py
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

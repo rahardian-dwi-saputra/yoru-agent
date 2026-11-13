@@ -64,16 +64,16 @@ tasks:
     desc: "Menjalankan audit untuk LoginGraceTime"
     deps: [init-log-dir]
     cmds:
-      - python3 {{.SCRIPT_DIR}}/audit.py
+      - sudo python3 {{.SCRIPT_DIR}}/audit.py
 
   hardening:
     desc: "Menjalankan hardening untuk LoginGraceTime"
     deps: [init-log-dir]
     cmds:
-      - python3 {{.SCRIPT_DIR}}/hardening.py
+      - sudo python3 {{.SCRIPT_DIR}}/hardening.py
 
   rollback:
     desc: "Menjalankan rollback untuk LoginGraceTime"
     deps: [init-log-dir]
     cmds:
-      - python3 {{.SCRIPT_DIR}}/rollback.py
+      - sudo python3 {{.SCRIPT_DIR}}/rollback.py

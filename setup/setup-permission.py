@@ -155,6 +155,7 @@ def main() -> None:
 
         # Direktori milik user aplikasi.
         application_directories = (
+            Path("/var/backups/yoru-agent"),
             SSH_BACKUP_DIR,
             JOURNALD_BACKUP_DIR,
             JOURNAL_ACCESS_BACKUP.parent,

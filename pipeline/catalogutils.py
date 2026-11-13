@@ -791,69 +791,117 @@ def check_systemd_service_status(service_name: str) -> Tuple[bool, ServiceState,
 
 
 
+
 def create_ssh_backup(logger=None) -> tuple[bool, str]:
-    """
-    Membuat backup sshd_config dan backup historis jika konfigurasi berubah.
-    Dijalankan menggunakan user yang memiliki akses baca dan tulis.
-    """
+    """Membuat backup SSH dan backup historis jika konfigurasi berubah."""
+
     temp_file = None
+    stage = "inisialisasi"
 
     try:
+        # Validasi file konfigurasi.
+        stage = "validasi konfigurasi"
+
         if not check_config_exists(
             config_path=SSHD_CONFIG,
             config_name="sshd_config",
-            logger=logger
+            logger=logger,
         ):
             return False, f"File konfigurasi SSH tidak ditemukan: {SSHD_CONFIG}"
 
-        # Validasi permission.
         if not os.access(SSHD_CONFIG, os.R_OK):
-            return False, f"Tidak memiliki izin membaca konfigurasi SSH: {SSHD_CONFIG}"
+            return False, f"Tidak memiliki izin membaca: {SSHD_CONFIG}"
 
-        SSH_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        # Persiapan direktori backup.
+        stage = "persiapan direktori backup"
+
+        SSH_BACKUP_DIR.mkdir(
+            parents=True,
+            exist_ok=True,
+            mode=0o750,
+        )
 
         if not os.access(SSH_BACKUP_DIR, os.W_OK | os.X_OK):
-            return False, f"Tidak memiliki izin menulis ke direktori backup: {SSH_BACKUP_DIR}"
+            return False, (
+                f"Tidak memiliki izin menulis ke direktori: {SSH_BACKUP_DIR}"
+            )
 
         backup_file = SSH_BACKUP_DIR / "sshd_config.bak"
 
-        # Buat file sementara pada direktori backup yang sama.
+        # Membuat file sementara.
+        stage = "membuat file sementara"
+
         fd, temp_path = tempfile.mkstemp(
             prefix="sshd_config_",
             suffix=".tmp",
-            dir=SSH_BACKUP_DIR
+            dir=SSH_BACKUP_DIR,
         )
-        os.close(fd)
 
+        os.close(fd)
         temp_file = Path(temp_path)
 
-        # Salin konfigurasi SSH saat ini.
-        shutil.copy2(SSHD_CONFIG, temp_file)
+        # Menyalin isi konfigurasi tanpa mempertahankan metadata sumber.
+        stage = "menyalin konfigurasi SSH"
+
+        shutil.copyfile(
+            SSHD_CONFIG,
+            temp_file,
+        )
+
+        temp_file.chmod(0o600)
 
         # Backup pertama kali.
         if not backup_file.exists():
+            stage = "membuat backup awal"
+
             os.replace(temp_file, backup_file)
             temp_file = None
 
-            msg = f"Backup awal sshd_config berhasil dibuat: {backup_file}"
+            msg = f"Backup awal SSH berhasil dibuat: {backup_file}"
 
             if logger:
                 logger.log("SUCCESS", "BackupCreated", msg)
 
             return True, msg
 
-        # Periksa perubahan konfigurasi.
-        if filecmp.cmp(temp_file, backup_file, shallow=False):
-            return True, "Konfigurasi SSH tidak berubah. Backup sebelumnya tetap digunakan."
+        # Memeriksa perubahan konfigurasi.
+        stage = "memeriksa perubahan konfigurasi"
 
-        # Buat backup historis dari konfigurasi sebelumnya.
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
-        versioned_backup = SSH_BACKUP_DIR / f"sshd_config_{timestamp}.bak"
+        if filecmp.cmp(
+            temp_file,
+            backup_file,
+            shallow=False,
+        ):
+            return True, (
+                "Konfigurasi SSH tidak berubah. "
+                "Backup sebelumnya tetap digunakan."
+            )
 
-        shutil.copy2(backup_file, versioned_backup)
+        # Membuat backup historis.
+        stage = "membuat backup historis"
 
-        # Perbarui backup utama secara atomik.
-        os.replace(temp_file, backup_file)
+        now = datetime.now(APP_TIMEZONE)
+        timestamp = now.strftime("%Y%m%d_%H%M%S_%f")
+
+        versioned_backup = (
+            SSH_BACKUP_DIR / f"sshd_config_{timestamp}.bak"
+        )
+
+        shutil.copyfile(
+            backup_file,
+            versioned_backup,
+        )
+
+        versioned_backup.chmod(0o600)
+
+        # Memperbarui backup utama secara atomik.
+        stage = "memperbarui backup utama"
+
+        os.replace(
+            temp_file,
+            backup_file,
+        )
+
         temp_file = None
 
         msg = (
@@ -866,17 +914,21 @@ def create_ssh_backup(logger=None) -> tuple[bool, str]:
 
         return True, msg
 
-    except Exception as e:
-        msg = f"Gagal membuat backup SSH: {e}"
+    except Exception as exc:
+        msg = (
+            f"Gagal membuat backup SSH "
+            f"pada tahap '{stage}': {exc}"
+        )
 
         if logger:
-            logger.log_error("SYSTEM", "backup", e)
+            logger.log_error("SYSTEM", "backup", exc)
 
         return False, msg
 
     finally:
         if temp_file:
             temp_file.unlink(missing_ok=True)
+
 
 
 
