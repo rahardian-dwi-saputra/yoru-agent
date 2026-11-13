@@ -169,6 +169,8 @@ else
     exit 1
 fi
 
+# Berikan akses ke sshd_config
+setfacl -m u:yoru-agent:r /etc/ssh/sshd_config
 
 # 10. Validasi akhir
 echo -e "${GREEN}[+] Memvalidasi instalasi...${NC}"

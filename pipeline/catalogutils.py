@@ -790,81 +790,101 @@ def check_systemd_service_status(service_name: str) -> Tuple[bool, ServiceState,
     return is_compliant, active_state, enable_state
 
 
+
 def create_ssh_backup(logger=None) -> tuple[bool, str]:
     """
-    Membuat file backup untuk sshd_config di dalam SSH_BACKUP_DIR menggunakan sudo cp.
+    Membuat backup sshd_config dan backup historis jika konfigurasi berubah.
+    Dijalankan menggunakan user yang memiliki akses baca dan tulis.
     """
+    temp_file = None
+
     try:
-        if not check_config_exists(config_path=SSHD_CONFIG, config_name="sshd_config", logger=logger):
-            msg = f"File konfigurasi SSH utama tidak ditemukan di {SSHD_CONFIG}"
-            return False, msg
+        if not check_config_exists(
+            config_path=SSHD_CONFIG,
+            config_name="sshd_config",
+            logger=logger
+        ):
+            return False, f"File konfigurasi SSH tidak ditemukan: {SSHD_CONFIG}"
 
-        SSH_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        # Validasi permission.
+        if not os.access(SSHD_CONFIG, os.R_OK):
+            return False, f"Tidak memiliki izin membaca konfigurasi SSH: {SSHD_CONFIG}"
 
-        # Ubah izin direktori agar dapat diakses penuh (rwx)
-        os.chmod(SSH_BACKUP_DIR, 0o775)
+        SSH_BACKUP_DIR.mkdir(parents=True, exist_ok=True, mode=0o750)
 
-        # Jika dijalankan sebagai root, ubah kepemilikannya ke user yoru-agent
         if os.geteuid() == 0:
             try:
                 user_info = pwd.getpwnam("yoru-agent")
                 os.chown(SSH_BACKUP_DIR, user_info.pw_uid, user_info.pw_gid)
             except KeyError:
                 pass
+            
+        if not os.access(SSH_BACKUP_DIR, os.W_OK | os.X_OK):
+            return False, f"Tidak memiliki izin menulis ke direktori backup: {SSH_BACKUP_DIR}"
 
         backup_file = SSH_BACKUP_DIR / "sshd_config.bak"
 
-        # Gunakan path sementara untuk menyalin file asli menggunakan sudo cp
-        temp_original = SSH_BACKUP_DIR / "sshd_config_temp_current.bak"
+        # Buat file sementara pada direktori backup yang sama.
+        fd, temp_path = tempfile.mkstemp(
+            prefix="sshd_config_",
+            suffix=".tmp",
+            dir=SSH_BACKUP_DIR
+        )
+        os.close(fd)
 
-        # Eksekusi sudo cp untuk menyalin sshd_config ke temp_original
-        try:
-            subprocess.run(
-                ['sudo', '/usr/bin/cp', SSHD_CONFIG, str(temp_original)],
-                check=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
-            )
-        except subprocess.CalledProcessError as e:
-            msg = f"File konfigurasi SSH utama tidak dapat diakses atau disalin dari {SSHD_CONFIG}"
-            if logger:
-                logger.log_error("SYSTEM", "backup", e)
-            return False, msg
+        temp_file = Path(temp_path)
 
-        # Setelah berhasil disalin ke temp oleh root/sudo, yoru-agent bisa membacanya dengan aman!
+        # Salin konfigurasi SSH saat ini.
+        shutil.copy2(SSHD_CONFIG, temp_file)
+
+        # Backup pertama kali.
         if not backup_file.exists():
-            shutil.move(str(temp_original), str(backup_file))
-            # Sesuaikan kepemilikan backup_file jika perlu
-            msg = f"Backup awal sshd_config berhasil dibuat di {backup_file}."
+            os.replace(temp_file, backup_file)
+            temp_file = None
+
+            msg = f"Backup awal sshd_config berhasil dibuat: {backup_file}"
+
             if logger:
                 logger.log("SUCCESS", "BackupCreated", msg)
+
             return True, msg
 
-        # Bandingkan file temp dengan backup utama menggunakan filecmp
-        if filecmp.cmp(str(temp_original), str(backup_file), shallow=False):
-            # Hapus file temp karena tidak ada perubahan
-            temp_original.unlink(missing_ok=True)
-            msg = "Konfigurasi SSH tidak berubah. Menggunakan backup yang sudah ada."
-            return True, msg
+        # Periksa perubahan konfigurasi.
+        if filecmp.cmp(temp_file, backup_file, shallow=False):
+            return True, "Konfigurasi SSH tidak berubah. Backup sebelumnya tetap digunakan."
 
-        # Jika isi file BERUBAH, buat versioning timestamp baru
-        timestamp_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        versioned_backup = SSH_BACKUP_DIR / f"sshd_config_{timestamp_str}.bak"
-        
-        # Pindahkan temp menjadi versioned backup dan copy ke backup utama
-        shutil.copy2(str(temp_original), str(versioned_backup))
-        shutil.move(str(temp_original), str(backup_file))
+        # Buat backup historis dari konfigurasi sebelumnya.
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+        versioned_backup = SSH_BACKUP_DIR / f"sshd_config_{timestamp}.bak"
 
-        msg = f"Perubahan terdeteksi pada sshd_config. Backup historis dibuat: {versioned_backup.name}"
+        shutil.copy2(backup_file, versioned_backup)
+
+        # Perbarui backup utama secara atomik.
+        os.replace(temp_file, backup_file)
+        temp_file = None
+
+        msg = (
+            f"Perubahan konfigurasi SSH terdeteksi. "
+            f"Backup historis dibuat: {versioned_backup.name}"
+        )
+
         if logger:
             logger.log("SUCCESS", "BackupVersioned", msg)
+
         return True, msg
 
     except Exception as e:
-        err_msg = f"Gagal membuat backup SSH: {str(e)}"
+        msg = f"Gagal membuat backup SSH: {e}"
+
         if logger:
             logger.log_error("SYSTEM", "backup", e)
-        return False, err_msg
+
+        return False, msg
+
+    finally:
+        if temp_file:
+            temp_file.unlink(missing_ok=True)
+
 
 
 def restart_system_service(service_names: Union[str, List[str]]) -> bool:
