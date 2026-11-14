@@ -23,6 +23,8 @@ yoru-agent/
 │   └── web.py                 # Konfigurasi Web Dashboard (Streamlit)
 ├── pipeline                   # Modul pendukung dan utilitas aplikasi
 │   └── catalogutils.py        # Class dan helper untuk operasional katalog
+├── offensive/                 # Pengujian hasil hardening
+│   └── README.md              # Intruksi cara menguji hasil hardening
 ├── setup/                     # Skrip dan konfigurasi instalasi
 │   ├── setup-dependencies.sh  # Membuat virtual environment dan menginstal dependency
 │   ├── setup-environment.sh   # Membuat system user dan mengatur hak akses
